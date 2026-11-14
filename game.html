@@ -1,0 +1,3139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>宇宙シミュレーター 試作 v0.3（3D）</title>
+<style>
+  :root{
+    --bg:#040711;
+    --glass:rgba(11,18,38,0.80);
+    --glass-strong:rgba(9,15,32,0.94);
+    --line:rgba(92,138,225,0.28);
+    --line-bright:rgba(110,178,255,0.58);
+    --text:#eaf0ff;
+    --muted:#8fa3cf;
+    --accent:#58b4ff;
+    --accent2:#ffb35c;
+    --good:#47e5a1;
+    --bad:#ff6378;
+    --warn:#ffd166;
+    --teal:#2dd4bf;
+    --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{
+    margin:0;padding:0;width:100%;height:100vh;height:100dvh;
+    background:var(--bg);color:var(--text);font-family:var(--font);
+    overflow:hidden;overflow-x:hidden;
+    -webkit-tap-highlight-color:transparent;
+  }
+  button,select{font-family:var(--font)}
+
+  /* ===== 共通ボタン・コントロール ===== */
+  button{
+    background:rgba(24,40,80,0.88);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:7px 12px;
+    cursor:pointer;
+    font-size:13px;
+    transition:all .16s ease;
+    user-select:none;
+  }
+  button:hover:not(:disabled){background:rgba(40,68,128,0.92);border-color:var(--line-bright)}
+  button:active:not(:disabled){transform:scale(0.98)}
+  button.active{background:linear-gradient(135deg,#58b4ff,#3b82f6);color:#041024;font-weight:700;border-color:#93c5fd;box-shadow:0 0 12px rgba(88,180,255,0.4)}
+  button.primary{background:linear-gradient(135deg,#58b4ff,#2563eb);color:#fff;font-weight:700;border-color:#93c5fd;box-shadow:0 4px 18px rgba(37,99,235,0.4)}
+  button.amber{background:linear-gradient(135deg,#ffb35c,#f59e0b);color:#1a0f02;font-weight:700;border-color:#fcd34d}
+  button.teal{background:linear-gradient(135deg,#2dd4bf,#0d9488);color:#042f2e;font-weight:700;border-color:#5eead4}
+  button:disabled{opacity:.42;cursor:not-allowed;transform:none}
+  select{background:rgba(8,14,32,0.92);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px}
+  .pulse-hl{
+    animation:pulseHL 1.15s infinite;
+    border-color:var(--teal) !important;
+    box-shadow:0 0 0 2px rgba(45,212,191,0.5), 0 0 18px rgba(45,212,191,0.65) !important;
+  }
+  @keyframes pulseHL{
+    0%,100%{box-shadow:0 0 0 2px rgba(45,212,191,0.4), 0 0 10px rgba(45,212,191,0.45)}
+    50%{box-shadow:0 0 0 4px rgba(45,212,191,0.85), 0 0 24px rgba(45,212,191,0.9)}
+  }
+
+  /* ===== 3D ビューポート ===== */
+  #app{position:relative;width:100%;height:100vh;height:100dvh;overflow:hidden}
+  #view3d{position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#02040c}
+  #view3d:active{cursor:grabbing}
+  #view3d canvas{display:block;width:100%;height:100%}
+
+  /* ===== 上部HUDスタック (バナー / 次アクション / 計画状況 / チュートリアル) ===== */
+  #top-hud{
+    position:absolute;top:0;left:0;right:0;z-index:20;
+    display:flex;flex-direction:column;align-items:center;gap:6px;
+    padding:calc(8px + env(safe-area-inset-top)) 10px 0;
+    pointer-events:none;
+  }
+  #top-hud > *{pointer-events:auto;width:min(800px, 100%)}
+
+  #mission-banner{
+    background:var(--glass);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--line-bright);
+    border-radius:12px;
+    padding:8px 14px;
+    box-shadow:0 8px 28px rgba(0,0,0,0.5);
+    display:flex;align-items:center;justify-content:space-between;gap:10px;
+  }
+  .mb-left{min-width:0;flex:1}
+  .mb-eyebrow{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.06em;color:var(--accent)}
+  .mb-badge{background:rgba(88,180,255,0.18);border:1px solid rgba(88,180,255,0.45);padding:1px 7px;border-radius:999px;font-size:10px}
+  .mb-sys{color:var(--accent2);font-size:11px}
+  .mb-title{font-size:15px;font-weight:800;margin:2px 0;line-height:1.25;color:#fff;word-break:break-word}
+  .mb-obj{font-size:11px;color:var(--muted);line-height:1.35;word-break:break-word}
+  .mb-right{display:flex;align-items:center;gap:6px;flex-shrink:0}
+  #mission-timer{
+    display:none;
+    background:rgba(255,99,120,0.16);
+    border:1px solid rgba(255,99,120,0.45);
+    color:var(--warn);
+    padding:5px 9px;border-radius:8px;
+    font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;
+    text-align:center;min-width:76px;
+  }
+  #mission-timer.urgent{color:#ff8fa3;animation:pulseUrgent 1s infinite}
+  @keyframes pulseUrgent{0%,100%{box-shadow:0 0 0 rgba(255,99,120,0)}50%{box-shadow:0 0 16px rgba(255,99,120,0.55)}}
+
+  .top-actions{display:flex;gap:6px;align-items:center}
+  .icon-btn{padding:6px 10px;font-size:12px;display:inline-flex;align-items:center;gap:4px;white-space:nowrap}
+
+  /* ===== 次にやること行 (#next-action) ===== */
+  #next-action{
+    background:rgba(10,24,52,0.88);
+    backdrop-filter:blur(10px);
+    border:1px solid rgba(45,212,191,0.55);
+    border-radius:10px;
+    padding:7px 12px;
+    font-size:14px;font-weight:800;color:#ccfbf1;
+    line-height:1.35;word-break:break-word;
+    box-shadow:0 4px 16px rgba(0,0,0,0.45);
+  }
+  #next-action:empty{display:none}
+  #next-action.warn{border-color:rgba(255,209,102,0.75);color:#fef08a}
+  #next-action.danger{border-color:rgba(255,99,120,0.8);color:#fecdd3}
+  #next-action.good{border-color:rgba(71,229,161,0.75);color:#a7f3d0}
+
+  /* ===== 航海計画進捗 (#plan-status) ===== */
+  #plan-status{
+    display:none;
+    background:rgba(8,15,34,0.86);
+    backdrop-filter:blur(8px);
+    border:1px solid var(--line);
+    border-radius:9px;
+    padding:6px 11px;
+    font-size:12px;color:#dbeafe;
+    line-height:1.4;word-break:break-word;
+    align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  }
+  #plan-status.visible{display:flex}
+  .ps-actions{display:flex;gap:6px;flex-wrap:wrap}
+  .ps-actions button{padding:4px 9px;font-size:11px}
+
+  /* ===== チュートリアルステップ (#tutorial-steps) ===== */
+  #tutorial-steps{
+    display:none;
+    background:rgba(13,34,42,0.90);
+    backdrop-filter:blur(10px);
+    border:1px solid rgba(45,212,191,0.6);
+    border-radius:10px;
+    padding:8px 12px;
+    font-size:12px;line-height:1.45;color:#e6fffa;
+    box-shadow:0 6px 20px rgba(0,0,0,0.45);
+  }
+  #tutorial-steps.visible{display:block}
+  .tut-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:4px}
+  .tut-badge{font-size:11px;font-weight:800;color:var(--teal);letter-spacing:.04em}
+  .tut-body{font-size:12px;color:#f0fdfa;word-break:break-word}
+  .tut-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+  .tut-actions button{padding:5px 10px;font-size:11px}
+  .tut-check{display:inline-block;color:var(--good);font-weight:900;animation:checkPop .4s ease}
+  @keyframes checkPop{0%{transform:scale(0.5);opacity:0}60%{transform:scale(1.25);opacity:1}100%{transform:scale(1)}}
+
+  /* ===== 画面上ターゲットマーカー ===== */
+  #target-marker{
+    position:absolute;z-index:15;pointer-events:none;
+    display:none;transform:translate(-50%,-50%);
+  }
+  .tm-box{display:flex;flex-direction:column;align-items:center;gap:2px;filter:drop-shadow(0 0 8px rgba(71,229,161,0.7))}
+  .tm-reticle{width:30px;height:30px;border:2px solid var(--good);border-radius:50%;position:relative;animation:spinSlow 8s linear infinite}
+  .tm-reticle::before,.tm-reticle::after{content:"";position:absolute;background:var(--good)}
+  .tm-reticle::before{width:6px;height:2px;left:-5px;top:50%;transform:translateY(-50%);box-shadow:32px 0 0 var(--good)}
+  .tm-reticle::after{width:2px;height:6px;top:-5px;left:50%;transform:translateX(-50%);box-shadow:0 32px 0 var(--good)}
+  .tm-arrow{width:0;height:0;border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid var(--good);display:none}
+  .tm-label{background:rgba(4,12,24,0.85);border:1px solid rgba(71,229,161,0.5);color:var(--good);font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  @keyframes spinSlow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+  /* ===== 下部固定ボトムシート型ドック (#control-dock) ===== */
+  #control-dock{
+    position:fixed;left:0;right:0;bottom:0;z-index:22;
+    background:var(--glass-strong);
+    backdrop-filter:blur(14px);
+    -webkit-backdrop-filter:blur(14px);
+    border-top:1px solid var(--line-bright);
+    padding:8px 12px calc(8px + env(safe-area-inset-bottom));
+    box-shadow:0 -10px 32px rgba(0,0,0,0.65);
+    display:flex;flex-direction:column;gap:7px;
+  }
+  .dock-inner{width:min(960px, 100%);margin:0 auto;display:flex;flex-direction:column;gap:7px}
+
+  /* 1) 命令バー (#order-bar) */
+  #order-bar{
+    display:grid;grid-template-columns:repeat(5, 1fr);gap:6px;
+  }
+  #order-bar button{
+    min-height:52px;padding:6px 4px;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;
+    font-size:13px;font-weight:700;line-height:1.15;
+    border-radius:10px;
+  }
+  #order-bar button .ord-cost{
+    font-size:10px;font-weight:500;color:var(--muted);font-variant-numeric:tabular-nums;
+  }
+  #order-bar button.active .ord-cost{color:#041024;font-weight:700}
+
+  /* 2) 計器 & 必須ボタン行 */
+  .dock-mid{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  }
+  .hud-metrics{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+  .metric-chip{
+    background:rgba(6,11,24,0.75);border:1px solid var(--line);border-radius:8px;
+    padding:4px 8px;display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums;
+  }
+  .metric-label{font-size:10px;color:var(--muted)}
+  .metric-val{font-size:15px;font-weight:800}
+  #vel-gauge.safe .metric-val{color:var(--good)}
+  #vel-gauge.caution .metric-val{color:var(--warn)}
+  #vel-gauge.danger .metric-val{color:var(--bad)}
+  #vel-gauge.safe{border-color:rgba(71,229,161,0.45)}
+  #vel-gauge.caution{border-color:rgba(255,209,102,0.45)}
+  #vel-gauge.danger{border-color:rgba(255,99,120,0.5)}
+  .vel-tag{font-size:10px;font-weight:700}
+  .dv-chip{min-width:130px;flex:1;max-width:210px}
+  .dv-row{display:flex;justify-content:space-between;font-size:11px;margin-bottom:3px;font-variant-numeric:tabular-nums}
+  .bar{height:7px;background:rgba(4,8,20,0.85);border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#58b4ff,#47e5a1);transition:width .15s}
+  .bar.amber>i{background:linear-gradient(90deg,#ffb35c,#ffd166)}
+
+  .dock-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+  .warp-bar{
+    display:inline-flex;align-items:center;gap:3px;
+    background:rgba(6,11,24,0.72);border:1px solid var(--line);border-radius:999px;padding:3px 7px;
+    font-size:11px;
+  }
+  .warp-bar button{padding:4px 8px;font-size:11px;border-radius:999px;min-height:30px}
+  .dock-actions > button{padding:6px 9px;font-size:12px}
+
+  .dock-foot{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
+  }
+  #status-msg{
+    flex:1;min-width:180px;
+    background:rgba(6,10,24,0.72);border:1px solid var(--line);border-radius:7px;
+    padding:4px 9px;font-size:11px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .cam-row{display:flex;gap:4px;align-items:center}
+  .cam-row button{font-size:11px;padding:4px 8px}
+
+  /* 緊急手動操縦パッド (既定非表示) */
+  #manual-pad-wrap{
+    display:none;align-items:center;justify-content:center;gap:10px;
+    padding-top:4px;border-top:1px dashed rgba(255,179,92,0.35);
+  }
+  #manual-pad-wrap.visible{display:flex}
+  .thrust-pad{display:grid;grid-template-columns:repeat(4,52px);gap:4px}
+  .thrust-pad button{height:38px;font-size:11px;padding:0;touch-action:none}
+
+  /* ===== サイドドロワー / モバイルシート ===== */
+  #drawer{
+    position:fixed;top:76px;right:14px;bottom:160px;
+    width:360px;max-width:calc(100vw - 28px);
+    z-index:35;
+    background:var(--glass-strong);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    border:1px solid var(--line-bright);
+    border-radius:16px;
+    box-shadow:0 16px 48px rgba(0,0,0,0.75);
+    display:flex;flex-direction:column;
+    transform:translateX(calc(100% + 40px));
+    transition:transform .24s cubic-bezier(.22,1,.36,1);
+  }
+  #drawer.open{transform:translateX(0)}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid var(--line)}
+  .drawer-tabs{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .drawer-tabs button{flex:1;padding:6px 4px;font-size:11px}
+  .drawer-body{flex:1;overflow-y:auto;padding:12px}
+  .tab-pane{display:none}
+  .tab-pane.active{display:block}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px;margin:6px 0}
+  .kv b{text-align:right;font-variant-numeric:tabular-nums}
+  .sys-btn{display:block;width:100%;text-align:left;margin:6px 0;padding:9px 11px}
+  .sys-btn.current{border-color:var(--accent2);color:var(--accent2)}
+  .officer{border:1px solid var(--line);border-radius:10px;padding:9px;margin:7px 0;background:rgba(8,14,32,0.65)}
+  .officer .name{font-weight:700;font-size:13px}
+  .stats{font-size:11px;color:var(--muted);margin:3px 0 6px}
+  #log{background:rgba(4,8,18,0.85);border:1px solid var(--line);border-radius:8px;height:280px;overflow-y:auto;padding:8px;font-size:12px;line-height:1.6}
+  #log div{border-bottom:1px dotted rgba(92,138,225,0.2);padding:3px 0;word-break:break-word}
+  .drawer-footer{padding:8px 12px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:11px;color:var(--muted)}
+
+  /* ===== 士官ダイアログポップアップ ===== */
+  #officer-popup{
+    position:fixed;left:14px;bottom:168px;z-index:28;
+    width:min(380px, 92vw);max-width:92vw;
+    background:var(--glass-strong);
+    backdrop-filter:blur(14px);
+    border:1px solid var(--teal);
+    border-radius:14px;padding:10px 13px;
+    box-shadow:0 12px 34px rgba(0,0,0,0.65);
+    display:flex;gap:10px;align-items:flex-start;
+    opacity:0;transform:translateY(10px);pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  #officer-popup.show{opacity:1;transform:translateY(0);pointer-events:auto}
+  .avatar{
+    width:38px;height:38px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:15px;color:#061024;
+    background:var(--teal);
+    box-shadow:0 0 12px rgba(45,212,191,0.45);
+  }
+  .op-meta{font-size:11px;color:var(--accent2);font-weight:700}
+  .op-text{font-size:13px;line-height:1.45;margin-top:2px;color:#fff;word-break:break-word}
+
+  /* ===== 成功祝福バナー ===== */
+  #celebration-banner{
+    position:fixed;top:24%;left:50%;transform:translate(-50%,-50%) scale(0.8);
+    z-index:38;pointer-events:none;opacity:0;
+    background:linear-gradient(90deg, rgba(16,185,129,0.2), rgba(71,229,161,0.92), rgba(16,185,129,0.2));
+    border-top:2px solid #a7f3d0;border-bottom:2px solid #a7f3d0;
+    padding:14px 36px;text-align:center;max-width:92vw;
+    box-shadow:0 0 40px rgba(71,229,161,0.6);
+  }
+  #celebration-banner.play{animation:celebratePop 2.2s ease forwards}
+  #celebration-banner h2{margin:0;font-size:24px;color:#031b11;letter-spacing:.08em}
+  #celebration-banner p{margin:3px 0 0;font-size:13px;color:#042f1e;font-weight:700}
+  @keyframes celebratePop{
+    0%{opacity:0;transform:translate(-50%,-50%) scale(0.75)}
+    15%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}
+    25%{transform:translate(-50%,-50%) scale(1)}
+    80%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+    100%{opacity:0;transform:translate(-50%,-60%) scale(0.95)}
+  }
+
+  /* ===== 航海計画パネル (#plan-panel) & モーダル共通 ===== */
+  #plan-panel,#result-modal,#briefing-modal{
+    position:fixed;inset:0;z-index:45;
+    background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
+    display:none;align-items:center;justify-content:center;padding:12px;
+  }
+  #plan-panel.open,#result-modal.open,#briefing-modal.open{display:flex}
+  .modal-box{
+    width:min(92vw, 560px);max-width:100vw;
+    max-height:88vh;max-height:88dvh;overflow-y:auto;
+    background:var(--glass-strong);
+    border:1px solid var(--line-bright);
+    border-radius:16px;padding:18px;
+    box-shadow:0 20px 60px rgba(0,0,0,0.8);
+  }
+  .plan-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px}
+  .plan-route-name{font-size:17px;font-weight:800;color:#fff}
+  .plan-fixes{font-size:12px;color:var(--teal);margin:4px 0 10px;padding:6px 10px;background:rgba(45,212,191,0.08);border:1px solid rgba(45,212,191,0.28);border-radius:8px;word-break:break-word}
+  .plan-variants{display:grid;grid-template-columns:repeat(3, 1fr);gap:8px;margin-bottom:12px}
+  .pv-card{
+    background:rgba(13,22,46,0.85);border:2px solid var(--line);border-radius:10px;
+    padding:9px;cursor:pointer;text-align:left;transition:all .15s;
+  }
+  .pv-card:hover:not(.invalid){border-color:var(--line-bright)}
+  .pv-card.selected{border-color:var(--accent);background:rgba(22,42,86,0.95);box-shadow:0 0 16px rgba(88,180,255,0.28)}
+  .pv-card.invalid{opacity:.48;cursor:not-allowed}
+  .pv-title{font-size:13px;font-weight:800;color:#fff;margin-bottom:3px}
+  .pv-meta{font-size:11px;color:var(--muted);line-height:1.4;font-variant-numeric:tabular-nums}
+  #departure-checklist{
+    background:rgba(6,11,24,0.8);border:1px solid var(--line);border-radius:10px;
+    padding:10px;margin-bottom:12px;cursor:pointer;
+  }
+  .chk-item{display:flex;align-items:flex-start;gap:8px;padding:5px 0;border-bottom:1px dotted rgba(92,138,225,0.2);font-size:12px;line-height:1.4}
+  .chk-item:last-child{border-bottom:none}
+  .chk-mark{width:18px;font-weight:900;color:var(--muted);flex-shrink:0;text-align:center}
+  .chk-item.done .chk-mark{color:var(--good)}
+  .chk-item.done .chk-text{color:#e2e8f0}
+  .plan-note{font-size:11px;color:var(--muted);margin-bottom:12px}
+
+  /* ===== スタート画面 ===== */
+  #start-screen{
+    position:fixed;inset:0;z-index:50;
+    background:radial-gradient(circle at 50% 28%, rgba(36,72,150,0.42), rgba(4,7,17,0.97) 72%);
+    backdrop-filter:blur(10px);
+    display:flex;align-items:flex-start;justify-content:center;padding:20px 14px;overflow-y:auto;
+  }
+  #start-screen.hidden{display:none}
+  .start-card-wrap{width:min(920px,100%);text-align:center;margin:auto 0}
+  .logo-badge{
+    display:inline-block;padding:4px 14px;border-radius:999px;
+    border:1px solid rgba(88,180,255,0.5);background:rgba(88,180,255,0.12);
+    color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.12em;margin-bottom:10px;
+  }
+  .start-title{
+    font-size:clamp(26px,5vw,48px);font-weight:900;margin:0;letter-spacing:.06em;
+    background:linear-gradient(135deg,#ffffff 20%,#8ec5ff 60%,#47e5a1 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+  }
+  .start-pitch{color:var(--muted);font-size:14px;margin:10px auto 22px;max-width:640px;line-height:1.6}
+  .scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:22px;text-align:left}
+  .sc-card{
+    background:rgba(13,22,46,0.82);border:2px solid var(--line);border-radius:14px;padding:15px;cursor:pointer;transition:all .18s ease;
+  }
+  .sc-card:hover{border-color:rgba(88,180,255,0.65)}
+  .sc-card.selected{border-color:var(--accent);background:rgba(22,42,86,0.92);box-shadow:0 0 24px rgba(88,180,255,0.32)}
+  .sc-badge-top{display:inline-block;font-size:10px;font-weight:800;padding:2px 8px;border-radius:999px;margin-bottom:6px;background:rgba(45,212,191,0.18);color:var(--teal);border:1px solid rgba(45,212,191,0.45)}
+  .sc-badge-top.exp{background:rgba(255,179,92,0.14);color:var(--accent2);border-color:rgba(255,179,92,0.4)}
+  .sc-diff{font-size:11px;font-weight:700;color:var(--accent2);letter-spacing:.06em}
+  .sc-name{font-size:18px;font-weight:800;margin:4px 0 6px;color:#fff}
+  .sc-cmd{font-size:13px;color:#dbeafe;margin-bottom:8px;font-weight:600}
+  .sc-spec{font-size:12px;color:var(--muted);line-height:1.5}
+  #btn-sortie{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em}
+
+  .merit-box{background:rgba(6,11,24,0.8);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;text-align:left}
+  .merit-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font-size:13px}
+  .merit-row b{font-size:18px;color:var(--accent2);font-variant-numeric:tabular-nums}
+  .modal-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+  /* ===== モバイル対応 (720px / 480px) ===== */
+  @media (max-width:720px){
+    button{min-height:44px}
+    .warp-bar button,.cam-row button{min-height:36px}
+    .ps-actions button,.tut-actions button{min-height:44px}
+    #order-bar{grid-template-columns:repeat(5, 1fr);gap:4px}
+    #order-bar button{min-height:54px;font-size:11px;padding:4px 2px}
+    .scenario-grid{grid-template-columns:1fr}
+    .plan-variants{grid-template-columns:1fr}
+    #drawer{
+      left:0;right:0;bottom:0;top:auto;
+      width:100%;max-width:100vw;
+      max-height:70vh;max-height:70dvh;
+      border-radius:16px 16px 0 0;
+      transform:translateY(calc(100% + 20px));
+    }
+    #drawer.open{transform:translateY(0)}
+    #officer-popup{left:4vw;right:4vw;width:auto;bottom:238px}
+    .mb-title{font-size:14px}
+    .mb-obj{font-size:11px}
+    #next-action{font-size:13px;padding:6px 10px}
+  }
+  @media (max-width:480px){
+    #top-hud{padding:calc(6px + env(safe-area-inset-top)) 6px 0;gap:4px}
+    #mission-banner{padding:6px 10px;flex-wrap:wrap}
+    .metric-chip{padding:3px 6px}
+    .metric-val{font-size:13px}
+    .metric-label{font-size:9px}
+    .dv-chip{min-width:105px}
+    #control-dock{padding:6px 8px calc(6px + env(safe-area-inset-bottom));gap:5px}
+    #order-bar button{font-size:10px;min-height:52px}
+    .dock-actions > button{padding:5px 7px;font-size:11px}
+    #officer-popup{bottom:288px}
+  }
+  /* ===== 低い画面（横向きスマホ等）: 上部スタックを圧縮しドックと重ねない ===== */
+  @media (max-height: 500px){
+    #top-hud{gap:4px;padding:calc(4px + env(safe-area-inset-top)) 8px 0}
+    #mission-banner{padding:4px 10px}
+    .mb-obj{display:none}
+    .mb-title{font-size:13px;margin:1px 0}
+    .mb-eyebrow{font-size:10px}
+    #mission-timer{font-size:12px;padding:3px 7px}
+    #next-action{font-size:12px;padding:4px 8px}
+    #plan-status{font-size:11px;padding:4px 8px}
+    #tutorial-steps{padding:6px 10px;font-size:11px}
+    .tut-body{font-size:11px}
+    .tut-actions{margin-top:4px}
+    #officer-popup{bottom:158px;padding:8px 11px}
+    .op-text{font-size:12px}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <!-- 3Dキャンバス -->
+  <div id="view3d"></div>
+
+  <!-- 画面上ターゲットマーカー -->
+  <div id="target-marker">
+    <div class="tm-box">
+      <div class="tm-arrow" id="tm-arrow"></div>
+      <div class="tm-reticle" id="tm-reticle"></div>
+      <div class="tm-label" id="tm-label">目標</div>
+    </div>
+  </div>
+
+  <!-- 上部HUDスタック -->
+  <div id="top-hud">
+    <header id="mission-banner">
+      <div class="mb-left">
+        <div class="mb-eyebrow">
+          <span class="mb-badge" id="mb-num">MISSION 1 / 3</span>
+          <span class="mb-sys" id="mb-sys">📍 ソル系</span>
+        </div>
+        <div class="mb-title" id="mb-title">補給艦とランデブーせよ</div>
+        <div class="mb-obj" id="mb-obj">訓練任務：補給艦「あけぼの」に接近し、進入コースを経て接舷・補給を受けよ。</div>
+      </div>
+      <div class="mb-right">
+        <div id="mission-timer">残り 420s</div>
+        <div class="top-actions">
+          <button id="btn-mute" class="icon-btn" title="効果音オン/オフ">🔊 音ON</button>
+          <button id="btn-drawer-toggle" class="icon-btn">☰ 指揮</button>
+        </div>
+      </div>
+    </header>
+
+    <div id="next-action"></div>
+    <div id="plan-status"></div>
+    <div id="tutorial-steps"></div>
+  </div>
+
+  <!-- 士官ダイアログポップアップ -->
+  <div id="officer-popup" role="status">
+    <div class="avatar" id="op-avatar">榊</div>
+    <div>
+      <div class="op-meta" id="op-name">榊原 凛（少佐・教導士官）</div>
+      <div class="op-text" id="op-text">準備完了です、艦長。</div>
+    </div>
+  </div>
+
+  <!-- 成功祝福バナー -->
+  <div id="celebration-banner">
+    <h2>DOCKING COMPLETE</h2>
+    <p id="cel-sub">接舷成功！任務を達成しました</p>
+  </div>
+
+  <!-- 下部固定ドック (#control-dock) -->
+  <section id="control-dock">
+    <div class="dock-inner">
+      <!-- 1. 命令バー (#order-bar) -->
+      <div id="order-bar">
+        <button id="btn-order-approach">接近<span class="ord-cost" id="cost-approach">Δv -</span></button>
+        <button id="btn-order-brake">減速<span class="ord-cost" id="cost-brake">Δv -</span></button>
+        <button id="btn-order-match">速度同調<span class="ord-cost" id="cost-match">Δv -</span></button>
+        <button id="btn-order-join">進入合流<span class="ord-cost" id="cost-join">Δv -</span></button>
+        <button id="btn-order-hold">静止保持<span class="ord-cost" id="hold-state">OFF</span></button>
+      </div>
+
+      <!-- 2. 計器 & 必須ボタン行 -->
+      <div class="dock-mid">
+        <div class="hud-metrics">
+          <div class="metric-chip">
+            <span class="metric-label">距離</span>
+            <span class="metric-val" id="hud-dist">-</span>
+          </div>
+          <div class="metric-chip safe" id="vel-gauge">
+            <span class="metric-label">相対速度 <span class="vel-tag" id="vel-tag">安全圏</span></span>
+            <span class="metric-val" id="hud-rel">-</span>
+          </div>
+          <div class="dv-chip">
+            <div class="dv-row"><span>Δv</span><b id="hud-dv">-</b></div>
+            <div class="bar"><i id="dv-bar" style="width:100%"></i></div>
+          </div>
+        </div>
+
+        <div class="dock-actions">
+          <div class="warp-bar">
+            <button data-warp="0">⏸</button>
+            <button data-warp="1" class="active">1x</button>
+            <button data-warp="3">3x</button>
+            <button data-warp="8">8x</button>
+            <span style="color:var(--muted);margin:0 3px">T+<b id="clock">0</b>s</span>
+          </div>
+          <button id="btn-plan" class="teal">🗺 航海計画</button>
+          <button id="btn-assist" class="amber">🎯 支援(<span id="assist-left">3</span>)</button>
+          <button id="btn-resupply" disabled>⛽ 補給</button>
+        </div>
+      </div>
+
+      <!-- 3. ステータス & 視点 -->
+      <div class="dock-foot">
+        <div id="status-msg">輸送艦「さくら」艦橋システム稼働中</div>
+        <div class="cam-row">
+          <button id="btn-cam-free" class="active">自由視点</button>
+          <button id="btn-cam-follow">自艦追従</button>
+          <button id="btn-cam-reset">視点戻す</button>
+        </div>
+      </div>
+
+      <!-- 緊急手動操縦パッド (既定非表示・緊急時のみ) -->
+      <div id="manual-pad-wrap">
+        <div class="thrust-pad" aria-label="緊急手動推力">
+          <span></span><button data-thrust="fwd">▲ 前</button><span></span><button data-thrust="up">⬆ 上</button>
+          <button data-thrust="left">◀ 左</button><button data-thrust="back">▼ 後</button><button data-thrust="right">▶ 右</button><button data-thrust="down">⬇ 下</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- サイドドロワー (デフォルト閉) -->
+  <aside id="drawer">
+    <div class="drawer-head">
+      <strong>艦隊指揮ドロワー</strong>
+      <div style="display:flex;gap:6px">
+        <button id="btn-reset" style="padding:4px 9px;font-size:11px">最初から</button>
+        <button id="btn-drawer-close" style="padding:4px 9px;font-size:11px">✕</button>
+      </div>
+    </div>
+    <div class="drawer-tabs">
+      <button class="active" data-tab="galaxy">🌌 銀河</button>
+      <button data-tab="prod">🏭 生産・政治</button>
+      <button data-tab="officers">👥 部下</button>
+      <button data-tab="log">📜 航海日誌</button>
+    </div>
+    <div class="drawer-body">
+      <div class="tab-pane active" id="tab-galaxy">
+        <div class="kv"><span>ワープ燃料</span><b id="res-warp">-</b><span>恒星距離</span><b id="star-dist">-</b></div>
+        <p style="font-size:12px;color:var(--muted);margin:6px 0 10px">ワープ条件：恒星からの3D距離 <b>340以上</b>（外縁域）＋ワープ燃料が必要。</p>
+        <div id="galaxy"></div>
+      </div>
+
+      <div class="tab-pane" id="tab-prod">
+        <div class="kv">
+          <span>推進剤ストック</span><b id="res-prop">-</b>
+          <span>補給物資</span><b id="res-sup">-</b>
+          <span>資金（予算）</span><b id="res-cred">-</b>
+          <span>政治的支持</span><b id="res-pol">-</b>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);margin:10px 0">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">生産キュー</div>
+        <div id="prod-state" style="font-size:12px;color:var(--muted)">空き</div>
+        <div class="bar amber" style="margin:6px 0"><i id="prod-bar" style="width:0%"></i></div>
+        <button id="btn-build" style="width:100%;margin-top:4px">小型艦を建造（資金120／物資20）</button>
+      </div>
+
+      <div class="tab-pane" id="tab-officers">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">役割を割り当てると、将校が自律的に政治・補給イベントを起こします。</p>
+        <div id="officers"></div>
+      </div>
+
+      <div class="tab-pane" id="tab-log">
+        <div id="log"></div>
+      </div>
+    </div>
+    <div class="drawer-footer">
+      <span>艦長が自ら操舵を取る緊急時のみ</span>
+      <button id="btn-manual-toggle" style="padding:4px 8px;font-size:11px">緊急手動操縦: OFF</button>
+    </div>
+  </aside>
+</div>
+
+<!-- 航海計画パネル (#plan-panel) -->
+<div id="plan-panel">
+  <div class="modal-box">
+    <div class="plan-head">
+      <div>
+        <div style="font-size:11px;color:var(--accent);font-weight:700">航行AI イオ — 航海計画提案（提示：航法士官 三浦 葵）</div>
+        <div class="plan-route-name" id="plan-route-name">標準航路 ソル内周回路 R1</div>
+      </div>
+      <button id="btn-plan-close" style="padding:4px 10px;font-size:12px">✕</button>
+    </div>
+    <div class="plan-fixes" id="plan-fixes">出発点 → 会合点 → 進入開始点 → 接舷点</div>
+    <div id="plan-ship" style="font-size:11px;color:var(--muted);margin:2px 0 8px">自艦：輸送艦「さくら」 質量 420t ／ 推力 2,940kN（加速 約7.0）／ 最大貨物 120t — 積荷が多い航程では加速が鈍ります</div>
+    <div class="plan-variants" id="plan-variants"></div>
+    <div id="departure-checklist" title="タップで早送り"></div>
+    <div class="plan-note">※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AIイオとクルーが計画に沿って運航し、艦長は承認・監視・例外判断を行います。</div>
+    <div class="modal-actions">
+      <button id="btn-depart" class="primary" disabled>出航用意よし — 出航</button>
+    </div>
+  </div>
+</div>
+
+<!-- 処女航海 出航式モーダル -->
+<div id="briefing-modal">
+  <div class="modal-box" style="text-align:left">
+    <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">MISSION 0 — 処女航海 出航式</div>
+    <h2 style="margin:4px 0 8px;font-size:20px">輸送艦「さくら」着任式</h2>
+    <p id="briefing-body" style="font-size:13px;line-height:1.6;color:#dbeafe;margin:0 0 12px"></p>
+    <div id="briefing-officers" style="background:rgba(6,11,24,0.75);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;line-height:1.55;margin-bottom:14px"></div>
+    <div class="modal-actions">
+      <button id="btn-briefing-start" class="primary">出航式を終えて艦橋へ</button>
+      <button id="btn-skip-prologue">処女航海をスキップ</button>
+    </div>
+  </div>
+</div>
+
+<!-- スタート画面 (id="start-screen") -->
+<div id="start-screen">
+  <div class="start-card-wrap">
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.3</div>
+    <h1 class="start-title">宇宙艦隊シミュレーター</h1>
+    <p class="start-pitch">艦長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
+    <div class="scenario-grid" id="scenario-cards">
+      <div class="sc-card selected" data-scenario="captain">
+        <span class="sc-badge-top">チュートリアル／最初はこれ</span>
+        <div class="sc-diff">難易度：★★★ 標準</div>
+        <div class="sc-name">新任艦長</div>
+        <div class="sc-cmd">指揮：輸送艦「さくら」（単艦）</div>
+        <div class="sc-spec">Δv 55 / ワープ燃料 3 / 資金 200<br>処女航海（Mission 0）と補給訓練で運航の基本を習得。<br><b>推奨・キャリアの起点</b>：まず後方の輸送・補給任務から。戦闘艦の艦長はその先。</div>
+      </div>
+      <div class="sc-card" data-scenario="squadron">
+        <span class="sc-badge-top exp">経験者向け（この階位から開始）</span>
+        <div class="sc-diff">難易度：★★☆ 戦術</div>
+        <div class="sc-name">戦隊司令</div>
+        <div class="sc-cmd">指揮：自艦＋僚艦2隻</div>
+        <div class="sc-spec">Δv 70 / ワープ燃料 4 / 資金 350<br>護衛戦隊を率いて余裕ある作戦行動が可能。</div>
+      </div>
+      <div class="sc-card" data-scenario="fleet">
+        <span class="sc-badge-top exp">経験者向け（この階位から開始）</span>
+        <div class="sc-diff">難易度：★☆☆ 余裕</div>
+        <div class="sc-name">艦隊司令</div>
+        <div class="sc-cmd">指揮：自艦＋僚艦4隻＋豊富資源</div>
+        <div class="sc-spec">Δv 85 / ワープ燃料 6 / 資金 600<br>大規模艦隊と潤沢な補給で全ミッション制覇へ。</div>
+      </div>
+    </div>
+    <p class="start-pitch" style="font-size:12px">キャリアの入口は2つ — 輸送・補給トラック（本作で体験）と、哨戒艇で航路を守る哨戒トラック（後日追加）。昇進後の転属・分岐や、有力者からの「誘い」も予定されています。</p>
+    <button id="btn-sortie" class="primary">🚀 出航する</button>
+  </div>
+</div>
+
+<!-- 結果モーダル (成功 / 失敗 / エンディング) -->
+<div id="result-modal">
+  <div class="modal-box" style="text-align:center">
+    <h2 id="rm-title">任務成功</h2>
+    <p id="rm-desc">補給艦との接舷に成功しました。</p>
+    <div class="merit-box">
+      <div class="merit-row">
+        <span>通算功績ポイント</span>
+        <b id="rm-merit">0 pt</b>
+      </div>
+      <div class="merit-row" style="margin-bottom:6px;font-size:12px">
+        <span>階級：<strong id="rm-rank" style="color:var(--accent)">少尉</strong></span>
+        <span id="rm-next-rank" style="color:var(--muted)">次の昇進まで 100 pt</span>
+      </div>
+      <div class="bar amber"><i id="rm-promo-bar" style="width:0%"></i></div>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-rm-next" class="primary">次のミッションへ ➔</button>
+      <button id="btn-rm-retry" class="amber">↻ 再挑戦</button>
+      <button id="btn-rm-title">タイトルへ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Three.js: 同梱ファイル(three.min.js)を優先し、無い場合のみCDNから読み込む -->
+<script src="three.min.js"></script>
+<script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');}</script>
+<script>
+"use strict";
+/* ===== 宇宙シミュレーター 試作 v0.3 フル3D版 ===== */
+
+// ---------- 既存データ定義 (v0.1互換維持) ----------
+const SYSTEMS = [
+  { id:'sol', name:'ソル系', starColor:0xffd166, starGM:20000, warpCost:0,
+    planets:[
+      {r:95, color:0x7fd4ff, gm:120, name:'水星型惑星', inc:7,  node:20},
+      {r:150,color:0x8fe3a0, gm:260, name:'居住惑星',   inc:2,  node:80},
+      {r:215,color:0xff9d6b, gm:180, name:'火星型惑星', inc:11, node:150},
+      {r:300,color:0xd9b3ff, gm:420, name:'ガス惑星',   inc:5,  node:260} ] },
+  { id:'centauri', name:'ケンタウリ系', starColor:0xffb35c, starGM:17000, warpCost:1,
+    planets:[
+      {r:120,color:0x8fe3a0, gm:240, name:'居住惑星', inc:4,  node:10},
+      {r:200,color:0xc2c9e8, gm:150, name:'氷惑星',   inc:16, node:120},
+      {r:285,color:0xff9d6b, gm:200, name:'資源惑星', inc:9,  node:300} ] },
+  { id:'sirius', name:'シリウス系', starColor:0xcfe4ff, starGM:26000, warpCost:2,
+    planets:[
+      {r:110,color:0xff9d6b, gm:180, name:'高温惑星', inc:13, node:60},
+      {r:175,color:0x7fd4ff, gm:220, name:'海洋惑星', inc:6,  node:190},
+      {r:240,color:0x8fe3a0, gm:260, name:'居住惑星', inc:3,  node:330},
+      {r:320,color:0xd9b3ff, gm:380, name:'ガス惑星', inc:10, node:240} ] },
+  { id:'trappist', name:'トラピスト系', starColor:0xff8fa3, starGM:14000, warpCost:1,
+    planets:[
+      {r:90, color:0x8fe3a0, gm:160, name:'居住惑星A', inc:1,  node:40},
+      {r:135,color:0x8fe3a0, gm:160, name:'居住惑星B', inc:8,  node:160},
+      {r:185,color:0x7fd4ff, gm:140, name:'海洋惑星',  inc:14, node:210},
+      {r:250,color:0xc2c9e8, gm:120, name:'氷惑星',    inc:20, node:290} ] },
+];
+const SCENARIOS = {
+  captain:  { label:'新任艦長', maxDv:55, wings:0, prop:60,  sup:40,  cred:200, pol:50, warp:3 },
+  squadron: { label:'戦隊司令', maxDv:70, wings:2, prop:90,  sup:70,  cred:350, pol:60, warp:4 },
+  fleet:    { label:'艦隊司令', maxDv:85, wings:4, prop:140, sup:110, cred:600, pol:70, warp:6 },
+};
+const OFFICER_DEFS = [
+  { name:'佐藤 澪', tactics:82, logistics:45, politics:60, loyalty:78, ambition:55 },
+  { name:'高橋 蓮', tactics:64, logistics:88, politics:40, loyalty:85, ambition:35 },
+  { name:'イリナ・コワルスカ', tactics:58, logistics:52, politics:91, loyalty:62, ambition:80 },
+  { name:'陳 大樹', tactics:71, logistics:66, politics:74, loyalty:48, ambition:92 },
+];
+const ROLES = ['待機','艦隊戦術担当','補給管理担当','政治工作担当','造船監督担当'];
+
+// ---------- 登場人物・自艦定義 ----------
+const GUIDE = { name:'榊原 凛', rank:'少佐', title:'教導士官', initial:'榊', color:'#2dd4bf', tactics:90, logistics:70, politics:60, loyalty:90, ambition:30, role:'教導' };
+const HELM  = { name:'三浦 葵', rank:'少尉', title:'航法士官', initial:'三', color:'#f59e0b', tactics:70, logistics:60, politics:30, loyalty:80, ambition:40, role:'航法' };
+const CONTROL = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#94a3b8', tactics:50, logistics:50, politics:50, loyalty:50, ambition:0, role:'管制' };
+const SHIP_NAME = '輸送艦 さくら';
+const SHIP_CALLSIGN = 'サクラ';
+
+// ---------- ミッション & 昇進定義 ----------
+const MISSIONS = [
+  { id:1, title:'補給訓練：補給艦「あけぼの」と接舷せよ',
+    obj:'訓練任務：物資を受け取るため、航海計画を承認して補給艦「あけぼの」へ進入コースから接舷せよ。',
+    startSys:'sol', reqSys:null, timeLimit:0, merit:120,
+    startQuote:'艦長、最初の実務訓練です。心もとない物資を補給するため、軌道上で待つ補給艦「あけぼの」と合流して荷物を受け取りましょう。' },
+  { id:2, title:'外縁へ出てワープし、ケンタウリ系の目標艦と合流せよ',
+    obj:'恒星距離340以上の外縁域へ進み、「指揮＞銀河」からケンタウリ系へワープ後、目標艦と接舷せよ。',
+    startSys:'sol', reqSys:'centauri', timeLimit:0, merit:200,
+    startQuote:'ソル系外縁（距離340以上）からケンタウリ系へワープします。ワープ後、現地の目標艦へ航海計画を立てて接舷してください！' },
+  { id:3, title:'制限時間内に補給を届けよ',
+    obj:'420秒以内にシリウス系の目標艦と接舷し、前線への補給を完了せよ。',
+    startSys:'sirius', reqSys:'sirius', timeLimit:420, merit:280,
+    startQuote:'時間との戦いです！420秒以内に目標艦へ到達してください。時間倍率(3x/8x)と航海計画を活用しましょう！' }
+];
+const RANKS = [
+  { name:'少尉', min:0 },
+  { name:'中尉', min:120 },
+  { name:'大尉', min:300 },
+  { name:'少佐', min:500 },
+  { name:'艦隊提督', min:600 }
+];
+
+// ---------- WebAudio 効果音 ----------
+let audioCtx = null, isMuted = false;
+function ensureAudio(){
+  if(!audioCtx && (window.AudioContext || window.webkitAudioContext)){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playSfx(type){
+  if(isMuted) return;
+  try{
+    ensureAudio();
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const tone = (freq, dur, wave='sine', delay=0, vol=0.12, endFreq=null)=>{
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = wave;
+      osc.frequency.setValueAtTime(freq, now + delay);
+      if(endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, now + delay + dur);
+      gain.gain.setValueAtTime(0.001, now + delay);
+      gain.gain.linearRampToValueAtTime(vol, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now + delay); osc.stop(now + delay + dur + 0.02);
+    };
+    if(type==='click') tone(680, 0.07, 'triangle', 0, 0.08, 860);
+    else if(type==='assist') { tone(320, 0.18, 'sawtooth', 0, 0.08, 520); tone(480, 0.2, 'sine', 0.06, 0.09, 640); }
+    else if(type==='warp') { tone(180, 0.45, 'sine', 0, 0.14, 720); tone(270, 0.45, 'triangle', 0.05, 0.1, 960); }
+    else if(type==='success') { tone(523.25, 0.18, 'triangle', 0, 0.14); tone(659.25, 0.18, 'triangle', 0.12, 0.14); tone(783.99, 0.25, 'triangle', 0.24, 0.15); tone(1046.5, 0.42, 'sine', 0.36, 0.16); }
+    else if(type==='fail') { tone(300, 0.22, 'sawtooth', 0, 0.12, 220); tone(210, 0.38, 'sawtooth', 0.18, 0.13, 110); }
+  }catch(_){}
+}
+
+// ---------- 3Dベクトル小道具 (物理コア) ----------
+function orbitState(gm, r, phase, incDeg, nodeDeg){
+  const v = Math.sqrt(gm / r);
+  let px = Math.cos(phase)*r, py = 0, pz = Math.sin(phase)*r;
+  let vx = -Math.sin(phase)*v, vy = 0, vz = Math.cos(phase)*v;
+  const inc = incDeg*Math.PI/180, node = nodeDeg*Math.PI/180;
+  function rot(x,y,z){
+    let y1 = y*Math.cos(inc) - z*Math.sin(inc);
+    let z1 = y*Math.sin(inc) + z*Math.cos(inc);
+    let x2 = x*Math.cos(node) + z1*Math.sin(node);
+    let z2 = -x*Math.sin(node) + z1*Math.cos(node);
+    return [x2, y1, z2];
+  }
+  const P = rot(px,py,pz), V = rot(vx,vy,vz);
+  return { x:P[0], y:P[1], z:P[2], vx:V[0], vy:V[1], vz:V[2] };
+}
+function makeBody(state, color, radius, name, gm){
+  return Object.assign({}, state, { color, radius, name, gm:gm||0, trail:[] });
+}
+
+/* ==== ORDER LOGIC (pure) ==== */
+function relInfo(a, b){
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const dist = Math.hypot(dx, dy, dz);
+  const rvx = a.vx - b.vx, rvy = a.vy - b.vy, rvz = a.vz - b.vz;
+  const rel = Math.hypot(rvx, rvy, rvz);
+  const closing = dist > 1e-9 ? (rvx * dx + rvy * dy + rvz * dz) / dist : 0;
+  return { dx, dy, dz, dist, rvx, rvy, rvz, rel, closing };
+}
+function safeClosing(dist){
+  return Math.max(0.7, Math.min(1.4, dist * 0.07));
+}
+function approachClosing(dist){
+  return Math.max(1.2, Math.min(3.2, dist * 0.055));
+}
+function rk4StepState(st, h, accFn){
+  const a1 = accFn(st.x, st.y, st.z);
+  const a2 = accFn(st.x + st.vx*h/2, st.y + st.vy*h/2, st.z + st.vz*h/2);
+  const a3 = accFn(st.x + (st.vx + a1[0]*h/2)*h/2, st.y + (st.vy + a1[1]*h/2)*h/2, st.z + (st.vz + a1[2]*h/2)*h/2);
+  const a4 = accFn(st.x + (st.vx + a2[0]*h/2)*h, st.y + (st.vy + a2[1]*h/2)*h, st.z + (st.vz + a2[2]*h/2)*h);
+  st.x  += (st.vx + 2*(st.vx + a1[0]*h/2) + 2*(st.vx + a2[0]*h/2) + (st.vx + a3[0]*h)) / 6 * h;
+  st.y  += (st.vy + 2*(st.vy + a1[1]*h/2) + 2*(st.vy + a2[1]*h/2) + (st.vy + a3[1]*h)) / 6 * h;
+  st.z  += (st.vz + 2*(st.vz + a1[2]*h/2) + 2*(st.vz + a2[2]*h/2) + (st.vz + a3[2]*h)) / 6 * h;
+  st.vx += (a1[0] + 2*a2[0] + 2*a3[0] + a4[0]) / 6 * h;
+  st.vy += (a1[1] + 2*a2[1] + 2*a3[1] + a4[1]) / 6 * h;
+  st.vz += (a1[2] + 2*a2[2] + 2*a3[2] + a4[2]) / 6 * h;
+}
+function starAccFn(starGM){
+  return (px, py, pz) => { const r2 = px*px + py*py + pz*pz, r = Math.sqrt(r2) || 0.001, a = -starGM / (r2 * r); return [a*px, a*py, a*pz]; };
+}
+function fullAccFn(starGM, pls){
+  const sAcc = starAccFn(starGM);
+  return (px, py, pz) => {
+    const a = sAcc(px, py, pz);
+    if(pls) for(const p of pls){
+      const dx = p.x - px, dy = p.y - py, dz = p.z - pz;
+      const d2 = dx*dx + dy*dy + dz*dz, d = Math.sqrt(d2) || 0.001, pa = p.gm / (d2 * d);
+      a[0] += pa * dx; a[1] += pa * dy; a[2] += pa * dz;
+    }
+    return a;
+  };
+}
+function dynStep(px, py, pz, starGM, pls, cap){
+  let ts = Math.sqrt(Math.pow(Math.hypot(px, py, pz) || 1, 3) / starGM);
+  if(pls) for(const p of pls){
+    const d = Math.hypot(px - p.x, py - p.y, pz - p.z);
+    const t2 = Math.sqrt(Math.pow(Math.max(d, 3), 3) / Math.max(p.gm, 1));
+    if(t2 < ts) ts = t2;
+  }
+  return Math.min(cap || 0.75, Math.max(0.06, ts * 0.1));
+}
+function propRK4(b, starGM, t, pl){
+  const st = { x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz };
+  if(t <= 0) return st;
+  const pls = pl ? pl.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm })).filter(p => Math.hypot(p.x - b.x, p.y - b.y, p.z - b.z) > 1) : null;
+  const sAcc = starAccFn(starGM);
+  const acc = fullAccFn(starGM, pls);
+  let done = 0, guard = 0;
+  while(done < t && guard++ < 8000){
+    const h = Math.min(dynStep(st.x, st.y, st.z, starGM, pls), t - done);
+    rk4StepState(st, h, acc);
+    if(pls) for(const p of pls) rk4StepState(p, h, sAcc);
+    done += h;
+  }
+  return st;
+}
+function predictTargetPos(b, starGM, t, pl){
+  return propRK4(b, starGM, t, pl);
+}
+function computeApproach(ship, target, starGM, closingScale = 1, pl, horizon){
+  // Phasing-nudge guidance: in this system the planets keep reshaping every
+  // trajectory, so the AI does not commit to one big burn. It predicts the
+  // natural closest approach with the full planet-aware model; if the ship
+  // is already arriving, it coasts. Otherwise it tests small candidate
+  // nudges (along-track / radial / normal) and applies the single nudge
+  // that most improves the predicted pass. Re-planned every few seconds.
+  const HZ = horizon || 240;
+  const scale = closingScale || 1;
+  const pc0 = predictClosest(ship, target, starGM, HZ, pl);
+  if(pc0.minDist <= 30) return { dvx: 0, dvy: 0, dvz: 0, cost: 0 };
+  const magScale = (pc0.minDist > 150 ? 2 : 1) * scale;
+  const magT = 0.8 * magScale, magR = 0.5 * magScale;
+  const vmag = Math.hypot(ship.vx, ship.vy, ship.vz) || 1;
+  const vh = [ship.vx / vmag, ship.vy / vmag, ship.vz / vmag];
+  const rmag = Math.hypot(ship.x, ship.y, ship.z) || 1;
+  const rh = [ship.x / rmag, ship.y / rmag, ship.z / rmag];
+  const nh = [rh[1] * vh[2] - rh[2] * vh[1], rh[2] * vh[0] - rh[0] * vh[2], rh[0] * vh[1] - rh[1] * vh[0]];
+  const score0 = pc0.minDist + pc0.relAtMin * 2;
+  let best = null;
+  for(const sgn of [1, -1]){
+    const cands = [
+      [vh[0] * magT * sgn, vh[1] * magT * sgn, vh[2] * magT * sgn],
+      [rh[0] * magR * sgn, rh[1] * magR * sgn, rh[2] * magR * sgn],
+      [nh[0] * magR * sgn, nh[1] * magR * sgn, nh[2] * magR * sgn]
+    ];
+    for(const c of cands){
+      const s2 = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx + c[0], vy: ship.vy + c[1], vz: ship.vz + c[2] };
+      const pc = predictClosest(s2, target, starGM, HZ, pl);
+      const score = pc.minDist + pc.relAtMin * 2;
+      if(!best || score < best.score) best = { dv: c, score };
+    }
+  }
+  if(best && (best.score < score0 - 6 || (pc0.minDist > 150 && best.score < score0))){
+    return { dvx: best.dv[0], dvy: best.dv[1], dvz: best.dv[2], cost: Math.hypot(best.dv[0], best.dv[1], best.dv[2]) };
+  }
+  return { dvx: 0, dvy: 0, dvz: 0, cost: 0 };
+}
+function computeBrake(ship, target){
+  const info = relInfo(ship, target);
+  const limit = Math.max(0.6, Math.min(1.3, info.dist * 0.07));
+  if(info.rel <= limit) return { dvx: 0, dvy: 0, dvz: 0, cost: 0 };
+  const scale = (info.rel - limit) / info.rel;
+  const dvx = -info.rvx * scale, dvy = -info.rvy * scale, dvz = -info.rvz * scale;
+  return { dvx, dvy, dvz, cost: info.rel - limit };
+}
+function computeMatch(ship, target){
+  const info = relInfo(ship, target);
+  return { dvx: -info.rvx, dvy: -info.rvy, dvz: -info.rvz, cost: info.rel };
+}
+function computeHold(ship, target){
+  const info = relInfo(ship, target);
+  if(info.rel <= 0.2) return null;
+  const scale = (info.rel - 0.2) / info.rel;
+  const dvx = -info.rvx * scale, dvy = -info.rvy * scale, dvz = -info.rvz * scale;
+  return { dvx, dvy, dvz, cost: info.rel - 0.2 };
+}
+function approachFix(target){
+  const v = Math.hypot(target.vx, target.vy, target.vz);
+  let ux, uy, uz;
+  if(v > 1e-4){
+    ux = -target.vx / v; uy = -target.vy / v; uz = -target.vz / v;
+  } else {
+    const r = Math.hypot(target.x, target.y, target.z) || 1;
+    ux = target.x / r; uy = target.y / r; uz = target.z / r;
+  }
+  return { x: target.x + ux * 48, y: target.y + uy * 48, z: target.z + uz * 48 };
+}
+function computeJoinApproach(ship, target, starGM, pl){
+  // Local maneuver (tens of units): direct velocity guidance toward the
+  // approach fix, which moves rigidly with the target. Short-range pursuit
+  // is accurate here; long-horizon prediction is not (the fix is glued to
+  // the target, not a ballistic body).
+  const fix = approachFix(target);
+  // The fix is glued behind the target, so it has its own velocity: the
+  // target's velocity plus the rotation of the behind-axis. Feed that
+  // forward, otherwise the ship settles into a standoff limit cycle.
+  const vm = Math.hypot(target.vx, target.vy, target.vz) || 1;
+  const ux = target.vx / vm, uy = target.vy / vm, uz = target.vz / vm;
+  const rm = Math.hypot(target.x, target.y, target.z) || 1;
+  const ga = -starGM / (rm * rm);
+  const ax = ga * (target.x / rm), ay = ga * (target.y / rm), az = ga * (target.z / rm);
+  const aDotU = ax * ux + ay * uy + az * uz;
+  const fvx = target.vx - 48 * (ax - aDotU * ux) / vm;
+  const fvy = target.vy - 48 * (ay - aDotU * uy) / vm;
+  const fvz = target.vz - 48 * (az - aDotU * uz) / vm;
+  const dx = fix.x - ship.x, dy = fix.y - ship.y, dz = fix.z - ship.z;
+  const d = Math.hypot(dx, dy, dz) || 1;
+  const spd = Math.max(0.8, Math.min(2.2, d * 0.06));
+  let dvx = (fvx + (dx / d) * spd - ship.vx) * 0.7;
+  let dvy = (fvy + (dy / d) * spd - ship.vy) * 0.7;
+  let dvz = (fvz + (dz / d) * spd - ship.vz) * 0.7;
+  let cost = Math.hypot(dvx, dvy, dvz);
+  if(cost > 2.5){ const k = 2.5 / cost; dvx *= k; dvy *= k; dvz *= k; cost = 2.5; }
+  return { dvx, dvy, dvz, cost };
+}
+function predictClosest(ship, target, starGM, tMax, pl, hMax){
+  const lim = tMax || 240;
+  let s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
+  let t = { x: target.x, y: target.y, z: target.z, vx: target.vx, vy: target.vy, vz: target.vz };
+  const pls = pl ? pl.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm })) : null;
+  const plsT = pls ? pls.filter(p => Math.hypot(p.x - target.x, p.y - target.y, p.z - target.z) > 1) : null;
+  const sAcc = starAccFn(starGM);
+  const acc = fullAccFn(starGM, pls);
+  const accT = plsT === pls ? acc : fullAccFn(starGM, plsT);
+  let minDist = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z), tMin = 0, relAtMin = Math.hypot(s.vx - t.vx, s.vy - t.vy, s.vz - t.vz);
+  for(let tt = 0; tt <= lim;){
+    const hh = dynStep(s.x, s.y, s.z, starGM, pls, hMax || 0.75);
+    tt += hh;
+    rk4StepState(s, hh, acc);
+    rk4StepState(t, hh, accT);
+    if(pls) for(const p of pls) rk4StepState(p, hh, sAcc);
+    const d = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
+    if(d < minDist){ minDist = d; tMin = tt; relAtMin = Math.hypot(s.vx - t.vx, s.vy - t.vy, s.vz - t.vz); }
+    else if(d > minDist + 80 && tt > tMin + 10) break;
+  }
+  return { minDist, tMin, relAtMin };
+}
+function computePlanEstimate(ship, target, starGM, closingScale, opts){
+  // The estimate flies the SAME phase policy as the real plan execution
+  // (depart/cruise -> brake -> captain match -> join -> final), with
+  // instantaneous burns, so the numbers it quotes are the numbers the
+  // flown plan will actually spend (approximately, honestly derived).
+  const o = opts || {};
+  const arrivalDist = o.arrivalDist != null ? o.arrivalDist : 12;
+  const needDock = o.needDock !== false;
+  const scale = closingScale || 1.0;
+  const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
+  const t = { x: target.x, y: target.y, z: target.z, vx: target.vx, vy: target.vy, vz: target.vz };
+  let h = 0.25; const maxT = 1500;
+  let dvTotal = 0, timeTotal = 0, nextSampleT = 2.0;
+  const samples = [[s.x, s.y, s.z]];
+  let established = false;
+  let phase = 'cruise', checkTimer = 0, actCd = 0;
+  const pls = (o.planets || []).map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm }));
+  const plsT = pls.filter(p => Math.hypot(p.x - t.x, p.y - t.y, p.z - t.z) > 1);
+  const propStar = () => {
+    const sAcc = starAccFn(starGM);
+    const acc = fullAccFn(starGM, pls);
+    const accT = fullAccFn(starGM, plsT);
+    rk4StepState(s, h, acc);
+    rk4StepState(t, h, accT);
+    for(const p of pls) rk4StepState(p, h, sAcc);
+  };
+  const applyDv = d => { if(!d) return; s.vx += d.dvx; s.vy += d.dvy; s.vz += d.dvz; dvTotal += d.cost; };
+  while(timeTotal < maxT){
+    h = Math.min(0.75, dynStep(s.x, s.y, s.z, starGM, pls));
+    propStar();
+    timeTotal += h;
+    const info = relInfo(s, t);
+    if(!needDock && info.dist <= arrivalDist) return { ok: true, dvTotal, timeTotal, samples };
+    if(dvTotal > 120) return { ok: false, dvTotal, timeTotal, samples };
+    const fix = approachFix(t);
+    const dFix = Math.hypot(s.x - fix.x, s.y - fix.y, s.z - fix.z);
+    if(needDock){
+      if(!established && dFix <= 10 && info.rel <= 2.5) established = true;
+      if(established){
+        const abx = t.x - fix.x, aby = t.y - fix.y, abz = t.z - fix.z;
+        const den = abx * abx + aby * aby + abz * abz || 1;
+        const tt = Math.max(0, Math.min(1, ((s.x - fix.x) * abx + (s.y - fix.y) * aby + (s.z - fix.z) * abz) / den));
+        const px = fix.x + abx * tt, py = fix.y + aby * tt, pz = fix.z + abz * tt;
+        if(Math.hypot(s.x - px, s.y - py, s.z - pz) > 16) established = false;
+      }
+      if(established && info.dist < arrivalDist && info.rel <= 1.5) return { ok: true, dvTotal, timeTotal, samples };
+    }
+    if(actCd > 0) actCd -= h;
+    if(phase === 'cruise'){
+      checkTimer -= h;
+      if(checkTimer <= 0){
+        checkTimer = 5.0;
+        if(needDock || info.dist >= arrivalDist) applyDv(computeApproach(s, t, starGM, scale, pls, 160));
+      }
+      if(needDock && info.dist < 48) phase = 'brake';
+    } else if(phase === 'brake'){
+      applyDv(computeBrake(s, t));
+      phase = 'captain';
+    } else if(phase === 'captain'){
+      applyDv(computeMatch(s, t));
+      phase = 'join';
+    } else if(phase === 'join'){
+      if(established) phase = 'final';
+      else if(actCd <= 0){
+        if(dFix <= 10 && info.rel > 2.5){ applyDv(computeMatch(s, t)); actCd = 0.8; }
+        else if(dFix > 8){ applyDv(computeJoinApproach(s, t, starGM, pls)); actCd = 0.8; }
+        else if(info.rel > 1.2){ applyDv(computeMatch(s, t)); actCd = 0.8; }
+      }
+    } else if(phase === 'final'){
+      if(!established) phase = 'join';
+      else if(actCd <= 0){
+        if(info.closing < 0.5){
+          const pm = info.dist || 1;
+          const dvx = t.vx + (info.dx / pm) * 0.9 - s.vx;
+          const dvy = t.vy + (info.dy / pm) * 0.9 - s.vy;
+          const dvz = t.vz + (info.dz / pm) * 0.9 - s.vz;
+          applyDv({ dvx, dvy, dvz, cost: Math.hypot(dvx, dvy, dvz) });
+          actCd = 0.8;
+        } else if(info.closing > 1.3 || info.rel > 1.5){
+          applyDv(computeBrake(s, t));
+          actCd = 0.8;
+        }
+      }
+    }
+    if(timeTotal >= nextSampleT){
+      samples.push([s.x, s.y, s.z]);
+      nextSampleT += 2.0;
+    }
+  }
+  return { ok: false, dvTotal, timeTotal, samples };
+}
+/* ==== /ORDER LOGIC ==== */
+
+// ---------- ゲーム状態 ----------
+let S = null;
+let selectedScenario = 'captain';
+let currentMissionIdx = 0;
+let meritTotal = 0;
+let gameStarted = false;
+let dvEmptyTimer = 0;
+
+function getMission(){ return MISSIONS[currentMissionIdx]; }
+
+function makeAmbientNPCs(sys){
+  const gm = sys.starGM;
+  return [
+    Object.assign(makeBody(orbitState(gm, 185, 1.3, 2, 10), 0x93c5fd, 3.6, '民間輸送船「はつかり」', 0), { kind:'shuttle', phase0:1.3, rMin:155, rMax:210 }),
+    Object.assign(makeBody(orbitState(gm, 225, 3.8, 12, 100), 0xfde68a, 3.8, '輸送船「こまち」', 0), { kind:'shuttle', phase0:3.8, rMin:180, rMax:260 }),
+    Object.assign(makeBody(orbitState(gm, 130, 5.1, 4, 210), 0xc4b5fd, 4.0, '巡行艦「あまぎ」', 0), { kind:'patrol' })
+  ];
+}
+
+function loadSystem(sys){
+  S.sys = sys;
+  S.planets = sys.planets.map((p,i)=>{
+    const st = orbitState(sys.starGM, p.r, 0.7 + i*1.35, p.inc, p.node);
+    return makeBody(st, p.color, p.r>250?9:7, p.name, p.gm);
+  });
+  S.target = makeBody(orbitState(sys.starGM, 255, 2.4, 18, 40), 0x52e6a8, 8, '補給艦「あけぼの」', 0);
+  const st = orbitState(sys.starGM, 170, 0.2, 1, 0);
+  st.vx*=0.92; st.vy*=0.92; st.vz*=0.92;
+  S.ship = makeBody(st, 0x6ea8ff, 5, SHIP_NAME, 0);
+  S.wings = [];
+  for(let i=0;i<S.cfg.wings;i++) S.wings.push(makeWing(i));
+  S.station = null;
+  S.npcs = makeAmbientNPCs(sys);
+  S.docked=false; S.failed=false; S.succeeded=false;
+  buildSystemMeshes();
+}
+
+function loadPrologueSystem(){
+  const sys = SYSTEMS[0];
+  S.sys = sys;
+  S.planets = sys.planets.map((p,i)=>{
+    const st = orbitState(sys.starGM, p.r, 0.7 + i*1.35, p.inc, p.node);
+    return makeBody(st, p.color, p.r>250?9:7, p.name, p.gm);
+  });
+  S.station = makeBody(orbitState(20000, 185, 0.55, 1, 0), 0x2dd4bf, 11, 'ステーション「あおば」', 0);
+  S.target = S.station;
+  const st = orbitState(20000, 185, 0.42, 1, 0);
+  st.vx*=0.92; st.vy*=0.92; st.vz*=0.92;
+  S.ship = makeBody(st, 0x6ea8ff, 5, SHIP_NAME, 0);
+  S.wings = [];
+  S.npcs = makeAmbientNPCs(sys);
+  S.docked=false; S.failed=false; S.succeeded=false;
+  buildSystemMeshes();
+}
+
+function makeWing(i){
+  const st = orbitState(S.sys.starGM, 170 + 14*(i+1), 0.2 - 0.10*(i+1), 1, 0);
+  st.vx*=0.92; st.vy*=0.92; st.vz*=0.92;
+  const w = makeBody(st, 0xffd166, 3.4, '僚艦'+(i+1), 0);
+  w.off = { x:-20*(i+1), y: 6*((i%2)?1:-1)*(i+1), z: 14*(i+1) };
+  return w;
+}
+
+function createBaseState(cfg, isPrologue){
+  return {
+    cfg, time:0, warp:1,
+    dv: cfg.maxDv, maxDv: cfg.maxDv,
+    res:{ prop:cfg.prop, sup:cfg.sup, cred:cfg.cred, pol:cfg.pol, warp:cfg.warp },
+    prod:null,
+    officers: OFFICER_DEFS.map(o=>Object.assign({}, o, { role:'待機' })),
+    eventTimer: 16,
+    trafficTimer: 45 + Math.random()*30,
+    assistUses: 3,
+    missionEnded: false,
+    manualOverride: false,
+    holdMode: false,
+    holdTimer: 0,
+    activeBurn: null,
+    lastOrder: null,
+    orderCount: 0,
+    prologue: !!isPrologue,
+    approach: { established:false, fixPassed:false, midPassed:false, lastWarnTime:-99, seqAdvised:false },
+    planExec: null,
+    planSamples: null,
+    coach: { minDistSeen: 9999, lastDist: 9999, lastOvershootWarn: -99, lastSpeedWarn: -99 },
+    tutorial: null
+  };
+}
+
+function startPrologue(){
+  const cfg = SCENARIOS[selectedScenario];
+  S = createBaseState(cfg, true);
+  dvEmptyTimer = 0;
+  loadPrologueSystem();
+  setWarp(1);
+  updateManualUI();
+  updateMissionBanner();
+  document.getElementById('result-modal').classList.remove('open');
+  document.getElementById('assist-left').textContent = S.assistUses;
+  document.getElementById('btn-assist').disabled = false;
+  logEvent('🚢 処女航海（Mission 0）開始。ステーション「あおば」近傍に展開。');
+  setStatusMsg('輸送艦「さくら」出航式。教導士官の案内を確認してください。');
+  renderOfficers(); renderGalaxy(); updatePanels();
+  initPrologueFlow();
+}
+
+function startMission(idx){
+  currentMissionIdx = idx;
+  const m = getMission();
+  const cfg = SCENARIOS[selectedScenario];
+  S = createBaseState(cfg, false);
+  dvEmptyTimer = 0;
+  const sysObj = SYSTEMS.find(s=>s.id===m.startSys) || SYSTEMS[0];
+  loadSystem(sysObj);
+  setWarp(1);
+  updateManualUI();
+  updateMissionBanner();
+  document.getElementById('result-modal').classList.remove('open');
+  document.getElementById('briefing-modal').classList.remove('open');
+  document.getElementById('assist-left').textContent = S.assistUses;
+  document.getElementById('btn-assist').disabled = false;
+  logEvent('🚀 ミッション'+m.id+'「'+m.title+'」開始（'+cfg.label+'）。');
+  setStatusMsg('航海計画を確認し、出航を承認してください。');
+  renderOfficers(); renderGalaxy(); updatePanels();
+  if(idx === 0 && selectedScenario === 'captain'){
+    initMission1Tutorial();
+  } else {
+    S.tutorial = null;
+    document.getElementById('tutorial-steps').classList.remove('visible');
+    showOfficerPopup(GUIDE, m.startQuote);
+    setTimeout(()=>{ if(S && !S.prologue && !S.planExec) openMissionPlanPanel(); }, 450);
+  }
+}
+
+function updateMissionBanner(){
+  if(S && S.prologue){
+    document.getElementById('mb-num').textContent = 'MISSION 0 / 処女航海';
+    document.getElementById('mb-sys').textContent = '📍 ソル系';
+    document.getElementById('mb-title').textContent = '処女航海：輸送艦「さくら」慣熟航行';
+    document.getElementById('mb-obj').textContent = '教導士官 榊原少佐の案内で、航海計画の承認・カメラ・時間倍率・帰投を体験しよう。';
+    document.getElementById('mission-timer').style.display = 'none';
+    return;
+  }
+  const m = getMission();
+  document.getElementById('mb-num').textContent = 'MISSION '+m.id+' / '+MISSIONS.length;
+  document.getElementById('mb-sys').textContent = '📍 '+(S?S.sys.name:'ソル系');
+  document.getElementById('mb-title').textContent = m.title;
+  document.getElementById('mb-obj').textContent = m.obj;
+  const tm = document.getElementById('mission-timer');
+  if(m.timeLimit > 0){
+    tm.style.display = 'block';
+    const rem = Math.max(0, Math.ceil(m.timeLimit - (S?S.time:0)));
+    tm.textContent = '残り '+rem+'s';
+    tm.classList.toggle('urgent', rem <= 60);
+  } else {
+    tm.style.display = 'none';
+  }
+}
+
+// ---------- 物理: 3Dニュートン重力 (v0.1互換) ----------
+function gravityAt(x,y,z,out){
+  const r2 = x*x+y*y+z*z, r = Math.sqrt(r2)||0.001;
+  const a = -S.sys.starGM/(r2*r);
+  out.x=a*x; out.y=a*y; out.z=a*z;
+  for(const p of S.planets){
+    const dx=p.x-x, dy=p.y-y, dz=p.z-z;
+    const d2=dx*dx+dy*dy+dz*dz, d=Math.sqrt(d2)||0.001;
+    const pa=p.gm/(d2*d);
+    out.x+=pa*dx; out.y+=pa*dy; out.z+=pa*dz;
+  }
+  return out;
+}
+const _g={x:0,y:0,z:0};
+function stepBody(b,h,thrust){
+  gravityAt(b.x,b.y,b.z,_g);
+  let ax=_g.x, ay=_g.y, az=_g.z;
+  if(thrust){ ax+=thrust.x; ay+=thrust.y; az+=thrust.z; }
+  b.vx+=ax*h; b.vy+=ay*h; b.vz+=az*h;
+  b.x+=b.vx*h; b.y+=b.vy*h; b.z+=b.vz*h;
+}
+function stepPlanet(p,h){
+  const r2=p.x*p.x+p.y*p.y+p.z*p.z, r=Math.sqrt(r2)||0.001;
+  const a=-S.sys.starGM/(r2*r);
+  p.vx+=a*p.x*h; p.vy+=a*p.y*h; p.vz+=a*p.z*h;
+  p.x+=p.vx*h; p.y+=p.vy*h; p.z+=p.vz*h;
+}
+const keys={}, pad={};
+const THRUST=7;
+function currentThrust(){
+  if(!S || !S.manualOverride) return null;
+  let tx=0, ty=0, tz=0;
+  if(keys['a']||keys['arrowleft']||pad.left) tx-=1;
+  if(keys['d']||keys['arrowright']||pad.right) tx+=1;
+  if(keys['r']||keys['q']||pad.up) ty+=1;
+  if(keys['f']||keys['e']||pad.down) ty-=1;
+  if(keys['w']||keys['arrowup']||pad.fwd) tz-=1;
+  if(keys['s']||keys['arrowdown']||pad.back) tz+=1;
+  if(!tx&&!ty&&!tz) return null;
+  const m=Math.hypot(tx,ty,tz);
+  return { x:tx/m*THRUST, y:ty/m*THRUST, z:tz/m*THRUST };
+}
+let isThrusting = false;
+function physics(simDt){
+  const n=Math.max(1, Math.ceil(simDt/0.008)), h=simDt/n;
+  isThrusting = false;
+  for(let i=0;i<n;i++){
+    for(const p of S.planets) stepPlanet(p,h);
+    if(S.station){
+      stepBody(S.station,h,null);
+      if(S.target !== S.station) stepBody(S.target,h,null);
+    } else {
+      stepBody(S.target,h,null);
+    }
+    if(S.npcs){
+      for(const npc of S.npcs) stepBody(npc, h, null);
+    }
+    if(S.docked){
+      S.ship.x=S.target.x; S.ship.y=S.target.y; S.ship.z=S.target.z;
+      S.ship.vx=S.target.vx; S.ship.vy=S.target.vy; S.ship.vz=S.target.vz;
+    } else if(!S.failed){
+      if(S.activeBurn && S.activeBurn.tLeft > 0){
+        const b = S.activeBurn;
+        const ax = b.remX / b.tLeft, ay = b.remY / b.tLeft, az = b.remZ / b.tLeft;
+        const aMag = Math.hypot(ax, ay, az);
+        const needDv = aMag * h;
+        if(S.dv > 0 && aMag > 1e-6){
+          isThrusting = true;
+          const use = Math.min(S.dv, needDv);
+          const sc = needDv > 0 ? (use / needDv) : 0;
+          stepBody(S.ship, h, { x: ax * sc, y: ay * sc, z: az * sc });
+          S.dv -= use;
+          const dtStep = Math.min(h, b.tLeft);
+          b.remX -= ax * dtStep * sc; b.remY -= ay * dtStep * sc; b.remZ -= az * dtStep * sc;
+          b.tLeft -= h;
+          if(use < needDv - 1e-5){
+            S.activeBurn = null;
+            showOfficerPopup(HELM, '推進剤が尽き、噴射を中断しました！');
+            logEvent('⚠️ 三浦: Δv不足により噴射中断。');
+            setTimeout(()=>{ if(S && !S.failed) showOfficerPopup(GUIDE, '推進剤が不足しました。計画を見直すか、無理のない範囲で接近しましょう。'); }, 1500);
+          } else if(b.tLeft <= 0.001){
+            S.activeBurn = null;
+            const r = relInfo(S.ship, S.target);
+            const msg = '噴射完了。相対速度 '+r.rel.toFixed(1)+'、目標まで '+r.dist.toFixed(0);
+            showOfficerPopup(HELM, msg);
+            logEvent('✅ 三浦: '+msg);
+            if(b.onDone) b.onDone();
+          }
+        } else {
+          S.activeBurn = null;
+          stepBody(S.ship, h, null);
+        }
+      } else {
+        const th=currentThrust();
+        if(th && S.dv>0){
+          isThrusting = true;
+          const use=Math.min(S.dv, THRUST*h), sc=use/(THRUST*h);
+          stepBody(S.ship,h,{x:th.x*sc,y:th.y*sc,z:th.z*sc});
+          S.dv-=use;
+        } else stepBody(S.ship,h,null);
+      }
+    } else stepBody(S.ship,h,null);
+
+    for(const w of S.wings){
+      const txp=S.ship.x+w.off.x, typ=S.ship.y+w.off.y, tzp=S.ship.z+w.off.z;
+      const wantVx=S.ship.vx+(txp-w.x)*0.08, wantVy=S.ship.vy+(typ-w.y)*0.08, wantVz=S.ship.vz+(tzp-w.z)*0.08;
+      const clamp=v=>Math.max(-3,Math.min(3,v));
+      gravityAt(w.x,w.y,w.z,_g);
+      w.vx+=(_g.x+clamp((wantVx-w.vx)*1.2))*h;
+      w.vy+=(_g.y+clamp((wantVy-w.vy)*1.2))*h;
+      w.vz+=(_g.z+clamp((wantVz-w.vz)*1.2))*h;
+      w.x+=w.vx*h; w.y+=w.vy*h; w.z+=w.vz*h;
+    }
+    S.time+=h;
+  }
+
+  // 静止保持モード (0.5秒ごと)
+  S.holdTimer += simDt;
+  if(S.holdTimer >= 0.5){
+    S.holdTimer %= 0.5;
+    if(S.holdMode && !S.docked && !S.failed && !S.activeBurn && S.dv > 0){
+      const hdv = computeHold(S.ship, S.target);
+      if(hdv){
+        const use = Math.min(S.dv, hdv.cost);
+        const frac = use / hdv.cost;
+        S.ship.vx += hdv.dvx * frac; S.ship.vy += hdv.dvy * frac; S.ship.vz += hdv.dvz * frac;
+        S.dv -= use;
+      }
+    }
+  }
+
+  if(Math.random()<0.45){
+    const push=b=>{ b.trail.push([b.x,b.y,b.z]); const lim=b===S.ship?200:140; if(b.trail.length>lim)b.trail.shift(); };
+    S.planets.forEach(push); push(S.ship); push(S.target); S.wings.forEach(push);
+  }
+  updateApproachCourse();
+  checkRendezvous();
+  checkMissionConditions(simDt);
+  updatePlanExecution(simDt);
+  updateCoaching();
+  updateTutorialAndPrologue(simDt);
+  if(S.prod){
+    S.prod.remain-=simDt;
+    if(S.prod.remain<=0){ S.prod=null; addWingMesh(makeWing(S.wings.length), true); logEvent('🏭 小型艦が完成し、僚艦として配備されました。'); updatePanels(); }
+  }
+}
+
+function relState(){
+  const info = relInfo(S.ship, S.target);
+  return info;
+}
+
+function updateApproachCourse(){
+  if(!S || S.prologue || S.docked || S.failed) return;
+  const fix = approachFix(S.target);
+  const dFix = Math.hypot(S.ship.x - fix.x, S.ship.y - fix.y, S.ship.z - fix.z);
+  const info = relInfo(S.ship, S.target);
+  const abx = S.target.x - fix.x, aby = S.target.y - fix.y, abz = S.target.z - fix.z;
+  const ab2 = abx*abx + aby*aby + abz*abz || 1;
+  const apx = S.ship.x - fix.x, apy = S.ship.y - fix.y, apz = S.ship.z - fix.z;
+  const tProj = Math.max(-0.2, Math.min(1.2, (apx*abx + apy*aby + apz*abz)/ab2));
+  const cx = fix.x + abx*tProj, cy = fix.y + aby*tProj, cz = fix.z + abz*tProj;
+  const crossDist = Math.hypot(S.ship.x - cx, S.ship.y - cy, S.ship.z - cz);
+
+  if(!S.approach.established){
+    if(dFix <= 10 && info.rel <= 2.5){
+      S.approach.established = true;
+      if(!S.approach.fixPassed){
+        S.approach.fixPassed = true;
+        showOfficerPopup(HELM, 'ゲート通過、速力良好');
+        logEvent('🚪 三浦: 進入ゲート通過、速力良好。');
+      }
+    }
+  } else {
+    if(crossDist > 14){
+      S.approach.established = false;
+    } else if(!S.approach.midPassed && info.dist <= 24){
+      S.approach.midPassed = true;
+      showOfficerPopup(HELM, 'ゲート通過、速力良好');
+      logEvent('🚪 三浦: 中間ゲート通過、速力良好。');
+    }
+  }
+}
+
+function checkRendezvous(){
+  if(!S || S.prologue || S.docked || S.failed || S.missionEnded) return;
+  const r=relState();
+  if(r.dist<7 && r.rel>2.0){
+    S.failed=true; S.missionEnded=true;
+    logEvent('💥 目標艦に高速で接触し衝突（相対速度 '+r.rel.toFixed(2)+'）。');
+    setStatusMsg('💥 衝突！相対速度 '+r.rel.toFixed(2)+' のまま接触しました。');
+    playSfx('fail');
+    showOfficerPopup(GUIDE, '衝撃を確認！相対速度が速すぎました…次は手前で「減速」しましょう！');
+    openResultModal(false, '衝突・作戦失敗', '相対速度 '+r.rel.toFixed(2)+' のまま目標艦に接触しました。距離12手前で相対速度1.5以下に減速してください。');
+  } else if(r.dist<12 && r.rel<=1.5){
+    if(!S.approach.established){
+      if(S.time - S.approach.lastWarnTime >= 10){
+        S.approach.lastWarnTime = S.time;
+        showOfficerPopup(GUIDE, '進入コースから外れています。このままでは接舷できません。「進入合流」でコースに戻ってください');
+        logEvent('⚠️ 榊原教導官: 進入コース外のため接舷保留。「進入合流」を指示してください。');
+      }
+      return;
+    }
+    S.docked=true; S.succeeded=true;
+    S.res.pol=Math.min(100,S.res.pol+3);
+    const m = getMission();
+    if(m.reqSys && S.sys.id !== m.reqSys){
+      setStatusMsg('✅ 接舷成功（現在地は'+S.sys.name+'。目標はケンタウリ系です）');
+      logEvent('✅ '+S.sys.name+'の目標艦と接舷。補給可能。');
+      updatePanels();
+      return;
+    }
+    S.missionEnded=true;
+    logEvent('✅ ミッション'+m.id+'「'+m.title+'」達成！');
+    setStatusMsg('✅ 接舷完了！補給物資を受領しました。');
+    playSfx('success');
+    triggerCelebration('ミッション '+m.id+' 達成！');
+    if(m.id === 1){
+      showOfficerPopup(HELM, '補給艦「あけぼの」より通信：『さくら、接舷確認！補給物資を移送します』 — 受け取り完了です！');
+    } else {
+      showOfficerPopup(HELM, '見事な接舷です、艦長！補給物資の移送を開始しました。');
+    }
+    const prevMerit = meritTotal;
+    meritTotal += m.merit;
+    openResultModal(true, 'ミッション '+m.id+' 達成！', '補給艦「あけぼの」との接舷に成功。功績 +'+m.merit+' pt 獲得！', prevMerit);
+    updatePanels();
+  }
+}
+
+function checkMissionConditions(simDt){
+  if(!S || S.prologue || S.missionEnded || S.docked || S.failed) return;
+  const m = getMission();
+  if(m.timeLimit > 0 && S.time >= m.timeLimit){
+    S.failed=true; S.missionEnded=true;
+    playSfx('fail');
+    showOfficerPopup(GUIDE, '制限時間に間に合いませんでした…！時間倍率(3x/8x)も活用して再挑戦しましょう。');
+    openResultModal(false, '時間切れ・作戦失敗', '制限時間（'+m.timeLimit+'秒）以内に接舷を完了できませんでした。');
+    return;
+  }
+  const r = relState();
+  if(S.dv <= 0.01 && r.dist >= 12){
+    dvEmptyTimer += simDt;
+    if(dvEmptyTimer > 4.5){
+      S.failed=true; S.missionEnded=true;
+      playSfx('fail');
+      showOfficerPopup(GUIDE, '推進剤（Δv）が完全に枯渇しました…。省燃料の航海計画で再挑戦しましょう。');
+      openResultModal(false, 'Δv 枯渇・到達不能', '推進剤を使い切り、目標艦に到達できなくなりました。');
+    }
+  } else {
+    dvEmptyTimer = 0;
+  }
+}
+
+// ---------- 命令実行ラッパー ----------
+function issueOrder(kind, opts){
+  if(!S || S.docked || S.failed || S.activeBurn || S.dv <= 0) return false;
+  const o = opts || {};
+  let dv, orderName;
+  if(kind === 'approach'){ dv = computeApproach(S.ship, S.target, S.sys.starGM, o.closingScale || 1, S.planets); orderName = '接近噴射'; }
+  else if(kind === 'brake'){ dv = computeBrake(S.ship, S.target); orderName = '減速噴射'; }
+  else if(kind === 'match'){ dv = computeMatch(S.ship, S.target); orderName = '速度同調'; }
+  else if(kind === 'join'){ dv = computeJoinApproach(S.ship, S.target, S.sys.starGM, S.planets); orderName = '進入合流'; }
+  else if(kind === 'final'){
+    const fi = relInfo(S.ship, S.target);
+    const pm = fi.dist || 1;
+    const fdx = S.target.vx + (fi.dx / pm) * 0.9 - S.ship.vx;
+    const fdy = S.target.vy + (fi.dy / pm) * 0.9 - S.ship.vy;
+    const fdz = S.target.vz + (fi.dz / pm) * 0.9 - S.ship.vz;
+    dv = { dvx: fdx, dvy: fdy, dvz: fdz, cost: Math.hypot(fdx, fdy, fdz) };
+    orderName = '最終進入';
+  }
+  else return false;
+
+  if(dv.cost < 0.01){
+    if(!o.silent) showOfficerPopup(HELM, orderName+'の必要はありません（現在値で適正範囲内です）。');
+    if(o.onDone) o.onDone();
+    return true;
+  }
+  if(!o.isAuto && S.planExec && S.planExec.active){
+    S.planExec.manualModified = true;
+  }
+  playSfx('assist');
+  showOfficerPopup(HELM, orderName+'、了解。');
+  logEvent('▶ '+(o.isAuto?'計画噴射':'艦長命令')+': '+orderName+' → 三浦「'+orderName+'、了解」');
+  const dur = Math.max(0.8, Math.min(4.0, dv.cost / THRUST));
+  S.activeBurn = { kind, orderName, remX: dv.dvx, remY: dv.dvy, remZ: dv.dvz, tLeft: dur, costTotal: dv.cost, onDone: o.onDone || null };
+  S.lastOrder = kind;
+  S.orderCount = (S.orderCount || 0) + 1;
+  updateOrderBar();
+  return true;
+}
+function orderApproach(){ return issueOrder('approach'); }
+function orderBrake(){ return issueOrder('brake'); }
+function orderMatch(){ return issueOrder('match'); }
+function orderJoinApproach(){ return issueOrder('join'); }
+function toggleHoldMode(){
+  if(!S) return;
+  playSfx('click');
+  S.holdMode = !S.holdMode;
+  logEvent('⚓ 静止保持モード: '+(S.holdMode?'ON':'OFF'));
+  updateOrderBar();
+}
+
+// ---------- 航海計画パネル & 計画実行 ----------
+let planPanelState = null;
+let checklistTimer = null;
+
+function openMissionPlanPanel(){
+  if(!S) return;
+  const m = getMission();
+  openPlanPanel({
+    mode: S.planExec ? 'replan' : 'depart',
+    legType: 'rendezvous',
+    routeName: '標準航路 '+S.sys.name+'周回路 R'+m.id+' ／ 進入コース『あけぼの 03』',
+    fixes: '出発点 → 会合点 → 進入開始点 → 接舷点',
+    targetBody: S.target,
+    arrivalDist: 12,
+    needDock: true,
+    shortChecklist: false
+  });
+}
+
+function openPlanPanel(cfg){
+  if(!S) return;
+  const variants = [
+    { id:'std', label:'標準', scale:1.0 },
+    { id:'eco', label:'省燃料', scale:0.8 },
+    { id:'fast', label:'最速', scale:1.3 }
+  ].map(v => Object.assign(v, { est: computePlanEstimate(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets }) }));
+
+  let recIdx = -1, recDv = Infinity;
+  variants.forEach((v, i) => { if(v.est.ok && v.est.dvTotal < recDv){ recDv = v.est.dvTotal; recIdx = i; } });
+  let selIdx = recIdx >= 0 ? recIdx : 0;
+
+  planPanelState = { cfg, variants, selIdx, checklistDone: false, checkIdx: 0 };
+  document.getElementById('plan-route-name').textContent = cfg.routeName;
+  document.getElementById('plan-fixes').textContent = cfg.fixes;
+
+  const varEl = document.getElementById('plan-variants');
+  const renderVars = () => {
+    varEl.innerHTML = '';
+    variants.forEach((v, i) => {
+      const card = document.createElement('div');
+      card.className = 'pv-card' + (i === planPanelState.selIdx ? ' selected' : '') + (!v.est.ok ? ' invalid' : '');
+      const vNote = v.id === 'eco' ? '噴射を抑え、軌道の流れを使う' : (v.id === 'fast' ? '噴射を多めに使い到着を早める' : '消費と時間のバランス型');
+      card.innerHTML = '<div class="pv-title">'+v.label+'（×'+v.scale.toFixed(1)+'）'+(i === recIdx ? ' <span style="color:var(--teal);font-size:11px">🤖 イオ推奨</span>' : '')+'</div>' +
+        (v.est.ok
+          ? '<div class="pv-meta">推定Δv: <b>'+v.est.dvTotal.toFixed(1)+'</b><br>推定時間: 約'+Math.round(v.est.timeTotal)+'秒<br><span style="color:var(--muted)">'+vNote+(i === recIdx ? ' ／ イオ：推進剤消費が最小の案です' : '')+'</span></div>'
+          : '<div class="pv-meta" style="color:var(--bad)">成立せず</div>');
+      if(v.est.ok){
+        card.onclick = () => {
+          playSfx('click');
+          planPanelState.selIdx = i;
+          S.planSamples = v.est.samples;
+          updatePlanLineMesh();
+          renderVars();
+          renderChecklist(false);
+        };
+      }
+      varEl.appendChild(card);
+    });
+    S.planSamples = variants[planPanelState.selIdx].est.samples;
+    updatePlanLineMesh();
+  };
+
+  const getChecks = () => {
+    const estDv = variants[planPanelState.selIdx].est.dvTotal;
+    const all = [
+      { who:'機関', text:'機関、全系統正常' },
+      { who:'推進剤', text:'三浦「推進剤 Δv 残量 '+S.dv.toFixed(1)+'／計画消費 '+estDv.toFixed(1)+'、'+(S.dv>=estDv?'余裕あり':'残量注意')+'」' },
+      { who:'航路計画', text:'三浦「イオの航海計画、受領。針路設定完了」' },
+      { who:'管制許可', text:'あおば管制「『'+SHIP_CALLSIGN+'』、出航を許可する」' }
+    ];
+    return cfg.shortChecklist ? [all[1], all[3]] : all;
+  };
+
+  const chkEl = document.getElementById('departure-checklist');
+  const btnDepart = document.getElementById('btn-depart');
+
+  const renderChecklist = (advance) => {
+    const items = getChecks();
+    if(advance && planPanelState.checkIdx < items.length) planPanelState.checkIdx++;
+    planPanelState.checklistDone = planPanelState.checkIdx >= items.length;
+    chkEl.innerHTML = items.map((it, idx) => {
+      const done = idx < planPanelState.checkIdx;
+      return '<div class="chk-item'+(done?' done':'')+'"><span class="chk-mark">'+(done?'✓':'・')+'</span><span class="chk-text"><b>['+it.who+']</b> '+it.text+'</span></div>';
+    }).join('');
+    const selOk = variants[planPanelState.selIdx].est.ok;
+    btnDepart.disabled = !(planPanelState.checklistDone && selOk);
+  };
+
+  clearInterval(checklistTimer);
+  renderVars();
+  renderChecklist(false);
+  checklistTimer = setInterval(() => {
+    if(!planPanelState){ clearInterval(checklistTimer); return; }
+    renderChecklist(true);
+    if(planPanelState.checklistDone) clearInterval(checklistTimer);
+  }, 700);
+  chkEl.onclick = () => {
+    if(!planPanelState) return;
+    planPanelState.checkIdx = 99;
+    clearInterval(checklistTimer);
+    renderChecklist(false);
+  };
+
+  document.getElementById('plan-panel').classList.add('open');
+  if(S.tutorial && S.tutorial.onPlanOpened) S.tutorial.onPlanOpened();
+}
+
+function closePlanPanel(){
+  clearInterval(checklistTimer);
+  document.getElementById('plan-panel').classList.remove('open');
+}
+
+function confirmDeparture(){
+  if(!S || !planPanelState) return;
+  const v = planPanelState.variants[planPanelState.selIdx];
+  const cfg = planPanelState.cfg;
+  closePlanPanel();
+  playSfx('click');
+  logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。');
+  S.planSamples = v.est.samples;
+  updatePlanLineMesh();
+  S.planExec = {
+    active: true,
+    legType: cfg.legType,
+    closingScale: v.scale,
+    targetBody: cfg.targetBody,
+    arrivalDist: cfg.arrivalDist,
+    needDock: cfg.needDock,
+    phase: 'depart',
+    paused: false,
+    deviated: false,
+    manualModified: false,
+    lowClosingTimer: 0,
+    checkTimer: 0,
+    lastBadMinDist: 0,
+    recalcTimer: 0,
+    remDv: v.est.dvTotal,
+    remTime: v.est.timeTotal,
+    onDone: cfg.onDone || null
+  };
+  if(S.tutorial && S.tutorial.onDeparted) S.tutorial.onDeparted();
+  updatePlanStatusUI();
+}
+
+function updatePlanExecution(simDt){
+  if(!S || !S.planExec || !S.planExec.active || S.docked || S.failed) return;
+  const pe = S.planExec;
+  pe.recalcTimer += simDt;
+  if(pe.recalcTimer >= 5.0){
+    pe.recalcTimer = 0;
+    const est = computePlanEstimate(S.ship, pe.targetBody, S.sys.starGM, pe.closingScale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets });
+    if(est.ok){
+      pe.badEst = 0;
+      pe.remDv = est.dvTotal; pe.remTime = est.timeTotal;
+      S.planSamples = est.samples;
+      updatePlanLineMesh();
+    } else if(!pe.paused && (pe.phase === 'cruise' || pe.phase === 'depart')){
+      pe.badEst = (pe.badEst || 0) + 1;
+      if(pe.badEst >= 2){
+        pe.paused = true; pe.deviated = true;
+        showOfficerPopup(HELM, '計画からの逸脱を検知。このままでは目標に到達できません');
+        logEvent('⚠️ 三浦: 計画からの逸脱を検知。自動噴射を一時停止します。');
+      }
+    }
+  }
+  if(pe.paused || pe.manualModified || S.activeBurn) return;
+
+  const info = relInfo(S.ship, pe.targetBody);
+  if(pe.legType === 'simple'){
+    if(info.dist <= pe.arrivalDist){
+      pe.phase = 'done'; pe.active = false;
+      if(pe.onDone) pe.onDone();
+      return;
+    }
+    if(pe.phase === 'depart'){
+      pe.phase = 'cruise';
+      issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true });
+    } else if(pe.phase === 'cruise'){
+      pe.checkTimer -= simDt;
+      if(pe.checkTimer <= 0){
+        pe.checkTimer = 5.0;
+        issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true });
+      }
+    }
+    return;
+  }
+
+  // rendezvous leg: depart -> cruise -> brake -> (captain in M1) -> join -> final -> done
+  if(pe.phase === 'depart'){
+    pe.phase = 'cruise';
+    issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true });
+  } else if(pe.phase === 'cruise'){
+    // 巡航中はAIが5秒ごとに軌道を再評価し、必要な時だけ修正噴射する
+    // （遷移軌道に乗っている間は噴射せず滑空する）。
+    pe.checkTimer -= simDt;
+    if(pe.checkTimer <= 0 && info.dist >= 48){
+      pe.checkTimer = 5.0;
+      issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true });
+    }
+    if(info.dist < 48){
+      pe.phase = 'brake';
+      if(S.tutorial && S.tutorial.onBeforeBrake) S.tutorial.onBeforeBrake();
+      issueOrder('brake', { isAuto: true, silent: true, onDone: () => {
+        if(!S || !S.planExec) return;
+        if(currentMissionIdx === 0 && selectedScenario === 'captain' && S.tutorial && !S.tutorial.skipped){
+          S.planExec.phase = 'captain';
+        } else {
+          S.planExec.phase = 'join';
+        }
+      }});
+    }
+  } else if(pe.phase === 'brake'){
+    if(!S.activeBurn){
+      if(currentMissionIdx === 0 && selectedScenario === 'captain' && S.tutorial && !S.tutorial.skipped){
+        pe.phase = 'captain';
+      } else {
+        pe.phase = 'join';
+      }
+    }
+  } else if(pe.phase === 'captain'){
+    // Mission 1 チュートリアルで艦長の速度同調を待つ
+    if(info.rel <= 0.35){
+      pe.phase = 'join';
+    }
+  } else if(pe.phase === 'join'){
+    if(!S.approach.seqAdvised){
+      S.approach.seqAdvised = true;
+      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、進入順序は2番。前船の接舷後に進入を許可。');
+      setTimeout(()=>{ if(S && !S.failed && !S.docked) logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、進入許可。進入コースへ合流せよ。'); }, 3500);
+    }
+    if(S.approach.established){
+      pe.phase = 'final';
+      if(!S.approach.gateAssigned){
+        S.approach.gateAssigned = true;
+        logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、第3ゲートが空いています。進入コースで入港せよ。');
+        logEvent('📋 接舷前確認 — 進入コース：適合／相対速度：適合／第3ゲート：空き。艦長の承認をもって接舷します。');
+      }
+    } else {
+      const fix = approachFix(pe.targetBody);
+      const dFix = Math.hypot(S.ship.x - fix.x, S.ship.y - fix.y, S.ship.z - fix.z);
+      if(dFix <= 10 && info.rel > 2.5){
+        issueOrder('match', { isAuto: true, silent: true });
+      } else if(dFix > 8){
+        issueOrder('join', { isAuto: true, silent: true });
+      }
+    }
+  } else if(pe.phase === 'final'){
+    if(!S.approach.established){
+      pe.phase = 'join';
+    } else if(info.closing < 0.5){
+      issueOrder('final', { isAuto: true, silent: true });
+    } else if(info.closing > 1.3 || info.rel > 1.5){
+      issueOrder('brake', { isAuto: true, silent: true });
+    }
+  }
+}
+
+function updateCoaching(){
+  if(!S || S.prologue || S.docked || S.failed) return;
+  const r = relState();
+  if(r.dist < S.coach.minDistSeen) S.coach.minDistSeen = r.dist;
+  if(S.coach.minDistSeen < 30 && r.dist > S.coach.lastDist + 0.3 && r.closing < -0.5){
+    if(S.time - S.coach.lastOvershootWarn >= 10){
+      S.coach.lastOvershootWarn = S.time;
+      showOfficerPopup(GUIDE, '行き過ぎです！「減速」してから「接近」で戻りましょう');
+    }
+  }
+  if(r.dist < 25 && r.rel > 2.2){
+    if(S.time - S.coach.lastSpeedWarn >= 10){
+      S.coach.lastSpeedWarn = S.time;
+      showOfficerPopup(GUIDE, '速すぎます！このまま近づくとぶつかります。「減速」を！');
+    }
+  }
+  S.coach.lastDist = r.dist;
+}
+
+function deriveNextAction(){
+  if(!S) return { text:'', cls:'' };
+  if(S.docked || S.failed || S.missionEnded) return { text:'', cls:'' };
+  if(S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText){
+    return { text: S.tutorial.nextActionText, cls: '' };
+  }
+  if(S.planExec && S.planExec.active && !S.planExec.paused && !S.planExec.manualModified){
+    const phMap = { depart:'出航噴射', cruise:'巡航（次の噴射は距離48で減速）', brake:'減速進入', captain:'艦長の速度同調命令待ち', join:'進入コース合流', final:'最終接近' };
+    return { text:'計画実行中: '+(phMap[S.planExec.phase]||pePhaseName(S.planExec.phase)), cls:'good' };
+  }
+  const r = relState();
+  if(!S.prologue && !S.approach.established && r.dist < 30) return { text:'「進入合流」で進入コースに戻ろう', cls:'warn' };
+  if(r.dist > 90) return { text:'「接近」を押して目標へ向かおう（距離 '+r.dist.toFixed(0)+'）', cls:'' };
+  if(r.closing < 0.3) return { text:'目標に近づいていない。「接近」を押そう', cls:'warn' };
+  if(r.dist <= 90 && r.closing > safeClosing(r.dist) + 0.8) return { text:'速すぎる。「減速」を押そう', cls:'danger' };
+  if(r.dist < 26 && r.rel > 1.5) return { text:'「速度同調」で相手と同じ速さに合わせよう', cls:'warn' };
+  if(r.dist < 26 && r.rel <= 1.5) return { text:'そのまま近づけばくっつける', cls:'good' };
+  return { text:'接近中…（距離 '+r.dist.toFixed(0)+'）近づいたら「減速」', cls:'' };
+}
+function pePhaseName(p){ return ({depart:'出航',cruise:'巡航',brake:'減速',captain:'艦長指示待ち',join:'進入合流',final:'最終接近',done:'完了'})[p] || p; }
+
+// ---------- プロローグ (Mission 0) & チュートリアル (Mission 1) ----------
+let camAzAccum = 0;
+
+function initPrologueFlow(){
+  const modal = document.getElementById('briefing-modal');
+  document.getElementById('briefing-body').textContent =
+    '「ようこそ、輸送艦『さくら』へ。私が教導を担当します、榊原少佐です。艦長は計画を承認し、判断を下すのが仕事です。操船は艦載AIと乗員が行います。艦長の仕事は判断と責任です。まずはステーション『あおば』から居住惑星への短い観光航行に出ましょう。」';
+  const offIntros = [
+    '佐藤 澪「戦術面はお任せを。冷静に状況を分析します」',
+    '高橋 蓮「補給と機関のやりくりなら私に任せてください」',
+    'イリナ・コワルスカ「艦隊の政治と渉外、抜かりなく進めます」',
+    '陳 大樹「野心はありますが、まずは艦長のお手並み拝見ですね」',
+    'あおば管制「『さくら』、初任務の成功を祈る。いつでも出航申請をどうぞ」'
+  ];
+  document.getElementById('briefing-officers').innerHTML = offIntros.map(t=>'<div>・'+t+'</div>').join('');
+  modal.classList.add('open');
+
+  document.getElementById('btn-briefing-start').onclick = () => {
+    playSfx('click');
+    modal.classList.remove('open');
+    startPrologueSteps();
+  };
+  document.getElementById('btn-skip-prologue').onclick = () => {
+    playSfx('click');
+    modal.classList.remove('open');
+    startMission(0);
+  };
+}
+
+function startPrologueSteps(){
+  const hab = S.planets[1] || S.planets[0]; // ソル系 r=150 居住惑星
+  S.tutorial = {
+    mode: 'prologue',
+    step: 0,
+    stuckTime: 0,
+    skipped: false,
+    nextActionText: '「航海計画」を開いて観光航路を承認しよう',
+    onPlanOpened: () => {},
+    onDeparted: () => {
+      if(S.tutorial.step === 0){ S.tutorial.step = 1; S.tutorial.stuckTime = 0; camAzAccum = 0; }
+      else if(S.tutorial.step === 4){ S.tutorial.step = 5; S.tutorial.stuckTime = 0; }
+    },
+    steps: [
+      {
+        title: 'A1: 観光航海計画の承認',
+        desc: '榊原「まず航海計画を立てます。航行AI『イオ』が計算し、航法士官が提案しますから、艦長は承認するだけです。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
+        hl: '#btn-plan',
+        autoAction: () => {
+          openPlanPanel({
+            mode:'depart', legType:'simple',
+            routeName:'観光航路 ソル周遊 S1',
+            fixes:'ステーション「あおば」 → 居住惑星近傍点',
+            targetBody: hab, arrivalDist: 70, needDock: false, shortChecklist: false
+          });
+          setTimeout(()=>{ const c=document.getElementById('departure-checklist'); if(c) c.click(); setTimeout(()=>{ const b=document.getElementById('btn-depart'); if(b && !b.disabled) b.click(); }, 250); }, 300);
+        }
+      },
+      {
+        title: 'A2: 艦橋からの視界確認（カメラ回転）',
+        desc: '榊原「巡航中に画面をドラッグして、周囲の宇宙を見渡してみましょう」',
+        hl: null,
+        autoAction: () => { camAzAccum += 0.4; cam.az += 0.4; }
+      },
+      {
+        title: 'A3: 時間倍率の変更（3x以上）',
+        desc: '榊原「広い宇宙では時間を早送りできます。下の時間倍率を 3x 以上に上げてみましょう（確認できたら戻しても構いません）」',
+        hl: '[data-warp="3"]',
+        autoAction: () => { setWarp(3); }
+      },
+      {
+        title: 'A4: 居住惑星へ到着',
+        desc: '榊原「まもなく居住惑星が見えてきます。青い海と緑の星を楽しみましょう」',
+        hl: null,
+        autoAction: () => { setWarp(8); }
+      },
+      {
+        title: 'B1: 帰還計画の承認',
+        desc: '榊原「素晴らしい眺めでしたね。ではステーション『あおば』への帰還計画を承認しましょう」',
+        hl: '#btn-plan',
+        autoAction: () => {
+          openPlanPanel({
+            mode:'depart', legType:'simple',
+            routeName:'帰投航路 あおば R0',
+            fixes:'居住惑星近傍 → ステーション「あおば」',
+            targetBody: S.station, arrivalDist: 90, needDock: false, shortChecklist: true
+          });
+          setTimeout(()=>{ const c=document.getElementById('departure-checklist'); if(c) c.click(); setTimeout(()=>{ const b=document.getElementById('btn-depart'); if(b && !b.disabled) b.click(); }, 250); }, 300);
+        }
+      },
+      {
+        title: 'B2: ステーション「あおば」へ帰投',
+        desc: '榊原「ステーションへ向けて帰投中です。距離90以内に入れば処女航海完了です」',
+        hl: null,
+        autoAction: () => { setWarp(8); }
+      }
+    ]
+  };
+  S.target = hab;
+  showOfficerPopup(GUIDE, 'まず航海計画を立てます。「航海計画」ボタンを押してください。');
+  renderTutorialUI();
+  setTimeout(()=>{
+    if(S && S.prologue && S.tutorial && S.tutorial.step === 0){
+      openPlanPanel({
+        mode:'depart', legType:'simple',
+        routeName:'観光航路 ソル周遊 S1',
+        fixes:'ステーション「あおば」 → 居住惑星近傍点',
+        targetBody: hab, arrivalDist: 70, needDock: false, shortChecklist: false
+      });
+    }
+  }, 500);
+}
+
+function initMission1Tutorial(){
+  camAzAccum = 0;
+  S.tutorial = {
+    mode: 'm1',
+    step: 0,
+    stuckTime: 0,
+    skipped: false,
+    nextActionText: '教導士官のブリーフィングを確認して「航海計画」を開こう',
+    onPlanOpened: () => {
+      showOfficerPopup(GUIDE, 'Δv（デルタブイ）は「あとどれだけ噴射できるか。燃料の残量みたいなもの」です。案を選んで「出航」を押しましょう。');
+    },
+    onDeparted: () => {
+      if(S.tutorial.step <= 1){
+        S.tutorial.step = 2; S.tutorial.stuckTime = 0;
+        showOfficerPopup(GUIDE, '「指示→復唱→実行→報告」が艦橋の基本です。航法士官が命令を復唱し、噴射を完了するまで見守りましょう。');
+      }
+    },
+    onBeforeBrake: () => {
+      if(S.tutorial && S.tutorial.step <= 4){
+        showOfficerPopup(GUIDE, '相対速度とは「相手から見た自分の速さ。これが大きいまま近づくと、ぶつかってしまう」ものです。ここで減速します！');
+      }
+    },
+    steps: [
+      {
+        title: '0. 任務ブリーフィング',
+        desc: '物資が心もとない輸送艦「さくら」へ、補給艦「あけぼの」から荷物を受け取る、定期航路の補給便としての訓練です。決められた航路を時刻表どおりに運航します。ランデブー＝「相手と同じ場所に、同じ速さで並ぶこと」、ドッキング（接舷）＝「くっついて、補給や荷物の受け渡しをすること」。',
+        hl: '#btn-plan',
+        autoAction: () => { S.tutorial.step = 1; openMissionPlanPanel(); }
+      },
+      {
+        title: '1. 航海計画の承認',
+        desc: '航行AI『イオ』が計算し、航法士官が提示した計画を確認し、「出航用意よし — 出航」を押してください。復唱＝「命令を繰り返して、間違いがないか確認すること」です。',
+        hl: '#btn-depart',
+        autoAction: () => {
+          if(!document.getElementById('plan-panel').classList.contains('open')) openMissionPlanPanel();
+          setTimeout(()=>{ const c=document.getElementById('departure-checklist'); if(c) c.click(); setTimeout(()=>{ const b=document.getElementById('btn-depart'); if(b && !b.disabled) b.click(); }, 250); }, 250);
+        }
+      },
+      {
+        title: '2. 出航噴射の観察',
+        desc: '航行AIと航法士官が出航噴射を実行中です。「指示→復唱→実行→報告」の流れを見守りましょう。',
+        hl: null,
+        autoAction: () => { setWarp(3); }
+      },
+      {
+        title: '3. 周囲の確認（カメラドラッグ）',
+        desc: '巡航中に画面をドラッグして、目標艦と進入コースの位置を確認しましょう。',
+        hl: null,
+        autoAction: () => { camAzAccum += 0.4; cam.az += 0.4; }
+      },
+      {
+        title: '4. 減速の理解',
+        desc: '距離48で自動減速を行います。相対速度（相手から見た自分の速さ）を落とすことで安全に近づけます。',
+        hl: null,
+        autoAction: () => { setWarp(3); }
+      },
+      {
+        title: '5. 艦長の修正命令（速度同調）',
+        desc: 'ランデブー＝「相手と同じ場所に、同じ速さで並ぶこと」。最後の速力合わせは艦長の命令で！「速度同調」を押してください。',
+        hl: '#btn-order-match',
+        autoAction: () => { orderMatch(); }
+      },
+      {
+        title: '6. 進入コース合流',
+        desc: '進入コース＝「接舷のために決められた入り口と道。みんなが同じ道を通るから、安全に近づける」。合流してゲートを通過しましょう。',
+        hl: '#btn-order-join',
+        autoAction: () => { if(!S.activeBurn) orderJoinApproach(); }
+      },
+      {
+        title: '7. 接舷（ドッキング）',
+        desc: '管制が接舷ゲートを割り当てます（今回は第3ゲート）。宇宙港では「空きゲートの提示 → 艦長が入港を承認 → AIが進入・接舷」が普通の手順です。承認したら、あとは見守りましょう。',
+        hl: null,
+        autoAction: () => { setWarp(3); }
+      }
+    ]
+  };
+  showOfficerPopup(GUIDE, MISSIONS[0].startQuote);
+  renderTutorialUI();
+}
+
+function updateTutorialAndPrologue(simDt){
+  if(!S || !S.tutorial || S.tutorial.skipped) return;
+  const tut = S.tutorial;
+  tut.stuckTime += simDt;
+  const cur = tut.steps[tut.step];
+  if(!cur) return;
+  tut.nextActionText = cur.desc;
+
+  if(tut.mode === 'prologue'){
+    const hab = S.planets[1] || S.planets[0];
+    if(tut.step === 1 && camAzAccum >= 0.35){
+      tut.step = 2; tut.stuckTime = 0; playSfx('click');
+      showOfficerPopup(GUIDE, '視界確認よし。次は時間倍率を 3x 以上に上げてみましょう。');
+    } else if(tut.step === 2 && S.warp >= 3){
+      tut.step = 3; tut.stuckTime = 0; playSfx('click');
+      showOfficerPopup(GUIDE, '時間倍率の確認よし。必要なら 1x に戻しても構いません。まもなく居住惑星に到着します。');
+    } else if(tut.step === 3){
+      const d = Math.hypot(S.ship.x - hab.x, S.ship.y - hab.y, S.ship.z - hab.z);
+      if(d <= 70){
+        tut.step = 4; tut.stuckTime = 0;
+        S.planExec = null; S.activeBurn = null;
+        S.target = S.station;
+        showOfficerPopup(S.officers[0], '居住惑星に到着しました！青い海が美しいですね…さあ、ステーションへ戻りましょう。');
+        logEvent('🌍 居住惑星近傍に到達。帰投フェーズへ。');
+        setTimeout(()=>{
+          if(S && S.prologue && S.tutorial && S.tutorial.step === 4){
+            openPlanPanel({
+              mode:'depart', legType:'simple',
+              routeName:'帰投航路 あおば R0',
+              fixes:'居住惑星近傍 → ステーション「あおば」',
+              targetBody: S.station, arrivalDist: 90, needDock: false, shortChecklist: true
+            });
+          }
+        }, 1800);
+      }
+    } else if(tut.step === 5){
+      const d = Math.hypot(S.ship.x - S.station.x, S.ship.y - S.station.y, S.ship.z - S.station.z);
+      if(d <= 90){
+        tut.skipped = true;
+        S.planExec = null; S.activeBurn = null;
+        meritTotal += 30;
+        playSfx('success');
+        triggerCelebration('処女航海 完了！');
+        logEvent('🎖️ 処女航海完了！功績 +30 pt 獲得。');
+        showOfficerPopup(GUIDE, '処女航海、見事でした！功績+30。さて、次は実務です。');
+        setTimeout(()=>{ startMission(0); }, 3000);
+      }
+    }
+  } else if(tut.mode === 'm1'){
+    const r = relState();
+    if(tut.step === 0 && document.getElementById('plan-panel').classList.contains('open')){
+      tut.step = 1; tut.stuckTime = 0;
+    } else if(tut.step === 2 && !S.activeBurn && S.planExec && S.planExec.phase === 'cruise'){
+      tut.step = 3; tut.stuckTime = 0; camAzAccum = 0;
+    } else if(tut.step === 3 && camAzAccum >= 0.35){
+      tut.step = 4; tut.stuckTime = 0; playSfx('click');
+    } else if(tut.step === 4 && S.planExec && (S.planExec.phase === 'captain' || S.planExec.phase === 'join') && !S.activeBurn && r.closing <= 1.6){
+      tut.step = 5; tut.stuckTime = 0;
+      showOfficerPopup(GUIDE, '減速完了！ランデブーとは「相手と同じ場所に、同じ速さで並ぶこと」。「速度同調」を押して速力を合わせましょう！');
+    } else if(tut.step === 5 && r.rel <= 0.35 && S.lastOrder === 'match'){
+      tut.step = 6; tut.stuckTime = 0;
+      if(S.planExec) S.planExec.manualModified = false;
+      showOfficerPopup(GUIDE, '速力同調よし！次は進入コース（接舷のための安全な道）へ合流します。');
+    } else if(tut.step === 6 && S.approach.established){
+      tut.step = 7; tut.stuckTime = 0;
+      showOfficerPopup(GUIDE, '進入コースに乗りました！あおば管制から「第3ゲートが空いています」と連絡。入港承認のうえ、AIが接舷まで運航します。');
+    }
+  }
+
+  if(tut.stuckTime >= 20 && !tut.warned20){
+    tut.warned20 = true;
+    showOfficerPopup(GUIDE, 'ヒント：' + cur.desc);
+  }
+  renderTutorialUI();
+}
+
+function renderTutorialUI(){
+  const box = document.getElementById('tutorial-steps');
+  document.querySelectorAll('.pulse-hl').forEach(el => el.classList.remove('pulse-hl'));
+  if(!S || !S.tutorial || S.tutorial.skipped){
+    box.classList.remove('visible');
+    return;
+  }
+  const tut = S.tutorial;
+  const cur = tut.steps[tut.step];
+  if(!cur){ box.classList.remove('visible'); return; }
+  box.classList.add('visible');
+  if(cur.hl){
+    const targetEl = document.querySelector(cur.hl);
+    if(targetEl) targetEl.classList.add('pulse-hl');
+  }
+  const skipLabel = tut.mode === 'prologue' ? '処女航海をスキップ' : 'チュートリアルをスキップ';
+  box.innerHTML =
+    '<div class="tut-head"><span class="tut-badge">教導士官 榊原少佐 — '+cur.title+'</span><span class="tut-check">ステップ '+(tut.step+1)+'/'+tut.steps.length+'</span></div>'+
+    '<div class="tut-body">'+cur.desc+'</div>'+
+    '<div class="tut-actions">'+
+      (tut.stuckTime >= 40 ? '<button id="btn-tut-auto" class="teal">副官に任せる</button>' : '')+
+      '<button id="btn-tut-skip">'+skipLabel+'</button>'+
+    '</div>';
+  const autoBtn = document.getElementById('btn-tut-auto');
+  if(autoBtn) autoBtn.onclick = () => { playSfx('click'); tut.stuckTime = 0; tut.warned20 = false; if(cur.autoAction) cur.autoAction(); };
+  document.getElementById('btn-tut-skip').onclick = () => {
+    playSfx('click');
+    if(tut.mode === 'prologue'){ startMission(0); }
+    else { tut.skipped = true; renderTutorialUI(); }
+  };
+}
+
+// ---------- Canvas手続きテクスチャ生成 ----------
+let _glowTex=null, _nebulaTex=null;
+function glowTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=128;
+  const g=c.getContext('2d');
+  const grad=g.createRadialGradient(64,64,2,64,64,64);
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(0.28,'rgba(255,255,255,0.55)');
+  grad.addColorStop(0.65,'rgba(255,255,255,0.12)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
+  g.fillStyle=grad; g.fillRect(0,0,128,128);
+  return new THREE.CanvasTexture(c);
+}
+function nebulaTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const g=c.getContext('2d');
+  for(let i=0;i<7;i++){
+    const x=128+(Math.random()-0.5)*70, y=128+(Math.random()-0.5)*70, r=60+Math.random()*65;
+    const grad=g.createRadialGradient(x,y,4,x,y,r);
+    grad.addColorStop(0,'rgba(255,255,255,0.22)');
+    grad.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=grad; g.fillRect(0,0,256,256);
+  }
+  return new THREE.CanvasTexture(c);
+}
+function glowSprite(color, scale, opacity=0.9){
+  if(!_glowTex) _glowTex=glowTexture();
+  const m=new THREE.SpriteMaterial({ map:_glowTex, color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false });
+  const sp=new THREE.Sprite(m); sp.scale.set(scale,scale,1); return sp;
+}
+function makePlanetTexture(p){
+  const c=document.createElement('canvas'); c.width=256; c.height=128;
+  const g=c.getContext('2d');
+  const col = new THREE.Color(p.color);
+  const r0=Math.floor(col.r*255), g0=Math.floor(col.g*255), b0=Math.floor(col.b*255);
+  g.fillStyle='rgb('+r0+','+g0+','+b0+')';
+  g.fillRect(0,0,256,128);
+
+  if(p.name.includes('ガス')){
+    for(let y=0;y<128;y+=3){
+      const k=0.65+0.45*Math.sin(y*0.22+Math.random()*0.4);
+      g.fillStyle='rgba('+Math.min(255,Math.floor(r0*k))+','+Math.min(255,Math.floor(g0*k))+','+Math.min(255,Math.floor(b0*k))+',0.65)';
+      g.fillRect(0,y,256,3);
+    }
+    g.fillStyle='rgba(255,220,180,0.45)';
+    g.beginPath(); g.ellipse(140,78,24,10,0,0,Math.PI*2); g.fill();
+  } else if(p.name.includes('居住') || p.name.includes('海洋')){
+    g.fillStyle='#19589c'; g.fillRect(0,0,256,128);
+    g.fillStyle=p.name.includes('海洋')?'#2874b8':'#45b36b';
+    for(let i=0;i<26;i++){
+      g.beginPath();
+      g.ellipse(Math.random()*256, 15+Math.random()*98, 12+Math.random()*28, 8+Math.random()*18, Math.random()*3, 0, Math.PI*2);
+      g.fill();
+    }
+    g.fillStyle='rgba(255,255,255,0.32)';
+    for(let i=0;i<18;i++){
+      g.beginPath(); g.ellipse(Math.random()*256, Math.random()*128, 22+Math.random()*30, 3+Math.random()*4, 0, 0, Math.PI*2); g.fill();
+    }
+  } else if(p.name.includes('氷')){
+    g.fillStyle='#b8d4f0'; g.fillRect(0,0,256,128);
+    g.strokeStyle='rgba(255,255,255,0.6)'; g.lineWidth=1.5;
+    for(let i=0;i<30;i++){
+      g.beginPath();
+      let x=Math.random()*256, y=Math.random()*128;
+      g.moveTo(x,y); g.lineTo(x+(Math.random()-0.5)*55, y+(Math.random()-0.5)*35); g.stroke();
+    }
+  } else {
+    for(let i=0;i<40;i++){
+      const x=Math.random()*256, y=Math.random()*128, rad=3+Math.random()*11;
+      g.fillStyle='rgba(0,0,0,0.18)'; g.beginPath(); g.arc(x,y,rad,0,Math.PI*2); g.fill();
+      g.strokeStyle='rgba(255,255,255,0.16)'; g.lineWidth=1; g.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}
+
+// ---------- ローポリ宇宙船モデル ----------
+function buildPlayerShipMesh(){
+  const grp = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color:0xc8dcff, metalness:0.55, roughness:0.32 });
+  const accentMat = new THREE.MeshStandardMaterial({ color:0x3b82f6, metalness:0.4, roughness:0.35, emissive:0x0b2554 });
+  const darkMat = new THREE.MeshStandardMaterial({ color:0x1e293b, metalness:0.7, roughness:0.4 });
+
+  // 船体ハル (+Z前方)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(2.1, 6.5, 6), hullMat);
+  nose.rotation.x = Math.PI/2; nose.position.z = 4.2; grp.add(nose);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 7.2, 6), hullMat);
+  body.rotation.x = Math.PI/2; body.position.z = -1.2; grp.add(body);
+
+  // 艦橋
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 2.8), accentMat);
+  bridge.position.set(0, 1.9, -0.5); grp.add(bridge);
+
+  // 左右ウィング＆エンジンナセル
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.35, 3.2), accentMat);
+  wing.position.set(0, -0.1, -2.2); grp.add(wing);
+  const flames = [];
+  [-3.8, 3.8].forEach(x=>{
+    const nac = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 4.4, 8), darkMat);
+    nac.rotation.x = Math.PI/2; nac.position.set(x, -0.1, -2.5); grp.add(nac);
+    const fl = new THREE.Mesh(
+      new THREE.ConeGeometry(0.85, 5.5, 8),
+      new THREE.MeshBasicMaterial({ color:0x60d5ff, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending })
+    );
+    fl.rotation.x = -Math.PI/2; fl.position.set(x, -0.1, -6.8);
+    grp.add(fl); flames.push(fl);
+  });
+  grp.userData.flames = flames;
+  grp.add(glowSprite(0x6ea8ff, 28, 0.55));
+  return grp;
+}
+function buildTargetShipMesh(){
+  const grp = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color:0xdff7ec, metalness:0.45, roughness:0.4 });
+  const podMat = new THREE.MeshStandardMaterial({ color:0x34d399, emissive:0x094e35, metalness:0.35, roughness:0.35 });
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 16, 8), hullMat);
+  spine.rotation.x = Math.PI/2; grp.add(spine);
+  const cmd = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.2, 4.5), hullMat);
+  cmd.position.set(0, 0.5, 7.2); grp.add(cmd);
+  [[3.2,0],[-3.2,0],[0,3.2],[0,-3.2]].forEach(([x,y])=>{
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 7.5, 8), podMat);
+    pod.rotation.x = Math.PI/2; pod.position.set(x, y, -1); grp.add(pod);
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(9.5, 0.65, 10, 36), new THREE.MeshBasicMaterial({ color:0x47e5a1, transparent:true, opacity:0.78 }));
+  ring.rotation.x = Math.PI/3; grp.add(ring);
+  grp.userData.ring = ring;
+  grp.add(glowSprite(0x47e5a1, 46, 0.65));
+  return grp;
+}
+function buildWingMesh(){
+  const grp = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color:0xffd166, metalness:0.5, roughness:0.35, emissive:0x3d2804 });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(1.8, 6.2, 5), mat);
+  body.rotation.x = Math.PI/2; grp.add(body);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.25, 2.0), mat);
+  wing.position.set(0, 0, -1.3); grp.add(wing);
+  const fl = new THREE.Mesh(
+    new THREE.ConeGeometry(0.55, 3.2, 6),
+    new THREE.MeshBasicMaterial({ color:0xffb35c, transparent:true, opacity:0.75, blending:THREE.AdditiveBlending })
+  );
+  fl.rotation.x = -Math.PI/2; fl.position.set(0, 0, -4.4); grp.add(fl);
+  grp.userData.flame = fl;
+  return grp;
+}
+
+// ---------- Three.js 描画・予測軌道・カメラ ----------
+const container = document.getElementById('view3d');
+let renderer, scene, camera, sysGroup=null;
+let cam = { az:0.9, pol:1.02, dist:620, target:null, follow:false };
+let starMesh, planetMeshes=[], shipMesh, targetMesh, stationMesh=null, npcMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
+let frameCount = 0;
+
+function buildStationMesh(){
+  const grp = new THREE.Group();
+  const ringMat = new THREE.MeshStandardMaterial({ color:0x2dd4bf, metalness:0.45, roughness:0.35, emissive:0x0a3832 });
+  const hubMat = new THREE.MeshStandardMaterial({ color:0xe2e8f0, metalness:0.5, roughness:0.4 });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(13, 1.4, 10, 36), ringMat);
+  ring.rotation.x = Math.PI/2; grp.add(ring);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.2, 10, 8), hubMat);
+  grp.add(hub);
+  grp.add(glowSprite(0x2dd4bf, 55, 0.7));
+  grp.userData.ring = ring;
+  return grp;
+}
+function buildNpcMesh(color){
+  const grp = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color, metalness:0.45, roughness:0.4, emissive:0x111827 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 6.2), mat);
+  grp.add(body);
+  grp.add(glowSprite(color, 18, 0.45));
+  return grp;
+}
+function updatePlanLineMesh(){
+  if(!planLine || !S) return;
+  const pts = S.planSamples;
+  const show = pts && pts.length >= 2 && (document.getElementById('plan-panel').classList.contains('open') || (S.planExec && S.planExec.active));
+  if(!show){ planLine.visible = false; return; }
+  const pos = new Float32Array(pts.length * 3);
+  const col = new Float32Array(pts.length * 3);
+  for(let i=0;i<pts.length;i++){
+    pos[i*3]=pts[i][0]; pos[i*3+1]=pts[i][1]; pos[i*3+2]=pts[i][2];
+    col[i*3]=0.96; col[i*3+1]=0.72; col[i*3+2]=0.22;
+  }
+  planLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  planLine.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+  planLine.geometry.computeBoundingSphere();
+  planLine.visible = true;
+}
+
+function makeTrail(color, isDashed=false){
+  const geo=new THREE.BufferGeometry();
+  const mat=new THREE.LineBasicMaterial({ vertexColors:true, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending });
+  const line=new THREE.Line(geo, mat);
+  line.frustumCulled=false;
+  line.userData.baseColor = new THREE.Color(color);
+  return line;
+}
+function updateTrail(line, ptsArray){
+  const len = ptsArray.length;
+  if(len < 2){ line.visible=false; return; }
+  line.visible=true;
+  const pos = new Float32Array(len*3);
+  const col = new Float32Array(len*3);
+  const c = line.userData.baseColor;
+  for(let i=0;i<len;i++){
+    const p = ptsArray[i];
+    pos[i*3]=p[0]; pos[i*3+1]=p[1]; pos[i*3+2]=p[2];
+    const t = Math.pow(i/(len-1), 1.6);
+    col[i*3]=c.r*t; col[i*3+1]=c.g*t; col[i*3+2]=c.b*t;
+  }
+  line.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  line.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+  line.geometry.computeBoundingSphere();
+}
+function updatePredictedTrajectory(){
+  if(!predLine || !S || S.docked){ if(predLine) predLine.visible=false; return; }
+  const sim = { x:S.ship.x, y:S.ship.y, z:S.ship.z, vx:S.ship.vx, vy:S.ship.vy, vz:S.ship.vz };
+  const steps = 110, h = 0.32;
+  const pts = [[sim.x, sim.y, sim.z]];
+  const g = {x:0,y:0,z:0};
+  for(let i=0;i<steps;i++){
+    gravityAt(sim.x,sim.y,sim.z,g);
+    sim.vx+=g.x*h; sim.vy+=g.y*h; sim.vz+=g.z*h;
+    sim.x+=sim.vx*h; sim.y+=sim.vy*h; sim.z+=sim.vz*h;
+    pts.push([sim.x,sim.y,sim.z]);
+  }
+  const len = pts.length;
+  const pos = new Float32Array(len*3);
+  const col = new Float32Array(len*3);
+  const c = predLine.userData.baseColor;
+  for(let i=0;i<len;i++){
+    const t = 1 - (i/(len-1));
+    pos[i*3]=pts[i][0]; pos[i*3+1]=pts[i][1]; pos[i*3+2]=pts[i][2];
+    col[i*3]=c.r*t; col[i*3+1]=c.g*t; col[i*3+2]=c.b*t;
+  }
+  predLine.visible = true;
+  predLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  predLine.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+  predLine.geometry.computeBoundingSphere();
+}
+
+function buildSystemMeshes(){
+  if(!scene) return;
+  if(sysGroup) scene.remove(sysGroup);
+  sysGroup=new THREE.Group(); scene.add(sysGroup); trailLines={};
+
+  starMesh=new THREE.Mesh(
+    new THREE.SphereGeometry(17,32,32),
+    new THREE.MeshBasicMaterial({ color:S.sys.starColor })
+  );
+  starMesh.add(glowSprite(S.sys.starColor, 130, 0.95));
+  starMesh.add(glowSprite(0xffffff, 52, 0.8));
+  sysGroup.add(starMesh);
+  sysGroup.add(new THREE.PointLight(0xfff5e4, 2.2, 0, 0));
+
+  planetMeshes=S.planets.map(p=>{
+    const tex = makePlanetTexture(p);
+    const m=new THREE.Mesh(
+      new THREE.SphereGeometry(p.radius,28,24),
+      new THREE.MeshStandardMaterial({ map:tex, roughness:0.78, metalness:0.08 })
+    );
+    m.add(glowSprite(p.color, p.radius*3.2, 0.28));
+    sysGroup.add(m);
+    trailLines['p'+p.name]=makeTrail(p.color); sysGroup.add(trailLines['p'+p.name]);
+    return m;
+  });
+
+  if(S.station){
+    stationMesh = buildStationMesh(); sysGroup.add(stationMesh);
+  } else {
+    stationMesh = null;
+  }
+  targetMesh = S.station && S.target === S.station ? stationMesh : buildTargetShipMesh();
+  if(targetMesh !== stationMesh) sysGroup.add(targetMesh);
+  trailLines.target = makeTrail(0x47e5a1); sysGroup.add(trailLines.target);
+
+  shipMesh = buildPlayerShipMesh(); sysGroup.add(shipMesh);
+  trailLines.ship = makeTrail(0x58b4ff); sysGroup.add(trailLines.ship);
+
+  predLine = makeTrail(0x38bdf8); sysGroup.add(predLine);
+  planLine = makeTrail(0xf59e0b); planLine.visible = false; sysGroup.add(planLine);
+
+  // 進入コース描画グループ
+  corridorGroup = new THREE.Group();
+  const corGeo = new THREE.BufferGeometry();
+  const corMat = new THREE.LineBasicMaterial({ color:0x2dd4bf, transparent:true, opacity:0.75 });
+  corridorLine = new THREE.Line(corGeo, corMat);
+  corridorLine.frustumCulled = false;
+  corridorGroup.add(corridorLine);
+  corridorFixRing = new THREE.Mesh(new THREE.TorusGeometry(6.5, 0.45, 8, 28), new THREE.MeshBasicMaterial({ color:0x2dd4bf, transparent:true, opacity:0.85 }));
+  corridorMidRing = new THREE.Mesh(new THREE.TorusGeometry(4.5, 0.35, 8, 24), new THREE.MeshBasicMaterial({ color:0x47e5a1, transparent:true, opacity:0.75 }));
+  corridorGroup.add(corridorFixRing);
+  corridorGroup.add(corridorMidRing);
+  sysGroup.add(corridorGroup);
+
+  npcMeshes = (S.npcs || []).map(n => { const m = buildNpcMesh(n.color); sysGroup.add(m); return m; });
+
+  wingMeshes = S.wings.map(()=>{
+    const m = buildWingMesh(); sysGroup.add(m); return m;
+  });
+}
+function addWingMesh(w, pushState){
+  if(pushState) S.wings.push(w);
+  const m = buildWingMesh();
+  if(sysGroup) sysGroup.add(m);
+  wingMeshes.push(m);
+}
+
+function initThree(){
+  renderer=new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  renderer.setSize(container.clientWidth||window.innerWidth, container.clientHeight||window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
+  container.appendChild(renderer.domElement);
+
+  scene=new THREE.Scene(); scene.background=new THREE.Color(0x02050f);
+  camera=new THREE.PerspectiveCamera(55, (container.clientWidth||window.innerWidth)/(container.clientHeight||window.innerHeight), 0.5, 22000);
+  cam.target=new THREE.Vector3(0,0,0);
+
+  // 立体感を出す環境光 + リムライト
+  scene.add(new THREE.AmbientLight(0x9bb8ff, 0.45));
+  const rim = new THREE.DirectionalLight(0x7dd3fc, 0.55);
+  rim.position.set(-400, 350, -300);
+  scene.add(rim);
+
+  // 多層星屑レイヤー
+  const makeStars = (N, rMin, rMax, size, op)=>{
+    const geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3), col=new Float32Array(N*3);
+    const palette=[[0.8,0.9,1],[1,0.95,0.85],[0.7,0.82,1],[1,0.82,0.75]];
+    for(let i=0;i<N;i++){
+      const r=rMin+Math.random()*(rMax-rMin), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+      pos[i*3]=r*Math.sin(ph)*Math.cos(th); pos[i*3+1]=r*Math.cos(ph); pos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+      const c=palette[i%palette.length];
+      col[i*3]=c[0]; col[i*3+1]=c[1]; col[i*3+2]=c[2];
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+    scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ vertexColors:true, size, sizeAttenuation:true, transparent:true, opacity:op })));
+  };
+  makeStars(1600, 4800, 9500, 15, 0.88);
+  makeStars(1200, 7000, 13000, 9, 0.45);
+
+  // 手続き生成 星雲スプライト
+  _nebulaTex = nebulaTexture();
+  const nebColors=[0x3b4cca, 0x1e6b7b, 0x6b2d75, 0x25408f, 0x195e63];
+  for(let i=0;i<6;i++){
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map:_nebulaTex, color:nebColors[i%nebColors.length],
+      transparent:true, opacity:0.16, blending:THREE.AdditiveBlending, depthWrite:false
+    }));
+    const r=6500+Math.random()*2000, th=i*1.05, ph=0.8+Math.random()*1.4;
+    sp.position.set(r*Math.sin(ph)*Math.cos(th), r*Math.cos(ph), r*Math.sin(ph)*Math.sin(th));
+    const sc=3400+Math.random()*1800; sp.scale.set(sc,sc,1);
+    scene.add(sp);
+  }
+
+  const grid=new THREE.GridHelper(760, 19, 0x2a4278, 0x162244);
+  grid.material.transparent=true; grid.material.opacity=0.28; scene.add(grid);
+
+  setupCameraControls();
+  window.addEventListener('resize', ()=>{
+    const w=container.clientWidth||window.innerWidth, h=container.clientHeight||window.innerHeight;
+    camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
+  });
+}
+
+function setupCameraControls(){
+  let dragging=false, panning=false, lx=0, ly=0;
+  const el=renderer.domElement;
+  el.addEventListener('contextmenu', e=>e.preventDefault());
+  el.addEventListener('mousedown', e=>{ dragging=true; panning=(e.button===2||e.shiftKey); lx=e.clientX; ly=e.clientY; });
+  window.addEventListener('mouseup', ()=>{ dragging=false; });
+  el.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    const dx=e.clientX-lx, dy=e.clientY-ly; lx=e.clientX; ly=e.clientY;
+    if(panning){
+      const right=new THREE.Vector3().setFromMatrixColumn(camera.matrix,0);
+      const up=new THREE.Vector3().setFromMatrixColumn(camera.matrix,1);
+      cam.target.addScaledVector(right,-dx*cam.dist*0.0012).addScaledVector(up,dy*cam.dist*0.0012);
+      cam.follow=false; setCamButtons();
+    } else {
+      const daz = dx*0.005;
+      cam.az-=daz; camAzAccum += Math.abs(daz); cam.pol=Math.max(0.05, Math.min(Math.PI-0.05, cam.pol-dy*0.005));
+    }
+  });
+  el.addEventListener('wheel', e=>{ e.preventDefault(); cam.dist=Math.max(40, Math.min(2400, cam.dist*(1+e.deltaY*0.001))); }, { passive:false });
+  el.addEventListener('touchstart', e=>{ if(e.touches.length===1){ dragging=true; panning=false; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, { passive:true });
+  el.addEventListener('touchmove', e=>{ if(dragging&&e.touches.length===1){ const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY; const daz=dx*0.006; cam.az-=daz; camAzAccum+=Math.abs(daz); cam.pol=Math.max(0.05,Math.min(Math.PI-0.05,cam.pol-dy*0.006)); } }, { passive:true });
+  el.addEventListener('touchend', ()=>{ dragging=false; });
+}
+function updateCamera(){
+  if(cam.follow && S){
+    cam.target.lerp(new THREE.Vector3(S.ship.x,S.ship.y,S.ship.z), 0.12);
+  }
+  const sp=Math.sin(cam.pol), x=cam.target.x+cam.dist*sp*Math.cos(cam.az);
+  const y=cam.target.y+cam.dist*Math.cos(cam.pol), z=cam.target.z+cam.dist*sp*Math.sin(cam.az);
+  camera.position.set(x,y,z); camera.lookAt(cam.target);
+}
+function setCamButtons(){
+  document.getElementById('btn-cam-free').classList.toggle('active', !cam.follow);
+  document.getElementById('btn-cam-follow').classList.toggle('active', cam.follow);
+}
+
+const _lookTmp = new THREE.Vector3();
+function orientShip(mesh, body){
+  _lookTmp.set(body.x + body.vx, body.y + body.vy, body.z + body.vz);
+  mesh.lookAt(_lookTmp);
+}
+function syncMeshes(){
+  if(!sysGroup||!S) return;
+  S.planets.forEach((p,i)=>{
+    planetMeshes[i].position.set(p.x,p.y,p.z);
+    planetMeshes[i].rotation.y += 0.004;
+    updateTrail(trailLines['p'+p.name], p.trail);
+  });
+  if(stationMesh && S.station){
+    stationMesh.position.set(S.station.x, S.station.y, S.station.z);
+    if(stationMesh.userData.ring) stationMesh.userData.ring.rotation.z += 0.008;
+  }
+  if(targetMesh && S.target !== S.station){
+    targetMesh.position.set(S.target.x,S.target.y,S.target.z);
+    orientShip(targetMesh, S.target);
+    if(targetMesh.userData.ring) targetMesh.userData.ring.rotation.z += 0.015;
+  }
+  if(S.npcs){
+    S.npcs.forEach((n,i)=>{
+      if(npcMeshes[i]){ npcMeshes[i].position.set(n.x,n.y,n.z); orientShip(npcMeshes[i], n); }
+    });
+  }
+
+  // 進入コース描画
+  if(corridorGroup){
+    if(S.prologue || S.docked){
+      corridorGroup.visible = false;
+    } else {
+      corridorGroup.visible = true;
+      const fix = approachFix(S.target);
+      const mid = { x:(fix.x+S.target.x)*0.5, y:(fix.y+S.target.y)*0.5, z:(fix.z+S.target.z)*0.5 };
+      const pos = new Float32Array([fix.x, fix.y, fix.z, S.target.x, S.target.y, S.target.z]);
+      corridorLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      corridorLine.geometry.computeBoundingSphere();
+      corridorFixRing.position.set(fix.x, fix.y, fix.z);
+      corridorFixRing.lookAt(S.target.x, S.target.y, S.target.z);
+      corridorMidRing.position.set(mid.x, mid.y, mid.z);
+      corridorMidRing.lookAt(S.target.x, S.target.y, S.target.z);
+      const colHex = S.approach.established ? 0x47e5a1 : 0x2dd4bf;
+      corridorFixRing.material.color.setHex(colHex);
+      corridorLine.material.color.setHex(colHex);
+    }
+  }
+
+  shipMesh.position.set(S.ship.x,S.ship.y,S.ship.z);
+  orientShip(shipMesh, S.ship);
+  if(shipMesh.userData.flames){
+    const active = isThrusting && S.dv > 0 && S.warp > 0;
+    const flicker = active ? (0.85 + Math.random()*0.45) : 0.18;
+    shipMesh.userData.flames.forEach(fl=>{
+      fl.scale.set(active?1.15:0.55, flicker, active?1.15:0.55);
+      fl.material.opacity = active ? 0.92 : 0.25;
+    });
+  }
+
+  S.wings.forEach((w,i)=>{
+    if(wingMeshes[i]){
+      wingMeshes[i].position.set(w.x,w.y,w.z);
+      orientShip(wingMeshes[i], w);
+      if(wingMeshes[i].userData.flame){
+        const f = isThrusting ? (0.7+Math.random()*0.4) : 0.3;
+        wingMeshes[i].userData.flame.scale.set(1, f, 1);
+      }
+    }
+  });
+  updateTrail(trailLines.ship, S.ship.trail);
+  updateTrail(trailLines.target, S.target.trail);
+  if(frameCount % 3 === 0) updatePredictedTrajectory();
+}
+
+// ---------- 画面上ターゲットマーカー ----------
+const _proj = new THREE.Vector3();
+function updateTargetMarker(){
+  const mk = document.getElementById('target-marker');
+  if(!S || !camera || !gameStarted){ mk.style.display='none'; return; }
+  const rect = container.getBoundingClientRect();
+  _proj.set(S.target.x, S.target.y, S.target.z).project(camera);
+  const behind = _proj.z > 1;
+  let nx = _proj.x, ny = _proj.y;
+  if(behind){ nx = -nx; ny = -ny; }
+  const onScreen = !behind && Math.abs(nx) <= 0.92 && Math.abs(ny) <= 0.90;
+  const arrow = document.getElementById('tm-arrow');
+  const reticle = document.getElementById('tm-reticle');
+  const dist = relState().dist;
+  document.getElementById('tm-label').textContent = '目標 '+dist.toFixed(0);
+  mk.style.display = 'block';
+
+  if(onScreen){
+    arrow.style.display='none'; reticle.style.display='block';
+    mk.style.left = (rect.left + (nx*0.5+0.5)*rect.width) + 'px';
+    mk.style.top  = (rect.top + (-ny*0.5+0.5)*rect.height) + 'px';
+  } else {
+    arrow.style.display='block'; reticle.style.display='none';
+    const ang = Math.atan2(ny, nx);
+    const maxN = Math.max(Math.abs(nx)/0.9, Math.abs(ny)/0.85, 1);
+    const cx = nx/maxN, cy = ny/maxN;
+    mk.style.left = (rect.left + (cx*0.5+0.5)*rect.width) + 'px';
+    mk.style.top  = (rect.top + (-cy*0.5+0.5)*rect.height) + 'px';
+    arrow.style.transform = 'rotate('+(-ang + Math.PI/2)+'rad)';
+  }
+}
+
+// ---------- HUD・ヒント・結果モーダル ----------
+const logEl = document.getElementById('log');
+function formatShipTime(sec){
+  const t = Math.max(0, Math.floor(sec || 0));
+  const mm = String(Math.floor(t / 60)).padStart(2, '0');
+  const ss = String(t % 60).padStart(2, '0');
+  return '[T+' + mm + ':' + ss + ']';
+}
+function logEvent(text){
+  const d=document.createElement('div');
+  d.textContent=formatShipTime(S?S.time:0)+' '+text;
+  logEl.appendChild(d);
+  while(logEl.children.length>80) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop=logEl.scrollHeight;
+}
+function setStatusMsg(text){
+  document.getElementById('status-msg').textContent = text;
+}
+let popupTimer = null;
+function showOfficerPopup(officer, text){
+  const pop = document.getElementById('officer-popup');
+  const av = document.getElementById('op-avatar');
+  av.textContent = officer.initial || officer.name.slice(0,1);
+  if(officer.color){
+    av.style.background = officer.color;
+    pop.style.borderColor = officer.color;
+  }
+  const roleLabel = officer.title ? (officer.rank ? officer.rank+'・'+officer.title : officer.title) : (officer.role==='待機'?'副長':officer.role);
+  document.getElementById('op-name').textContent = officer.name + '（' + roleLabel + '）';
+  document.getElementById('op-text').textContent = text;
+  pop.classList.add('show');
+  clearTimeout(popupTimer);
+  popupTimer = setTimeout(()=>pop.classList.remove('show'), 5600);
+}
+function triggerCelebration(subText){
+  const el = document.getElementById('celebration-banner');
+  document.getElementById('cel-sub').textContent = subText;
+  el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');
+}
+
+function updateNextActionUI(){
+  const el = document.getElementById('next-action');
+  const res = deriveNextAction();
+  el.textContent = res.text;
+  el.className = res.cls || '';
+}
+
+function updatePlanStatusUI(){
+  const el = document.getElementById('plan-status');
+  if(!S || !S.planExec || !S.planExec.active || S.docked || S.failed){
+    el.classList.remove('visible');
+    return;
+  }
+  const pe = S.planExec;
+  el.classList.add('visible');
+  if(pe.deviated){
+    el.innerHTML = '<span>⚠️ 計画から逸脱（このままでは到達不可）— 「計画続行」または「計画変更・再計算」を選択</span>'+
+      '<div class="ps-actions"><button id="btn-ps-resume" class="teal">計画続行</button><button id="btn-ps-replan">計画変更・再計算</button></div>';
+    document.getElementById('btn-ps-resume').onclick = () => { playSfx('click'); pe.deviated=false; pe.paused=false; pe.manualModified=false; updatePlanStatusUI(); };
+    document.getElementById('btn-ps-replan').onclick = () => { playSfx('click'); openMissionPlanPanel(); };
+    return;
+  }
+  if(pe.manualModified){
+    el.innerHTML = '<span>🛠 艦長命令により修正中（'+pePhaseName(pe.phase)+'）</span>'+
+      '<div class="ps-actions"><button id="btn-ps-return" class="teal">計画に復帰</button><button id="btn-ps-replan">計画変更・再計算</button></div>';
+    document.getElementById('btn-ps-return').onclick = () => { playSfx('click'); pe.manualModified=false; pe.paused=false; updatePlanStatusUI(); };
+    document.getElementById('btn-ps-replan').onclick = () => { playSfx('click'); openMissionPlanPanel(); };
+    return;
+  }
+  const nextStr = pe.legType === 'simple' ? '目標近傍へ巡航中' : (pe.phase === 'cruise' ? '次の噴射: 減速（距離48で実施）' : '現フェーズ: '+pePhaseName(pe.phase));
+  el.innerHTML = '<span>🤖 航行AIイオ 運航中 — 計画フェーズ: <b>'+pePhaseName(pe.phase)+'</b> — '+nextStr+' ／ 残り見込み Δv '+pe.remDv.toFixed(1)+'・約'+Math.round(pe.remTime)+'秒</span>';
+}
+
+function updateOrderBar(){
+  if(!S) return;
+  const busy = !!S.activeBurn || S.docked || S.failed || S.dv <= 0;
+  const ap = computeApproach(S.ship, S.target, S.sys.starGM, 1, S.planets);
+  const br = computeBrake(S.ship, S.target);
+  const mt = computeMatch(S.ship, S.target);
+  const jn = computeJoinApproach(S.ship, S.target, S.sys.starGM, S.planets);
+  document.getElementById('cost-approach').textContent = 'Δv ' + ap.cost.toFixed(1);
+  document.getElementById('cost-brake').textContent = 'Δv ' + br.cost.toFixed(1);
+  document.getElementById('cost-match').textContent = 'Δv ' + mt.cost.toFixed(1);
+  document.getElementById('cost-join').textContent = 'Δv ' + jn.cost.toFixed(1);
+  document.getElementById('btn-order-approach').disabled = busy;
+  document.getElementById('btn-order-brake').disabled = busy;
+  document.getElementById('btn-order-match').disabled = busy;
+  document.getElementById('btn-order-join').disabled = busy || S.prologue;
+  const holdBtn = document.getElementById('btn-order-hold');
+  holdBtn.classList.toggle('active', !!S.holdMode);
+  document.getElementById('hold-state').textContent = S.holdMode ? 'ON' : 'OFF';
+}
+
+function updateManualUI(){
+  const on = !!(S && S.manualOverride);
+  document.getElementById('manual-pad-wrap').classList.toggle('visible', on);
+  document.getElementById('btn-manual-toggle').textContent = '緊急手動操縦: ' + (on ? 'ON' : 'OFF');
+  document.getElementById('btn-manual-toggle').classList.toggle('amber', on);
+}
+
+function triggerTrafficAdvisory(){
+  if(!S || !S.npcs || S.npcs.length === 0) return;
+  const npc = S.npcs[Math.floor(Math.random() * S.npcs.length)];
+  const templates = [
+    'あおば管制: 前方航路に'+npc.name+'。針路が交差します、見張り厳に。',
+    'あおば管制: '+npc.name+'が周辺空域を通過中。各艦、安全間隔を維持せよ。',
+    'あおば管制: 「'+SHIP_CALLSIGN+'」、付近を'+npc.name+'が航行中。現在の進入路は安全です。',
+    'あおば管制: 航路哨戒中の哨戒艇が付近を警戒中。最近は海賊の噂もある。見張り厳に。'
+  ];
+  const msg = templates[Math.floor(Math.random() * templates.length)];
+  logEvent('📡 ' + msg);
+  setStatusMsg(msg);
+}
+
+let hudAuxTimer = 0;
+function updateHUD(){
+  if(!S) return;
+  const r = relState();
+  document.getElementById('hud-dist').textContent = r.dist.toFixed(1);
+  document.getElementById('hud-rel').textContent = r.rel.toFixed(2);
+  const vg = document.getElementById('vel-gauge');
+  const vt = document.getElementById('vel-tag');
+  vg.classList.remove('safe','caution','danger');
+  if(r.rel <= 1.5){ vg.classList.add('safe'); vt.textContent='安全圏'; }
+  else if(r.rel <= 2.5){ vg.classList.add('caution'); vt.textContent='注意'; }
+  else { vg.classList.add('danger'); vt.textContent='危険'; }
+
+  document.getElementById('hud-dv').textContent = S.dv.toFixed(1)+' / '+S.maxDv;
+  document.getElementById('dv-bar').style.width = (S.dv/S.maxDv*100)+'%';
+  document.getElementById('clock').textContent = Math.floor(S.time);
+  document.getElementById('btn-resupply').disabled = !S.docked;
+  document.getElementById('btn-assist').disabled = S.docked || S.failed || S.assistUses<=0 || S.dv<=0;
+  document.getElementById('assist-left').textContent = S.assistUses;
+  updateMissionBanner();
+}
+
+function updatePanels(){
+  if(!S) return;
+  document.getElementById('res-prop').textContent=S.res.prop;
+  document.getElementById('res-sup').textContent=S.res.sup;
+  document.getElementById('res-cred').textContent=S.res.cred;
+  document.getElementById('res-pol').textContent=S.res.pol;
+  document.getElementById('res-warp').textContent=S.res.warp;
+  document.getElementById('star-dist').textContent=Math.floor(distFromStar());
+  const ps=document.getElementById('prod-state'), pb=document.getElementById('prod-bar');
+  if(S.prod){ ps.textContent='建造中… 残り '+Math.ceil(S.prod.remain)+' 秒'; pb.style.width=((1-S.prod.remain/S.prod.total)*100)+'%'; }
+  else { ps.textContent='空き'; pb.style.width='0%'; }
+}
+
+function getRankInfo(pts){
+  let cur = RANKS[0], next = RANKS[1];
+  for(let i=0;i<RANKS.length;i++){
+    if(pts >= RANKS[i].min){ cur = RANKS[i]; next = RANKS[i+1] || null; }
+  }
+  const pct = next ? Math.min(100, ((pts - cur.min)/(next.min - cur.min))*100) : 100;
+  return { cur, next, pct };
+}
+function openResultModal(isSuccess, title, desc, prevMerit=meritTotal){
+  const isFinal = isSuccess && currentMissionIdx >= MISSIONS.length - 1;
+  document.getElementById('rm-title').textContent = isFinal ? '🏆 全ミッション制覇！' : title;
+  document.getElementById('rm-desc').textContent = isFinal ? 'すべての任務を完遂し、艦隊の英雄となりました！' : desc + ' 昇進すれば、指揮する艦と組織は大きくなります。次の配置は実績で「応募」するか、人脈と名声で「誘い」を受けるか——キャリアは一本道ではありません。';
+  document.getElementById('rm-merit').textContent = meritTotal + ' pt';
+  const ri = getRankInfo(meritTotal);
+  document.getElementById('rm-rank').textContent = ri.cur.name;
+  document.getElementById('rm-next-rank').textContent = ri.next ? ('次の昇進まで '+(ri.next.min - meritTotal)+' pt') : '最高階級に到達！';
+  const bar = document.getElementById('rm-promo-bar');
+  bar.style.width = getRankInfo(prevMerit).pct + '%';
+  setTimeout(()=>{ bar.style.width = ri.pct + '%'; }, 120);
+
+  document.getElementById('btn-rm-next').style.display = (isSuccess && !isFinal) ? 'inline-block' : 'none';
+  document.getElementById('btn-rm-retry').style.display = isSuccess ? 'none' : 'inline-block';
+  document.getElementById('result-modal').classList.add('open');
+}
+
+// ---------- 銀河/ワープ ----------
+function distFromStar(){ return Math.hypot(S.ship.x,S.ship.y,S.ship.z); }
+function renderGalaxy(){
+  const g=document.getElementById('galaxy'); g.innerHTML='';
+  SYSTEMS.forEach(sys=>{
+    const b=document.createElement('button');
+    const cur=S&&S.sys.id===sys.id;
+    b.className='sys-btn'+(cur?' current':'');
+    b.textContent=(cur?'● ':'○ ')+sys.name+(cur?'（現在）':' ― ワープ燃料 '+sys.warpCost);
+    b.onclick=()=>doWarp(sys);
+    g.appendChild(b);
+  });
+}
+function doWarp(sys){
+  if(S.sys.id===sys.id) return;
+  if(distFromStar()<340){
+    playSfx('fail');
+    logEvent('⚠️ ワープ不可：恒星に近すぎます（距離340以上必要／現在 '+Math.floor(distFromStar())+'）。');
+    setStatusMsg('⚠️ ワープ不可：恒星距離340以上まで離れてください。');
+    return;
+  }
+  if(S.res.warp<sys.warpCost){
+    playSfx('fail');
+    logEvent('⚠️ ワープ燃料が不足しています。');
+    return;
+  }
+  playSfx('warp');
+  S.res.warp-=sys.warpCost;
+  S.docked=false;
+  loadSystem(sys);
+  const st=orbitState(sys.starGM, 385, 4.0, 2, 0);
+  st.vx*=0.95; st.vy*=0.95; st.vz*=0.95;
+  Object.assign(S.ship, st); S.ship.trail=[];
+  logEvent('🌀 '+sys.name+' へワープしました（燃料 -'+sys.warpCost+'）。');
+  setStatusMsg('🌀 '+sys.name+' に到着。目標艦とのランデブーを目指してください。');
+  showOfficerPopup(S.officers[0], sys.name+'へワープ完了！目標艦の信号を再捕捉しました。');
+  renderGalaxy(); updatePanels(); updateMissionBanner();
+}
+
+// ---------- 部下・イベント ----------
+function renderOfficers(){
+  const wrap=document.getElementById('officers'); wrap.innerHTML='';
+  S.officers.forEach(o=>{
+    const div=document.createElement('div'); div.className='officer';
+    div.innerHTML='<span class="name">'+o.name+'</span><div class="stats">戦術 '+o.tactics+'／補給 '+o.logistics+'／政治 '+o.politics+'／忠誠 '+o.loyalty+'／野心 '+o.ambition+'</div>';
+    const sel=document.createElement('select');
+    ROLES.forEach(r=>{ const op=document.createElement('option'); op.value=r; op.textContent=r; if(o.role===r)op.selected=true; sel.appendChild(op); });
+    sel.onchange=()=>{ playSfx('click'); o.role=sel.value; logEvent('👥 '+o.name+' を「'+o.role+'」に配置しました。'); };
+    div.appendChild(sel); wrap.appendChild(div);
+  });
+}
+const EVENTS=[
+  o=>{ S.res.pol=Math.min(100,S.res.pol+4); return ['🏛️ '+o.name+' が議会工作を行い、艦隊予算への支持が広がった。政治的支持 +4', true]; },
+  o=>{ S.res.cred=Math.max(0,S.res.cred-15); S.res.pol=Math.min(100,S.res.pol+2); return ['🍷 '+o.name+' が有力議員との会食を設定。資金 -15、政治的支持 +2', true]; },
+  o=>{ S.res.sup=Math.max(0,S.res.sup-8); return ['📦 '+o.name+' が前線からの補給要請を取り次いだ。補給物資 -8', false]; },
+  o=>{ S.res.prop+=10; S.res.cred=Math.max(0,S.res.cred-10); return ['⛽ '+o.name+' が燃料商社と有利な契約を結んだ。推進剤ストック +10、資金 -10', false]; },
+  (o,other)=>{ S.res.pol=Math.max(0,S.res.pol-3); return ['⚡ '+o.name+' と '+other.name+' が作戦方針で対立！政治的支持 -3', true]; },
+  o=>{ return ['🌟 '+o.name+' が次の昇進人事を巡って根回しを始めた（野心 '+o.ambition+'）。', false]; },
+  o=>{ S.res.sup+=6; return ['🔧 '+o.name+' が倉庫の在庫を棚卸しし、補給物資を発掘した。補給物資 +6', false]; },
+  o=>{ return ['🗣️ '+o.name+' が「'+(o.role==='待機'?'現場に出たい':o.role+'として成果を出す')+'」と意欲を見せている。', false]; },
+];
+function triggerEvent(){
+  const o=S.officers[Math.floor(Math.random()*S.officers.length)];
+  let other=S.officers[Math.floor(Math.random()*S.officers.length)];
+  if(other===o) other=S.officers[(S.officers.indexOf(o)+1)%S.officers.length];
+  const ev=EVENTS[Math.floor(Math.random()*EVENTS.length)];
+  const [text, major]=ev(o,other);
+  logEvent(text);
+  if(major) showOfficerPopup(o, text);
+  updatePanels();
+}
+
+// ---------- アクション (ランデブー支援 1.5倍コスト・回数制限) ----------
+function assistBurn(){
+  if(!S || S.docked || S.failed || S.assistUses<=0 || S.dv<=0) return;
+  const r=relState();
+  if(r.rel < 0.05) return;
+  const fullCost = r.rel * 1.5;
+  const useDv = Math.min(S.dv, fullCost);
+  const frac = useDv / fullCost;
+  S.ship.vx -= (S.ship.vx - S.target.vx) * frac;
+  S.ship.vy -= (S.ship.vy - S.target.vy) * frac;
+  S.ship.vz -= (S.ship.vz - S.target.vz) * frac;
+  S.dv -= useDv;
+  S.assistUses--;
+  playSfx('assist');
+  logEvent('🎯 ランデブー支援バーン実施（Δv -'+useDv.toFixed(1)+'／残回数 '+S.assistUses+'）。');
+  setStatusMsg('🎯 ランデブー支援実行！相対速度を補正しました（残り '+S.assistUses+' 回）。');
+  updateHUD();
+}
+function resupply(){
+  if(!S.docked) return;
+  if(S.res.prop<15||S.res.sup<10||S.res.cred<20){ playSfx('fail'); logEvent('⚠️ 補給資源が不足（推進剤15／物資10／資金20）。'); return; }
+  S.res.prop-=15; S.res.sup-=10; S.res.cred-=20;
+  S.dv=S.maxDv;
+  playSfx('success');
+  logEvent('✅ 補給完了：自艦のΔvが全回復しました。');
+  updatePanels(); updateHUD();
+}
+function buildShip(){
+  if(S.prod){ logEvent('⚠️ 既に建造中です。'); return; }
+  if(S.res.cred<120||S.res.sup<20){ playSfx('fail'); logEvent('⚠️ 建造資源が不足（資金120／物資20）。'); return; }
+  playSfx('click');
+  S.res.cred-=120; S.res.sup-=20;
+  S.prod={ remain:60, total:60 };
+  const builder=S.officers.find(o=>o.role==='造船監督担当');
+  if(builder){ S.prod.remain=Math.max(30, 60-builder.tactics*0.2); S.prod.total=S.prod.remain; logEvent('🏭 '+builder.name+' の監督で小型艦を建造開始（短縮）。'); }
+  else logEvent('🏭 小型艦の建造を開始しました（約60秒）。');
+  updatePanels();
+}
+
+// ---------- UIイベント配線 ----------
+document.querySelectorAll('.sc-card').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    playSfx('click');
+    document.querySelectorAll('.sc-card').forEach(c=>c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedScenario = card.dataset.scenario;
+  });
+});
+document.getElementById('btn-sortie').addEventListener('click', ()=>{
+  playSfx('warp');
+  document.getElementById('start-screen').classList.add('hidden');
+  gameStarted = true;
+  if(!scene) initThree();
+  if(selectedScenario === 'captain') startPrologue();
+  else startMission(0);
+});
+
+const drawer = document.getElementById('drawer');
+document.getElementById('btn-drawer-toggle').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.toggle('open'); });
+document.getElementById('btn-drawer-close').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.remove('open'); });
+document.querySelectorAll('.drawer-tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    playSfx('click');
+    document.querySelectorAll('.drawer-tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('btn-mute').addEventListener('click', e=>{
+  isMuted = !isMuted;
+  e.currentTarget.textContent = isMuted ? '🔇 消音' : '🔊 音ON';
+  if(!isMuted) playSfx('click');
+});
+
+document.getElementById('btn-order-approach').addEventListener('click', orderApproach);
+document.getElementById('btn-order-brake').addEventListener('click', orderBrake);
+document.getElementById('btn-order-match').addEventListener('click', orderMatch);
+document.getElementById('btn-order-join').addEventListener('click', orderJoinApproach);
+document.getElementById('btn-order-hold').addEventListener('click', toggleHoldMode);
+
+document.getElementById('btn-plan').addEventListener('click', ()=>{
+  playSfx('click');
+  if(!S) return;
+  if(S.prologue && S.tutorial){
+    const hab = S.planets[1] || S.planets[0];
+    if(S.tutorial.step >= 4){
+      openPlanPanel({ mode:'depart', legType:'simple', routeName:'帰投航路 あおば R0', fixes:'居住惑星近傍 → ステーション「あおば」', targetBody:S.station, arrivalDist:90, needDock:false, shortChecklist:true });
+    } else {
+      openPlanPanel({ mode:'depart', legType:'simple', routeName:'観光航路 ソル周遊 S1', fixes:'ステーション「あおば」 → 居住惑星近傍点', targetBody:hab, arrivalDist:70, needDock:false, shortChecklist:false });
+    }
+  } else {
+    openMissionPlanPanel();
+  }
+});
+document.getElementById('btn-plan-close').addEventListener('click', ()=>{ playSfx('click'); closePlanPanel(); updatePlanLineMesh(); });
+document.getElementById('btn-depart').addEventListener('click', confirmDeparture);
+
+document.getElementById('btn-manual-toggle').addEventListener('click', ()=>{
+  if(!S) return;
+  playSfx('click');
+  S.manualOverride = !S.manualOverride;
+  updateManualUI();
+});
+
+window.addEventListener('keydown', e=>{
+  if(!gameStarted) return;
+  const k=e.key.toLowerCase();
+  if(S && S.manualOverride){
+    keys[k]=true;
+    if(['arrowup','arrowdown','arrowleft','arrowright'].includes(k)) e.preventDefault();
+  }
+  if(e.key===' '){ e.preventDefault(); togglePause(); }
+});
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
+document.querySelectorAll('[data-thrust]').forEach(b=>{
+  const dir=b.dataset.thrust;
+  const on=e=>{ e.preventDefault(); pad[dir]=true; };
+  const off=()=>{ pad[dir]=false; };
+  b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off);
+  b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
+});
+
+let prevWarp=1;
+function togglePause(){ if(!S) return; if(S.warp===0){ setWarp(prevWarp); } else { prevWarp=S.warp; setWarp(0); } }
+function setWarp(w){
+  if(S) S.warp=w;
+  document.querySelectorAll('[data-warp]').forEach(b=>b.classList.toggle('active', Number(b.dataset.warp)===w));
+}
+document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', ()=>{
+  playSfx('click');
+  prevWarp=Number(b.dataset.warp)||1;
+  setWarp(Number(b.dataset.warp));
+}));
+document.getElementById('btn-assist').addEventListener('click', assistBurn);
+document.getElementById('btn-resupply').addEventListener('click', resupply);
+document.getElementById('btn-build').addEventListener('click', buildShip);
+document.getElementById('btn-reset').addEventListener('click', ()=>{
+  playSfx('click');
+  if(S && S.prologue) startPrologue(); else startMission(currentMissionIdx);
+  drawer.classList.remove('open');
+});
+document.getElementById('btn-cam-free').addEventListener('click', ()=>{ playSfx('click'); cam.follow=false; setCamButtons(); });
+document.getElementById('btn-cam-follow').addEventListener('click', ()=>{ playSfx('click'); cam.follow=true; setCamButtons(); });
+document.getElementById('btn-cam-reset').addEventListener('click', ()=>{ playSfx('click'); cam.az=0.9; cam.pol=1.02; cam.dist=620; cam.follow=false; if(cam.target) cam.target.set(0,0,0); setCamButtons(); });
+
+document.getElementById('btn-rm-next').addEventListener('click', ()=>{ playSfx('warp'); startMission(currentMissionIdx+1); });
+document.getElementById('btn-rm-retry').addEventListener('click', ()=>{ playSfx('click'); startMission(currentMissionIdx); });
+document.getElementById('btn-rm-title').addEventListener('click', ()=>{
+  playSfx('click');
+  document.getElementById('result-modal').classList.remove('open');
+  document.getElementById('start-screen').classList.remove('hidden');
+  gameStarted = false;
+});
+
+// ---------- メインループ ----------
+let lastT=performance.now(), panelTimer=0, galaxyTimer=0, uiTimer=0;
+function animate(now){
+  requestAnimationFrame(animate);
+  const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  frameCount++;
+  if(S && gameStarted){
+    if(S.warp>0){
+      physics(dt*S.warp);
+      S.eventTimer-=dt;
+      if(S.eventTimer<=0){ triggerEvent(); S.eventTimer=16+Math.random()*14; }
+      S.trafficTimer-=dt;
+      if(S.trafficTimer<=0){ triggerTrafficAdvisory(); S.trafficTimer=45+Math.random()*30; }
+    }
+    syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker();
+    uiTimer+=dt; panelTimer+=dt; galaxyTimer+=dt;
+    if(uiTimer>0.2){ uiTimer=0; updateNextActionUI(); updatePlanStatusUI(); updateOrderBar(); }
+    if(panelTimer>0.25){ panelTimer=0; updatePanels(); }
+    if(galaxyTimer>1.2){ galaxyTimer=0; renderGalaxy(); }
+  }
+  if(renderer && scene && camera) renderer.render(scene, camera);
+}
+if(!window.THREE){
+  setStatusMsg('⚠️ Three.js の読み込みに失敗しました。three.min.js またはネット接続を確認してください。');
+} else {
+  initThree();
+  requestAnimationFrame(animate);
+}
+</script>
+</body>
+</html>
