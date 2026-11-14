@@ -1,8 +1,10 @@
 // Regression (end-to-end, real page / real flow): the v0.3 launch blocker was
 // invisible to function-level probes because it lived in the real physics
 // loop. This script drives the ACTUAL game.html in headless Chrome through
-// the ACTUAL clicks (start -> briefing -> plan panel -> depart) and asserts
-// the plan panel computes real numbers. No synthetic state is injected.
+// the ACTUAL click flow and asserts on the DOM and game state at each stage:
+//   career: start -> captain creation -> port scene -> plan panel -> depart
+//   mission1: (skip prologue) -> plan button -> plan panel
+// No synthetic state is injected.
 //
 // Run on a machine with Chrome + Node >= 22 (e.g. TowerPC):
 //   node tests/regression-drive.mjs [url]
@@ -44,29 +46,52 @@ try {
   await new Promise((res, rej) => { ws.onopen = res; ws.onerror = rej; });
   ws.onmessage = (ev2) => { const m = JSON.parse(ev2.data); if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.reject(new Error(JSON.stringify(m.error))) : p.resolve(m.result); } };
 
-  // ---- prologue flow: sortie -> briefing (12 s read) -> plan panel -> depart
+  // ---- career opening: sortie -> creation -> port scene -> plan -> depart
   let tid = await newPage();
   await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
-  await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'briefing modal');
-  await sleep(12000);
+  await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal');
+  check('career: creation screen opens after scenario select', true);
+  check('career: creation lists are data-driven and populated', await ev(`document.querySelectorAll('#cr-tracks .cr-opt').length === 3 && document.querySelectorAll('#cr-origins .cr-opt').length === 6 && document.querySelectorAll('#cr-homes .cr-opt').length === 4 && document.querySelectorAll('#cr-traits .cr-opt').length === 8 && document.querySelectorAll('#cr-portraits .cr-face').length >= 3`));
+  // give the captain a custom name and pick the patrol track, then confirm
+  await ev(`{ const i = document.getElementById('cr-name'); i.value = '星野 テスト'; i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelectorAll('#cr-tracks .cr-opt')[2].click(); 'ok' }`);
+  await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
+  await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'port scene');
+  check('port scene: captain record stored in game state', await ev(`!!(S.captain && S.captain.id === 'captain' && S.captain.abilities && S.captain.flags)`));
+  check('port scene: chosen name is used in the opening dialogue', await ev(`document.getElementById('briefing-body').textContent.includes('星野')`));
+  check('port scene: ship starts DOCKED at the station', await ev(`S.docked === true && S.dockedTo === S.station`));
+  // page through the port scene to the bridge button (officers are page 2)
+  await ev(`document.getElementById('btn-briefing-next').click(); 'ok'`);
+  await sleep(250);
+  check('port scene: officers introduced with posts', await ev(`document.getElementById('briefing-officers').textContent.includes('配置')`));
+  for (let i = 0; i < 5; i++) {
+    const vis = await ev(`document.getElementById('btn-briefing-start').style.display !== 'none'`);
+    if (vis) break;
+    await ev(`document.getElementById('btn-briefing-next').click(); 'ok'`);
+    await sleep(250);
+  }
   await ev(`document.getElementById('btn-briefing-start').click(); 'ok'`);
   await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 40000, 'prologue plan panel');
   await sleep(300);
-  const pv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok, dv: x.est.dvTotal })), finite: [S.ship.x, S.ship.y, S.ship.z, S.ship.vx, S.ship.vy, S.ship.vz].every(Number.isFinite) })`);
+  const pv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok, dv: x.est.dvTotal })), finite: [S.ship.x, S.ship.y, S.ship.z, S.ship.vx, S.ship.vy, S.ship.vz].every(Number.isFinite), docked: S.docked, shipLine: document.getElementById('plan-ship').textContent })`);
   check('prologue: ship state finite at plan panel', pv.finite);
+  check('prologue: still docked while the plan is confirmed', pv.docked === true);
   check('prologue: standard variant ok with numeric dv', pv.v.find(x => x.id === 'std').ok === true && pv.v.find(x => x.id === 'std').dv > 0);
   check('prologue: at least 2 of 3 variants ok', pv.v.filter(x => x.ok).length >= 2);
+  check('prologue: plan panel ship line reflects chosen track (patrol)', pv.shipLine.includes('哨戒艇'));
   await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'depart button enabled');
   check('prologue: depart button enabled after checklist', true);
   await ev(`document.getElementById('btn-depart').click(); 'ok'`);
   await sleep(800);
+  check('prologue: departure undocks the ship (departure is an event)', await ev(`S.docked === false`));
   check('prologue: plan execution active after depart', await ev(`!!(S.planExec && S.planExec.active)`));
   await send('Target.closeTarget', { targetId: tid });
 
-  // ---- mission 1 flow: sortie -> skip prologue -> plan button -> panel
+  // ---- mission 1 flow: creation (saved profile) -> port scene skip -> plan
   tid = await newPage();
   await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
-  await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'briefing modal (m1)');
+  await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal (m1)');
+  await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
+  await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'port scene (m1)');
   await sleep(800);
   await ev(`document.getElementById('btn-skip-prologue').click(); 'ok'`);
   await sleep(1200);

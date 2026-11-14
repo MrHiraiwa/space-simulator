@@ -333,12 +333,12 @@
   }
 
   /* ===== 航海計画パネル (#plan-panel) & モーダル共通 ===== */
-  #plan-panel,#result-modal,#briefing-modal{
+  #plan-panel,#result-modal,#briefing-modal,#creation-modal{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
     display:none;align-items:center;justify-content:center;padding:12px;
   }
-  #plan-panel.open,#result-modal.open,#briefing-modal.open{display:flex}
+  #plan-panel.open,#result-modal.open,#briefing-modal.open,#creation-modal.open{display:flex}
   .modal-box{
     width:min(92vw, 560px);max-width:100vw;
     max-height:88vh;max-height:88dvh;overflow-y:auto;
@@ -404,6 +404,24 @@
   .sc-cmd{font-size:13px;color:#dbeafe;margin-bottom:8px;font-weight:600}
   .sc-spec{font-size:12px;color:var(--muted);line-height:1.5}
   #btn-sortie{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em}
+  .cr-kicker{font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em}
+  .cr-sec{font-size:12px;font-weight:800;color:var(--accent);margin:14px 0 6px}
+  .cr-opts{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
+  .cr-opt{background:rgba(13,22,46,0.85);border:2px solid var(--line);border-radius:10px;padding:8px 9px;cursor:pointer;text-align:left}
+  .cr-opt.selected{border-color:var(--accent);background:rgba(22,42,86,0.95)}
+  .cr-opt .t{font-size:13px;font-weight:700;color:#fff}
+  .cr-opt .d{font-size:11px;color:var(--muted);line-height:1.45}
+  .cr-portraits{display:flex;gap:10px}
+  .cr-face{width:52px;height:52px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:800;color:#06121f;border:3px solid transparent;cursor:pointer;position:relative}
+  .cr-face.selected{border-color:#fff}
+  .cr-face .motif{position:absolute;right:-3px;bottom:-3px;font-size:11px;background:#0b1530;color:#fff;border-radius:50%;width:19px;height:19px;display:flex;align-items:center;justify-content:center}
+  .cr-abrow{display:flex;align-items:center;gap:8px;margin:5px 0}
+  .cr-abrow .lab{width:92px;font-size:13px;color:#fff;font-weight:700}
+  .cr-abrow .val{width:22px;text-align:center;font-weight:800;color:var(--teal)}
+  .cr-step{width:34px;height:34px;border-radius:9px;font-size:16px;padding:0}
+  #cr-name{flex:1;min-width:0;box-sizing:border-box;background:rgba(6,11,24,0.85);border:1px solid var(--line-bright);border-radius:9px;color:#fff;font-size:15px;padding:9px 10px}
+  .cr-note{font-size:11px;color:var(--muted);line-height:1.5}
+  .port-av{width:38px;height:38px;border-radius:50%;flex:none;display:flex;align-items:center;justify-content:center;font-weight:800;color:#06121f;font-size:16px}
 
   .merit-box{background:rgba(6,11,24,0.8);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:16px;text-align:left}
   .merit-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font-size:13px}
@@ -652,15 +670,49 @@
   </div>
 </div>
 
+<!-- 艦長作成（着任辞令）モーダル -->
+<div id="creation-modal">
+  <div class="modal-box" style="text-align:left">
+    <div class="cr-kicker">着任辞令 — 艦長任命手続き</div>
+    <h2 style="margin:4px 0 6px;font-size:20px">艦長登録</h2>
+    <p class="cr-note" style="margin:0">港の司令部で辞令を受け取ります。ここで決めた艦長像は、NPCと同一の人物データとして記録され、今後の会話・人事・キャリアに使われます。まずは好みで選んでください（おすすめ配分もあります）。</p>
+    <div class="cr-sec">艦長名</div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <div class="cr-face" id="cr-face-preview" style="cursor:default">結<span class="motif" id="cr-face-motif">★</span></div>
+      <input id="cr-name" type="text" maxlength="12" value="結城 凪">
+    </div>
+    <div class="cr-sec">顔絵</div>
+    <div class="cr-portraits" id="cr-portraits"></div>
+    <div class="cr-sec">初任ポスト</div>
+    <div class="cr-opts" id="cr-tracks"></div>
+    <div class="cr-sec">出身・経歴</div>
+    <div class="cr-opts" id="cr-origins"></div>
+    <div class="cr-sec">母港</div>
+    <div class="cr-opts" id="cr-homes"></div>
+    <div class="cr-sec">能力配分（残り <span id="cr-pool">0</span> pt）<button id="btn-cr-auto" style="float:right;padding:3px 10px;font-size:11px">おすすめ配分</button></div>
+    <div id="cr-abilities"></div>
+    <div class="cr-sec">特性（2つまで）</div>
+    <div class="cr-opts" id="cr-traits"></div>
+    <div class="modal-actions" style="margin-top:16px">
+      <button id="btn-creation-done" class="primary">任命を受ける — 港へ向かう</button>
+    </div>
+  </div>
+</div>
+
 <!-- 処女航海 出航式モーダル -->
 <div id="briefing-modal">
   <div class="modal-box" style="text-align:left">
-    <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">MISSION 0 — 処女航海 出航式</div>
-    <h2 style="margin:4px 0 8px;font-size:20px">輸送艦「さくら」着任式</h2>
+    <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">MISSION 0 — 処女航海 ／ 港シーン：着任式</div>
+    <h2 id="briefing-title" style="margin:4px 0 8px;font-size:20px">輸送艦「さくら」着任式</h2>
+    <div id="briefing-speaker" style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
+      <div class="port-av" id="briefing-avatar">榊</div>
+      <div><div id="briefing-name" style="font-weight:800;color:#fff;font-size:14px">榊原 凛</div><div id="briefing-role" style="font-size:11px;color:var(--muted)">教導士官</div></div>
+    </div>
     <p id="briefing-body" style="font-size:13px;line-height:1.6;color:#dbeafe;margin:0 0 12px"></p>
     <div id="briefing-officers" style="background:rgba(6,11,24,0.75);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;line-height:1.55;margin-bottom:14px"></div>
     <div class="modal-actions">
-      <button id="btn-briefing-start" class="primary">出航式を終えて艦橋へ</button>
+      <button id="btn-briefing-next" class="primary">次へ</button>
+      <button id="btn-briefing-start" class="primary" style="display:none">艦橋へ進む</button>
       <button id="btn-skip-prologue">処女航海をスキップ</button>
     </div>
   </div>
@@ -677,7 +729,7 @@
         <span class="sc-badge-top">チュートリアル／最初はこれ</span>
         <div class="sc-diff">難易度：★★★ 標準</div>
         <div class="sc-name">新任艦長</div>
-        <div class="sc-cmd">指揮：輸送艦「さくら」（単艦）</div>
+        <div class="sc-cmd">指揮：単艦（艦長作成 → 初任ポスト選択）</div>
         <div class="sc-spec">Δv 55 / ワープ燃料 3 / 資金 200<br>処女航海（Mission 0）と補給訓練で運航の基本を習得。<br><b>推奨・キャリアの起点</b>：まず後方の輸送・補給任務から。戦闘艦の艦長はその先。</div>
       </div>
       <div class="sc-card" data-scenario="squadron">
@@ -695,7 +747,7 @@
         <div class="sc-spec">Δv 85 / ワープ燃料 6 / 資金 600<br>大規模艦隊と潤沢な補給で全ミッション制覇へ。</div>
       </div>
     </div>
-    <p class="start-pitch" style="font-size:12px">キャリアの入口は2つ — 輸送・補給トラック（本作で体験）と、哨戒艇で航路を守る哨戒トラック（後日追加）。昇進後の転属・分岐や、有力者からの「誘い」も予定されています。</p>
+    <p class="start-pitch" style="font-size:12px">キャリアの入口は初任ポストで選べます — 定期航路・輸送／補給艦／哨戒艇の3トラック。昇進後の転属・分岐や、有力者からの「誘い」も予定されています。</p>
     <button id="btn-sortie" class="primary">🚀 出航する</button>
   </div>
 </div>
@@ -763,10 +815,10 @@ const SCENARIOS = {
   fleet:    { label:'艦隊司令', maxDv:85, wings:4, prop:140, sup:110, cred:600, pol:70, warp:6 },
 };
 const OFFICER_DEFS = [
-  { name:'佐藤 澪', tactics:82, logistics:45, politics:60, loyalty:78, ambition:55 },
-  { name:'高橋 蓮', tactics:64, logistics:88, politics:40, loyalty:85, ambition:35 },
-  { name:'イリナ・コワルスカ', tactics:58, logistics:52, politics:91, loyalty:62, ambition:80 },
-  { name:'陳 大樹', tactics:71, logistics:66, politics:74, loyalty:48, ambition:92 },
+  { name:'佐藤 澪', post:'戦術', tactics:82, logistics:45, politics:60, loyalty:78, ambition:55 },
+  { name:'高橋 蓮', post:'補給', tactics:64, logistics:88, politics:40, loyalty:85, ambition:35 },
+  { name:'イリナ・コワルスカ', post:'渉外', tactics:58, logistics:52, politics:91, loyalty:62, ambition:80 },
+  { name:'陳 大樹', post:'機関', tactics:71, logistics:66, politics:74, loyalty:48, ambition:92 },
 ];
 const ROLES = ['待機','艦隊戦術担当','補給管理担当','政治工作担当','造船監督担当'];
 
@@ -774,8 +826,189 @@ const ROLES = ['待機','艦隊戦術担当','補給管理担当','政治工作�
 const GUIDE = { name:'榊原 凛', rank:'少佐', title:'教導士官', initial:'榊', color:'#2dd4bf', tactics:90, logistics:70, politics:60, loyalty:90, ambition:30, role:'教導' };
 const HELM  = { name:'三浦 葵', rank:'少尉', title:'航法士官', initial:'三', color:'#f59e0b', tactics:70, logistics:60, politics:30, loyalty:80, ambition:40, role:'航法' };
 const CONTROL = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#94a3b8', tactics:50, logistics:50, politics:50, loyalty:50, ambition:0, role:'管制' };
-const SHIP_NAME = '輸送艦 さくら';
-const SHIP_CALLSIGN = 'サクラ';
+let SHIP_NAME = '輸送艦 さくら';
+let SHIP_CALLSIGN = 'サクラ';
+
+// ---------- 艦長作成データ（全てデータ駆動：項目追加はこの表に足すだけ） ----------
+// 艦長はNPCと同一形状の人物レコードとして保持する（オンライン設計の単一エンティティモデルの種）。
+const PORTRAITS = [
+  { id:'p1', color:'#38bdf8', motif:'★' },
+  { id:'p2', color:'#f472b6', motif:'◆' },
+  { id:'p3', color:'#a3e635', motif:'●' },
+  { id:'p4', color:'#fbbf24', motif:'▲' }
+];
+const TRACKS = [
+  { id:'transport', label:'定期航路・輸送', shipClass:'輸送艦', shipName:'さくら', callsign:'サクラ', mass:420, thrust:2940, cargo:120, maxDv:55,
+    desc:'定期航路を時刻表どおりに運ぶ、街の足のような船です。', jobLine:'物資が心もとない自艦へ、補給艦「あけぼの」から荷物を受け取る、定期航路の補給便としての訓練です。決められた航路を時刻表どおりに運航します。', rec:{ ops:2, logi:3, nego:2, cmd:1, pop:2 } },
+  { id:'supply', label:'補給艦', shipClass:'補給艦', shipName:'みずほ', callsign:'ミズホ', mass:520, thrust:3640, cargo:200, maxDv:50,
+    desc:'大きなタンクと倉庫を持つ補給の要。運ぶ量と届ける判断が問われます。', jobLine:'補給艦としての初仕事です。補給艦「あけぼの」と合流して物資を受け取り、補給の流れを体で覚えましょう。', rec:{ ops:1, logi:4, nego:2, cmd:1, pop:2 } },
+  { id:'patrol', label:'哨戒艇', shipClass:'哨戒艇', shipName:'はやて', callsign:'ハヤテ', mass:180, thrust:1260, cargo:20, maxDv:65,
+    desc:'小型で俊敏な哨戒艇。航路を見回り、民間船と軍艦が行き交う宇宙を守ります。', jobLine:'哨戒艇としての初任務は補給船の護衛です。補給艦「あけぼの」と合流し、航路の安全を確認します。最近は海賊の噂もあります——見張りを怠らないでください。', rec:{ ops:4, logi:1, nego:1, cmd:2, pop:2 } }
+];
+const ORIGINS = [
+  { id:'union', label:'航路組合の家系', desc:'港と航路の顔役の家。顔が利く（政治的支持 +5）', flag:'origin_union', mod:{ pol:5 }, line:'航路組合のご出身と伺っています。港の顔役たちとは顔なじみのはず——その人脈は財産です。' },
+  { id:'engineer', label:'工科出身', desc:'機関と計算に強い。', flag:'origin_engineer', mod:{}, line:'工科のご出身ですね。機関の音で調子が分かる艦長は、乗員に信頼されます。' },
+  { id:'merchant', label:'商家出身', desc:'勘定と交渉に明るい（資金 +30）', flag:'origin_merchant', mod:{ cred:30 }, line:'商家のご出身と伺いました。勘定に明るい艦長は、補給で困りません。' },
+  { id:'military', label:'軍人の家系', desc:'規律と礼節の人（政治的支持 +3）', flag:'origin_military', mod:{ pol:3 }, line:'軍人の家系のご出身ですね。規律ある艦は、それだけで評価されます。' },
+  { id:'frontier', label:'辺境コロニー出身', desc:'現場の苦労を知る叩き上げ（補給物資 +10）', flag:'origin_frontier', mod:{ sup:10 }, line:'辺境のご出身ですか。現場の苦労を知る艦長は、部下の信頼が厚いものです。' },
+  { id:'scholar', label:'学術・研究系', desc:'理論派。星図と記録に強い。', flag:'origin_scholar', mod:{}, line:'研究畑のご出身ですね。記録と分析を怠らない艦長は、失敗から学ぶのが早い。' }
+];
+const HOME_PORTS = [
+  { id:'aoba', label:'あおば・ステーション', desc:'ソル系の玄関口。交通量が多く顔ぶれも多彩。', contact:'contact_aoba' },
+  { id:'tsukuba', label:'つくば軌道港', desc:'研究機関のお膝元。技術者の人脈。', contact:'contact_tsukuba' },
+  { id:'naniwa', label:'なにわ商業港', desc:'商いの中心地。商家と組合の人脈。', contact:'contact_naniwa' },
+  { id:'frontier7', label:'辺境第7前哨港', desc:'静かな辺境の港。顔なじみは少ないが絆は深い。', contact:'contact_frontier7' }
+];
+const TRAITS = [
+  { id:'cautious', label:'慎重派', desc:'石橋を叩いて渡る' },
+  { id:'bold', label:'大胆', desc:'ここぞでは賭ける' },
+  { id:'caring', label:'面倒見がいい', desc:'部下に慕われる' },
+  { id:'rational', label:'合理主義', desc:'情より計算' },
+  { id:'heavy_drinker', label:'酒豪', desc:'港の宴席に強い' },
+  { id:'teetotal', label:'下戸', desc:'酒席は苦手、頭は冴える' },
+  { id:'early', label:'朝型', desc:'早朝の当直に強い' },
+  { id:'night', label:'夜型', desc:'深夜の艦橋で冴える' }
+];
+const ABILITIES = [
+  { id:'ops', label:'運航' }, { id:'logi', label:'補給・物流' }, { id:'nego', label:'交渉' }, { id:'cmd', label:'統率' }, { id:'pop', label:'人望' }
+];
+const ABILITY_POOL = 10;
+const OFFICER_INTRO = {
+  '佐藤 澪':'戦術面はお任せを。冷静に状況を分析します',
+  '高橋 蓮':'補給と機関のやりくりなら私に任せてください',
+  'イリナ・コワルスカ':'艦隊の政治と渉外、抜かりなく進めます',
+  '陳 大樹':'野心はありますが、まずは艦長のお手並み拝見ですね'
+};
+let captainProfile = null;
+function trackData(id){ return TRACKS.find(t => t.id === id) || TRACKS[0]; }
+function shipDisplay(){ const tr = trackData(captainProfile ? captainProfile.track : 'transport'); return tr.shipClass + '「' + tr.shipName + '」'; }
+function defaultCaptainProfile(){
+  return { id:'captain', name:'結城 凪', initial:'結', color:'#38bdf8', motif:'★', portrait:'p1', track:'transport', origin:'union', homePort:'aoba',
+    abilities:{ ops:2, logi:3, nego:2, cmd:1, pop:2 }, traits:['cautious', 'caring'], flags:{ origin_union:true, contact_aoba:true, trait_cautious:true, trait_caring:true }, fame:0, relations:{}, ship:null };
+}
+function loadCaptainProfile(){ try { const raw = localStorage.getItem('ss_captain_v1'); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
+function saveCaptainProfile(p){ try { localStorage.setItem('ss_captain_v1', JSON.stringify(p)); } catch(e){} }
+function buildCaptainRecord(draft){
+  const pt = PORTRAITS.find(p => p.id === draft.portrait) || PORTRAITS[0];
+  const org = ORIGINS.find(o => o.id === draft.origin) || ORIGINS[0];
+  const home = HOME_PORTS.find(h => h.id === draft.homePort) || HOME_PORTS[0];
+  const flags = {}; flags[org.flag] = true; flags[home.contact] = true;
+  (draft.traits || []).forEach(t => { flags['trait_' + t] = true; });
+  return { id:'captain', name:draft.name, initial:(draft.name || '艦').slice(0, 1), color:pt.color, motif:pt.motif,
+    portrait:draft.portrait, track:draft.track, origin:draft.origin, homePort:draft.homePort,
+    abilities:Object.assign({}, draft.abilities), traits:(draft.traits || []).slice(), flags, fame:0, relations:{}, ship:null };
+}
+function applyCaptain(){
+  if(!captainProfile) captainProfile = loadCaptainProfile() || defaultCaptainProfile();
+  const tr = trackData(captainProfile.track);
+  SHIP_NAME = tr.shipClass + ' ' + tr.shipName;
+  SHIP_CALLSIGN = tr.callsign;
+  if(S){
+    S.captain = captainProfile;
+    const rec = { id:'captain', name:SHIP_NAME, track:tr.id };
+    S.captain.ship = rec;
+    if(selectedScenario === 'captain'){ S.maxDv = tr.maxDv; S.dv = tr.maxDv; }
+    const org = ORIGINS.find(o => o.id === captainProfile.origin);
+    if(org && org.mod){
+      if(org.mod.cred) S.res.cred += org.mod.cred;
+      if(org.mod.sup) S.res.sup += org.mod.sup;
+      if(org.mod.pol) S.res.pol = Math.min(100, S.res.pol + org.mod.pol);
+    }
+    if(captainProfile.abilities && captainProfile.abilities.pop) S.res.pol = Math.min(100, S.res.pol + captainProfile.abilities.pop * 2);
+  }
+}
+
+// ---------- 艦長作成 UI ----------
+let crDraft = null;
+function renderCreation(){
+  const d = crDraft; if(!d) return;
+  const nameEl = document.getElementById('cr-name');
+  if(nameEl && nameEl.value !== d.name) nameEl.value = d.name;
+  const pt = PORTRAITS.find(p => p.id === d.portrait) || PORTRAITS[0];
+  const prev = document.getElementById('cr-face-preview');
+  prev.style.background = pt.color;
+  prev.childNodes[0].textContent = (d.name || '艦').slice(0, 1);
+  document.getElementById('cr-face-motif').textContent = pt.motif;
+  const pw = document.getElementById('cr-portraits'); pw.innerHTML = '';
+  PORTRAITS.forEach(p => {
+    const el = document.createElement('div');
+    el.className = 'cr-face' + (d.portrait === p.id ? ' selected' : '');
+    el.style.background = p.color;
+    el.innerHTML = '<span></span><span class="motif">' + p.motif + '</span>';
+    el.querySelector('span').textContent = (d.name || '艦').slice(0, 1);
+    el.onclick = () => { playSfx('click'); d.portrait = p.id; renderCreation(); };
+    pw.appendChild(el);
+  });
+  const fill = (elId, list, key) => {
+    const w = document.getElementById(elId); w.innerHTML = '';
+    list.forEach(o => {
+      const el = document.createElement('div');
+      el.className = 'cr-opt' + (d[key] === o.id ? ' selected' : '');
+      const spec = o.id && key === 'track' ? ('質量 ' + o.mass + 't／貨物 ' + o.cargo + 't／Δv ' + o.maxDv) : '';
+      el.innerHTML = '<div class="t"></div><div class="d"></div>';
+      el.querySelector('.t').textContent = o.label;
+      el.querySelector('.d').textContent = o.desc + (spec ? '（' + spec + '）' : '');
+      el.onclick = () => { playSfx('click'); d[key] = o.id; if(key === 'track') d.abilities = Object.assign({}, trackData(o.id).rec); renderCreation(); };
+      w.appendChild(el);
+    });
+  };
+  fill('cr-tracks', TRACKS, 'track');
+  fill('cr-origins', ORIGINS, 'origin');
+  fill('cr-homes', HOME_PORTS, 'homePort');
+  const tw = document.getElementById('cr-traits'); tw.innerHTML = '';
+  TRAITS.forEach(t => {
+    const on = (d.traits || []).includes(t.id);
+    const el = document.createElement('div');
+    el.className = 'cr-opt' + (on ? ' selected' : '');
+    el.innerHTML = '<div class="t"></div><div class="d"></div>';
+    el.querySelector('.t').textContent = t.label;
+    el.querySelector('.d').textContent = t.desc;
+    el.onclick = () => {
+      playSfx('click');
+      if(!d.traits) d.traits = [];
+      const i = d.traits.indexOf(t.id);
+      if(i >= 0) d.traits.splice(i, 1);
+      else { d.traits.push(t.id); if(d.traits.length > 2) d.traits.shift(); }
+      renderCreation();
+    };
+    tw.appendChild(el);
+  });
+  renderAbilities();
+}
+function renderAbilities(){
+  const d = crDraft; if(!d) return;
+  const used = ABILITIES.reduce((sum, a) => sum + (d.abilities[a.id] || 0), 0);
+  document.getElementById('cr-pool').textContent = ABILITY_POOL - used;
+  const w = document.getElementById('cr-abilities'); w.innerHTML = '';
+  ABILITIES.forEach(a => {
+    const row = document.createElement('div'); row.className = 'cr-abrow';
+    const lab = document.createElement('span'); lab.className = 'lab'; lab.textContent = a.label;
+    const minus = document.createElement('button'); minus.className = 'cr-step'; minus.textContent = '−';
+    const val = document.createElement('span'); val.className = 'val'; val.textContent = d.abilities[a.id] || 0;
+    const plus = document.createElement('button'); plus.className = 'cr-step'; plus.textContent = '＋';
+    minus.onclick = () => { if((d.abilities[a.id] || 0) > 0){ d.abilities[a.id]--; renderAbilities(); } };
+    plus.onclick = () => { const u2 = ABILITIES.reduce((sum, x) => sum + (d.abilities[x.id] || 0), 0); if(u2 < ABILITY_POOL && (d.abilities[a.id] || 0) < 5){ d.abilities[a.id] = (d.abilities[a.id] || 0) + 1; renderAbilities(); } };
+    row.appendChild(lab); row.appendChild(minus); row.appendChild(val); row.appendChild(plus);
+    w.appendChild(row);
+  });
+}
+function autoAssignAbilities(){ if(!crDraft) return; crDraft.abilities = Object.assign({}, trackData(crDraft.track).rec); renderCreation(); }
+function openCreation(){
+  const saved = loadCaptainProfile();
+  crDraft = saved ? { name:saved.name, portrait:saved.portrait, track:saved.track, origin:saved.origin, homePort:saved.homePort, abilities:Object.assign({}, saved.abilities), traits:(saved.traits || []).slice() } : (() => { const d0 = defaultCaptainProfile(); return { name:d0.name, portrait:d0.portrait, track:d0.track, origin:d0.origin, homePort:d0.homePort, abilities:Object.assign({}, d0.abilities), traits:d0.traits.slice() }; })();
+  renderCreation();
+  document.getElementById('cr-name').oninput = (e) => { crDraft.name = e.target.value; renderCreation(); };
+  document.getElementById('creation-modal').classList.add('open');
+}
+function finishCreation(){
+  const name = (document.getElementById('cr-name').value || '').trim() || '結城 凪';
+  crDraft.name = name;
+  captainProfile = buildCaptainRecord(crDraft);
+  saveCaptainProfile(captainProfile);
+  playSfx('click');
+  document.getElementById('creation-modal').classList.remove('open');
+  startPrologue();
+}
 
 // ---------- ミッション & 昇進定義 ----------
 const MISSIONS = [
@@ -1178,7 +1411,7 @@ function loadPrologueSystem(){
     const st = orbitState(sys.starGM, p.r, 0.7 + i*1.35, p.inc, p.node);
     return makeBody(st, p.color, p.r>250?9:7, p.name, p.gm);
   });
-  S.station = makeBody(orbitState(20000, 185, 0.55, 1, 0), 0x2dd4bf, 11, 'ステーション「あおば」', 0);
+  S.station = makeBody(orbitState(20000, 185, 2.6, 1, 0), 0x2dd4bf, 11, 'ステーション「あおば」', 0);
   S.target = S.station;
   const st = orbitState(20000, 185, 0.42, 1, 0);
   st.vx*=0.92; st.vy*=0.92; st.vz*=0.92;
@@ -1214,6 +1447,8 @@ function createBaseState(cfg, isPrologue){
     activeBurn: null,
     lastOrder: null,
     orderCount: 0,
+    captain: null,
+    dockedTo: null,
     prologue: !!isPrologue,
     approach: { established:false, fixPassed:false, midPassed:false, lastWarnTime:-99, seqAdvised:false },
     planExec: null,
@@ -1227,15 +1462,20 @@ function startPrologue(){
   const cfg = SCENARIOS[selectedScenario];
   S = createBaseState(cfg, true);
   dvEmptyTimer = 0;
+  applyCaptain();
   loadPrologueSystem();
+  // 港から始まる：最初はステーションに接舷中。出航は艦長が承認するイベントとして扱う。
+  S.docked = true; S.dockedTo = S.station;
+  S.ship.x = S.station.x; S.ship.y = S.station.y; S.ship.z = S.station.z;
+  S.ship.vx = S.station.vx; S.ship.vy = S.station.vy; S.ship.vz = S.station.vz;
   setWarp(1);
   updateManualUI();
   updateMissionBanner();
   document.getElementById('result-modal').classList.remove('open');
   document.getElementById('assist-left').textContent = S.assistUses;
   document.getElementById('btn-assist').disabled = false;
-  logEvent('🚢 処女航海（Mission 0）開始。ステーション「あおば」近傍に展開。');
-  setStatusMsg('輸送艦「さくら」出航式。教導士官の案内を確認してください。');
+  logEvent('🎖️ ' + (S.captain ? S.captain.name : '') + '艦長、' + SHIP_NAME + 'に着任。ステーション「あおば」に接舷中（処女航海）。');
+  setStatusMsg(SHIP_NAME + ' 着任式。教導士官の案内を確認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
   initPrologueFlow();
 }
@@ -1246,6 +1486,7 @@ function startMission(idx){
   const cfg = SCENARIOS[selectedScenario];
   S = createBaseState(cfg, false);
   dvEmptyTimer = 0;
+  applyCaptain();
   const sysObj = SYSTEMS.find(s=>s.id===m.startSys) || SYSTEMS[0];
   loadSystem(sysObj);
   setWarp(1);
@@ -1355,8 +1596,9 @@ function physics(simDt){
       for(const npc of S.npcs) stepBody(npc, h, null);
     }
     if(S.docked){
-      S.ship.x=S.target.x; S.ship.y=S.target.y; S.ship.z=S.target.z;
-      S.ship.vx=S.target.vx; S.ship.vy=S.target.vy; S.ship.vz=S.target.vz;
+      const anchor=S.dockedTo||S.target;
+      S.ship.x=anchor.x; S.ship.y=anchor.y; S.ship.z=anchor.z;
+      S.ship.vx=anchor.vx; S.ship.vy=anchor.vy; S.ship.vz=anchor.vz;
     } else if(!S.failed){
       if(S.activeBurn && S.activeBurn.tLeft > 0){
         const b = S.activeBurn;
@@ -1633,6 +1875,8 @@ function openPlanPanel(cfg){
 
   planPanelState = { cfg, variants, selIdx, checklistDone: false, checkIdx: 0 };
   document.getElementById('plan-route-name').textContent = cfg.routeName;
+  { const trk = trackData(S.captain ? S.captain.track : 'transport');
+    document.getElementById('plan-ship').textContent = '自艦：' + trk.shipClass + '「' + trk.shipName + '」 質量 ' + trk.mass + 't ／ 推力 ' + trk.thrust.toLocaleString() + 'kN（加速 約7.0）／ 最大貨物 ' + trk.cargo + 't — 積荷が多い航程では加速が鈍ります'; }
   document.getElementById('plan-fixes').textContent = cfg.fixes;
 
   const varEl = document.getElementById('plan-variants');
@@ -1718,6 +1962,11 @@ function confirmDeparture(){
   const cfg = planPanelState.cfg;
   closePlanPanel();
   playSfx('click');
+  if(S.docked){
+    S.docked = false; S.dockedTo = null;
+    logEvent('⚓ 離舷 — 係留を解除。' + SHIP_NAME + '、出航します。');
+    showOfficerPopup(HELM, '離舷完了。推進、微速前進します。');
+  }
   logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。');
   S.planSamples = v.est.samples;
   updatePlanLineMesh();
@@ -1900,20 +2149,45 @@ function pePhaseName(p){ return ({depart:'出航',cruise:'巡航',brake:'減速'
 // ---------- プロローグ (Mission 0) & チュートリアル (Mission 1) ----------
 let camAzAccum = 0;
 
+let portScenePages = [], portSceneIdx = 0;
+function renderPortScenePage(){
+  const pg = portScenePages[portSceneIdx];
+  if(!pg) return;
+  const av = document.getElementById('briefing-avatar');
+  av.textContent = pg.who.initial || pg.who.name.slice(0, 1);
+  av.style.background = pg.who.color || '#64748b';
+  document.getElementById('briefing-name').textContent = pg.who.name;
+  document.getElementById('briefing-role').textContent = pg.who.title || pg.who.role || '';
+  document.getElementById('briefing-body').textContent = pg.text;
+  const offEl = document.getElementById('briefing-officers');
+  offEl.innerHTML = pg.officersHtml || '';
+  offEl.style.display = pg.officersHtml ? 'block' : 'none';
+  const last = portSceneIdx >= portScenePages.length - 1;
+  document.getElementById('btn-briefing-next').style.display = last ? 'none' : '';
+  document.getElementById('btn-briefing-start').style.display = last ? '' : 'none';
+}
 function initPrologueFlow(){
-  const modal = document.getElementById('briefing-modal');
-  document.getElementById('briefing-body').textContent =
-    '「ようこそ、輸送艦『さくら』へ。私が教導を担当します、榊原少佐です。艦長は計画を承認し、判断を下すのが仕事です。操船は艦載AIと乗員が行います。艦長の仕事は判断と責任です。まずはステーション『あおば』から居住惑星への短い観光航行に出ましょう。」';
-  const offIntros = [
-    '佐藤 澪「戦術面はお任せを。冷静に状況を分析します」',
-    '高橋 蓮「補給と機関のやりくりなら私に任せてください」',
-    'イリナ・コワルスカ「艦隊の政治と渉外、抜かりなく進めます」',
-    '陳 大樹「野心はありますが、まずは艦長のお手並み拝見ですね」',
-    'あおば管制「『さくら』、初任務の成功を祈る。いつでも出航申請をどうぞ」'
+  const cap = S.captain || defaultCaptainProfile();
+  const tr = trackData(cap.track);
+  const org = ORIGINS.find(o => o.id === cap.origin) || ORIGINS[0];
+  const home = HOME_PORTS.find(h => h.id === cap.homePort) || HOME_PORTS[0];
+  document.getElementById('briefing-title').textContent = tr.shipClass + '「' + tr.shipName + '」着任式';
+  const offHtml = S.officers.map(o => '<div>・' + o.name + '（配置：' + (o.post || '待機') + '）「' + (OFFICER_INTRO[o.name] || '') + '」</div>').join('')
+    + '<div>・三浦 葵（配置：航法）「航法と運航計画を担当します。よろしくお願いします」</div>';
+  portScenePages = [
+    { who: GUIDE, text: cap.name + '艦長、着任おめでとうございます。教導士官の榊原凛です。' + home.label + 'からの赴任ですね。' + org.line },
+    { who: GUIDE, text: 'まず、クルーを紹介します。本日付で着任した、艦長の部下たちです。', officersHtml: offHtml },
+    { who: HELM, text: 'そして艦長の船です。' + tr.shipClass + '「' + tr.shipName + '」。' + tr.desc + '操船は私たち航法と艦載AI「イオ」が行います。艦長の仕事は判断と責任です。' },
+    { who: GUIDE, text: 'このあと艦橋で、居住惑星への観光航行——処女航海の計画を承認していただきます。失敗のない航行ですから、気楽にどうぞ。では艦橋へ。' }
   ];
-  document.getElementById('briefing-officers').innerHTML = offIntros.map(t=>'<div>・'+t+'</div>').join('');
+  portSceneIdx = 0;
+  renderPortScenePage();
+  const modal = document.getElementById('briefing-modal');
   modal.classList.add('open');
-
+  document.getElementById('btn-briefing-next').onclick = () => {
+    playSfx('click');
+    if(portSceneIdx < portScenePages.length - 1){ portSceneIdx++; renderPortScenePage(); }
+  };
   document.getElementById('btn-briefing-start').onclick = () => {
     playSfx('click');
     modal.classList.remove('open');
@@ -2034,7 +2308,7 @@ function initMission1Tutorial(){
     steps: [
       {
         title: '0. 任務ブリーフィング',
-        desc: '物資が心もとない輸送艦「さくら」へ、補給艦「あけぼの」から荷物を受け取る、定期航路の補給便としての訓練です。決められた航路を時刻表どおりに運航します。ランデブー＝「相手と同じ場所に、同じ速さで並ぶこと」、ドッキング（接舷）＝「くっついて、補給や荷物の受け渡しをすること」。',
+        desc: trackData(S.captain ? S.captain.track : 'transport').jobLine + 'ランデブー＝「相手と同じ場所に、同じ速さで並ぶこと」、ドッキング（接舷）＝「くっついて、補給や荷物の受け渡しをすること」。',
         hl: '#btn-plan',
         autoAction: () => { S.tutorial.step = 1; openMissionPlanPanel(); }
       },
@@ -2817,6 +3091,7 @@ function triggerTrafficAdvisory(){
     'あおば管制: 「'+SHIP_CALLSIGN+'」、付近を'+npc.name+'が航行中。現在の進入路は安全です。',
     'あおば管制: 航路哨戒中の哨戒艇が付近を警戒中。最近は海賊の噂もある。見張り厳に。'
   ];
+  if(S.captain && S.captain.track === 'patrol') templates.push('あおば管制: 「' + SHIP_CALLSIGN + '」、哨戒ご苦労。航路付近に不審な熱源の報告あり。海賊の噂の出所かもしれません。');
   const msg = templates[Math.floor(Math.random() * templates.length)];
   logEvent('📡 ' + msg);
   setStatusMsg(msg);
@@ -2926,7 +3201,7 @@ function renderOfficers(){
   const wrap=document.getElementById('officers'); wrap.innerHTML='';
   S.officers.forEach(o=>{
     const div=document.createElement('div'); div.className='officer';
-    div.innerHTML='<span class="name">'+o.name+'</span><div class="stats">戦術 '+o.tactics+'／補給 '+o.logistics+'／政治 '+o.politics+'／忠誠 '+o.loyalty+'／野心 '+o.ambition+'</div>';
+    div.innerHTML='<span class="name">'+o.name+'</span><div class="stats">配置：'+(o.post||'待機')+'｜戦術 '+o.tactics+'／補給 '+o.logistics+'／政治 '+o.politics+'／忠誠 '+o.loyalty+'／野心 '+o.ambition+'</div>';
     const sel=document.createElement('select');
     ROLES.forEach(r=>{ const op=document.createElement('option'); op.value=r; op.textContent=r; if(o.role===r)op.selected=true; sel.appendChild(op); });
     sel.onchange=()=>{ playSfx('click'); o.role=sel.value; logEvent('👥 '+o.name+' を「'+o.role+'」に配置しました。'); };
@@ -3007,9 +3282,11 @@ document.getElementById('btn-sortie').addEventListener('click', ()=>{
   document.getElementById('start-screen').classList.add('hidden');
   gameStarted = true;
   if(!scene) initThree();
-  if(selectedScenario === 'captain') startPrologue();
-  else startMission(0);
+  if(selectedScenario === 'captain') openCreation();
+  else { captainProfile = loadCaptainProfile() || defaultCaptainProfile(); startMission(0); }
 });
+document.getElementById('btn-creation-done').addEventListener('click', finishCreation);
+document.getElementById('btn-cr-auto').addEventListener('click', ()=>{ playSfx('click'); autoAssignAbilities(); });
 
 const drawer = document.getElementById('drawer');
 document.getElementById('btn-drawer-toggle').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.toggle('open'); });
