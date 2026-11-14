@@ -890,7 +890,7 @@ function fullAccFn(starGM, pls){
     const a = sAcc(px, py, pz);
     if(pls) for(const p of pls){
       const dx = p.x - px, dy = p.y - py, dz = p.z - pz;
-      const d2 = dx*dx + dy*dy + dz*dz, d = Math.sqrt(d2) || 0.001, pa = p.gm / (d2 * d);
+      const d2 = dx*dx + dy*dy + dz*dz, d = Math.max(Math.sqrt(d2), 3), pa = p.gm / (d * d * d);
       a[0] += pa * dx; a[1] += pa * dy; a[2] += pa * dz;
     }
     return a;
@@ -1298,10 +1298,14 @@ function gravityAt(x,y,z,out){
   const r2 = x*x+y*y+z*z, r = Math.sqrt(r2)||0.001;
   const a = -S.sys.starGM/(r2*r);
   out.x=a*x; out.y=a*y; out.z=a*z;
+  // NOTE: distance is clamped to >=3 (same as dynStep). Without the clamp, a
+  // body evaluated AT the own position of a planet (the prologue target IS a
+  // planet) divides by d2=0 -> Infinity*0 = NaN, which then poisons every
+  // other body through this same loop. A body must not gravitate itself.
   for(const p of S.planets){
     const dx=p.x-x, dy=p.y-y, dz=p.z-z;
-    const d2=dx*dx+dy*dy+dz*dz, d=Math.sqrt(d2)||0.001;
-    const pa=p.gm/(d2*d);
+    const d2=dx*dx+dy*dy+dz*dz, d=Math.max(Math.sqrt(d2),3);
+    const pa=p.gm/(d*d*d);
     out.x+=pa*dx; out.y+=pa*dy; out.z+=pa*dz;
   }
   return out;
@@ -1343,8 +1347,8 @@ function physics(simDt){
     for(const p of S.planets) stepPlanet(p,h);
     if(S.station){
       stepBody(S.station,h,null);
-      if(S.target !== S.station) stepBody(S.target,h,null);
-    } else {
+      if(S.target !== S.station && !S.planets.includes(S.target)) stepBody(S.target,h,null);
+    } else if(!S.planets.includes(S.target)) {
       stepBody(S.target,h,null);
     }
     if(S.npcs){
