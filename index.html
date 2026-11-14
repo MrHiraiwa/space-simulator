@@ -2,155 +2,570 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>宇宙シミュレーター 試作 v0.1（3D）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>宇宙シミュレーター 試作 v0.2（3D）</title>
 <style>
-  :root{--bg:#05070f;--panel:#101830;--panel2:#0c1226;--line:#27355f;--text:#e8ecff;--muted:#9aa7d0;--accent:#6ea8ff;--accent2:#ffb35c;--good:#52e6a8;--bad:#ff6b7a;--warn:#ffd166}
+  :root{
+    --bg:#040711;
+    --glass:rgba(11,18,38,0.78);
+    --glass-strong:rgba(9,15,32,0.92);
+    --line:rgba(92,138,225,0.28);
+    --line-bright:rgba(110,178,255,0.58);
+    --text:#eaf0ff;
+    --muted:#8fa3cf;
+    --accent:#58b4ff;
+    --accent2:#ffb35c;
+    --good:#47e5a1;
+    --bad:#ff6378;
+    --warn:#ffd166;
+    --font:"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP","Yu Gothic UI",system-ui,sans-serif;
+  }
   *{box-sizing:border-box}
-  body{margin:0;font-family:"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;background:var(--bg);color:var(--text)}
-  header{padding:12px 18px;border-bottom:1px solid var(--line);display:flex;flex-wrap:wrap;gap:12px;align-items:center;background:var(--panel2)}
-  header h1{font-size:20px;margin:0}
-  header .sub{color:var(--muted);font-size:12px}
-  main{display:flex;gap:12px;padding:12px;align-items:flex-start}
-  #stage{flex:0 0 auto}
-  #view3d{width:880px;height:680px;border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#01030a;cursor:grab}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--font);overflow:hidden}
+  button,select{font-family:var(--font)}
+
+  /* ===== 共通ボタン・コントロール ===== */
+  button{
+    background:rgba(24,40,80,0.85);
+    color:var(--text);
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:7px 12px;
+    cursor:pointer;
+    font-size:13px;
+    transition:all .16s ease;
+    user-select:none;
+  }
+  button:hover:not(:disabled){background:rgba(40,68,128,0.92);border-color:var(--line-bright);transform:translateY(-1px)}
+  button:active:not(:disabled){transform:translateY(0)}
+  button.active{background:linear-gradient(135deg,#58b4ff,#3b82f6);color:#041024;font-weight:700;border-color:#93c5fd;box-shadow:0 0 12px rgba(88,180,255,0.4)}
+  button.primary{background:linear-gradient(135deg,#58b4ff,#2563eb);color:#fff;font-weight:700;border-color:#93c5fd;box-shadow:0 4px 18px rgba(37,99,235,0.4)}
+  button.primary:hover:not(:disabled){box-shadow:0 6px 24px rgba(88,180,255,0.55)}
+  button.amber{background:linear-gradient(135deg,#ffb35c,#f59e0b);color:#1a0f02;font-weight:700;border-color:#fcd34d}
+  button:disabled{opacity:.42;cursor:not-allowed;transform:none}
+  select{background:rgba(8,14,32,0.92);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font-size:12px}
+  kbd{background:rgba(8,14,32,0.9);border:1px solid var(--line);border-radius:4px;padding:1px 5px;font-size:11px;color:var(--accent)}
+
+  /* ===== 3D ビューポート ===== */
+  #app{position:relative;width:100vw;height:100vh;overflow:hidden}
+  #view3d{position:absolute;inset:0;width:100%;height:100%;cursor:grab;background:#02040c}
   #view3d:active{cursor:grabbing}
-  #view3d canvas{display:block}
-  #side{flex:1 1 340px;min-width:320px;display:flex;flex-direction:column;gap:12px;max-height:calc(100vh - 90px);overflow-y:auto;padding-right:4px}
-  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
-  .panel h2{font-size:15px;margin:0 0 8px;border-bottom:1px solid var(--line);padding-bottom:6px}
-  .panel h3{font-size:13px;margin:10px 0 4px;color:var(--accent)}
-  .row{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin:6px 0}
-  button{background:#1b2a52;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer;font-size:13px}
-  button:hover{background:#243a6e}
-  button.active{background:var(--accent);color:#06102a;font-weight:700}
-  button:disabled{opacity:.45;cursor:not-allowed}
-  select{background:#0a1024;color:var(--text);border:1px solid var(--line);border-radius:6px;padding:6px;font-size:13px}
-  .kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;font-size:13px}
+  #view3d canvas{display:block;width:100%;height:100%}
+
+  /* ===== 目標バナー (常時上部) ===== */
+  #mission-banner{
+    position:absolute;top:12px;left:50%;transform:translateX(-50%);
+    z-index:20;
+    width:min(760px, calc(100vw - 24px));
+    background:var(--glass);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--line-bright);
+    border-radius:14px;
+    padding:10px 16px;
+    box-shadow:0 8px 32px rgba(0,0,0,0.55), inset 0 1px 0 rgba(255,255,255,0.08);
+    display:flex;align-items:center;justify-content:space-between;gap:14px;
+  }
+  .mb-left{min-width:0;flex:1}
+  .mb-eyebrow{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--accent);text-transform:uppercase}
+  .mb-badge{background:rgba(88,180,255,0.18);border:1px solid rgba(88,180,255,0.45);padding:1px 7px;border-radius:999px;font-size:11px}
+  .mb-sys{color:var(--accent2);font-size:11px}
+  .mb-title{font-size:17px;font-weight:800;margin:2px 0;line-height:1.25;color:#fff}
+  .mb-obj{font-size:12px;color:var(--muted);line-height:1.35}
+  .mb-right{display:flex;align-items:center;gap:8px;flex-shrink:0}
+  #mission-timer{
+    display:none;
+    background:rgba(255,99,120,0.16);
+    border:1px solid rgba(255,99,120,0.45);
+    color:var(--warn);
+    padding:6px 10px;border-radius:10px;
+    font-size:14px;font-weight:800;font-variant-numeric:tabular-nums;
+    text-align:center;min-width:86px;
+  }
+  #mission-timer.urgent{color:#ff8fa3;animation:pulseUrgent 1s infinite}
+  @keyframes pulseUrgent{0%,100%{box-shadow:0 0 0 rgba(255,99,120,0)}50%{box-shadow:0 0 16px rgba(255,99,120,0.55)}}
+
+  /* ===== 左上ユーティリティ & 右上ドロワーボタン ===== */
+  .top-actions{display:flex;gap:6px;align-items:center}
+  .icon-btn{padding:6px 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+
+  /* ===== 画面上ターゲットマーカー ===== */
+  #target-marker{
+    position:absolute;z-index:15;pointer-events:none;
+    display:none;transform:translate(-50%,-50%);
+  }
+  .tm-box{
+    display:flex;flex-direction:column;align-items:center;gap:2px;
+    filter:drop-shadow(0 0 8px rgba(71,229,161,0.7));
+  }
+  .tm-reticle{
+    width:32px;height:32px;border:2px solid var(--good);border-radius:50%;
+    position:relative;animation:spinSlow 8s linear infinite;
+  }
+  .tm-reticle::before,.tm-reticle::after{
+    content:"";position:absolute;background:var(--good);
+  }
+  .tm-reticle::before{width:6px;height:2px;left:-5px;top:50%;transform:translateY(-50%);box-shadow:34px 0 0 var(--good)}
+  .tm-reticle::after{width:2px;height:6px;top:-5px;left:50%;transform:translateX(-50%);box-shadow:0 34px 0 var(--good)}
+  .tm-arrow{
+    width:0;height:0;
+    border-left:9px solid transparent;border-right:9px solid transparent;border-bottom:16px solid var(--good);
+    display:none;
+  }
+  .tm-label{
+    background:rgba(4,12,24,0.85);border:1px solid rgba(71,229,161,0.5);
+    color:var(--good);font-size:11px;font-weight:700;padding:2px 6px;border-radius:6px;white-space:nowrap;
+    font-variant-numeric:tabular-nums;
+  }
+  @keyframes spinSlow{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+
+  /* ===== 簡易HUD (左下: 距離/相対速度/Δv/支援) ===== */
+  #hud-left{
+    position:absolute;left:14px;bottom:14px;z-index:20;
+    width:310px;
+    background:var(--glass);
+    backdrop-filter:blur(12px);
+    -webkit-backdrop-filter:blur(12px);
+    border:1px solid var(--line);
+    border-radius:14px;padding:12px 14px;
+    box-shadow:0 8px 28px rgba(0,0,0,0.5);
+  }
+  .hud-metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  .metric-card{background:rgba(6,11,24,0.65);border:1px solid rgba(92,138,225,0.2);border-radius:10px;padding:7px 9px}
+  .metric-label{font-size:10px;color:var(--muted);letter-spacing:.04em}
+  .metric-val{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;margin-top:1px}
+  #vel-gauge.safe .metric-val{color:var(--good)}
+  #vel-gauge.caution .metric-val{color:var(--warn)}
+  #vel-gauge.danger .metric-val{color:var(--bad)}
+  #vel-gauge.safe{border-color:rgba(71,229,161,0.45)}
+  #vel-gauge.caution{border-color:rgba(255,209,102,0.45)}
+  #vel-gauge.danger{border-color:rgba(255,99,120,0.5)}
+  .vel-tag{font-size:10px;font-weight:700;margin-left:4px}
+
+  .dv-row{display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;font-variant-numeric:tabular-nums}
+  .bar{height:9px;background:rgba(4,8,20,0.85);border-radius:999px;overflow:hidden;border:1px solid var(--line)}
+  .bar>i{display:block;height:100%;background:linear-gradient(90deg,#58b4ff,#47e5a1);transition:width .15s}
+  .bar.amber>i{background:linear-gradient(90deg,#ffb35c,#ffd166)}
+  .hud-btns{display:flex;gap:6px;margin-top:9px}
+  .hud-btns button{flex:1;font-size:12px;padding:7px 8px}
+
+  /* ===== ヒント & メッセージ欄 (中央下) ===== */
+  #hud-bottom{
+    position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+    z-index:20;
+    width:min(480px, calc(100vw - 660px));
+    min-width:290px;
+    display:flex;flex-direction:column;gap:8px;align-items:center;
+  }
+  #hint{
+    width:100%;
+    background:rgba(12,22,48,0.84);
+    backdrop-filter:blur(10px);
+    border:1px solid rgba(88,180,255,0.45);
+    border-radius:11px;padding:8px 12px;
+    font-size:12px;line-height:1.45;color:#dbeafe;
+    box-shadow:0 6px 20px rgba(0,0,0,0.45);
+  }
+  #hint.warn{border-color:rgba(255,209,102,0.65);color:#fef08a}
+  #hint.danger{border-color:rgba(255,99,120,0.7);color:#fecdd3}
+  #hint.good{border-color:rgba(71,229,161,0.7);color:#a7f3d0}
+
+  #status-msg{
+    width:100%;
+    background:rgba(6,10,24,0.78);
+    border:1px solid var(--line);
+    border-radius:9px;padding:5px 11px;
+    font-size:11px;color:var(--muted);
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+  }
+  .warp-bar{
+    display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:center;
+    background:var(--glass);backdrop-filter:blur(10px);
+    border:1px solid var(--line);border-radius:999px;padding:5px 12px;
+    font-size:12px;
+  }
+  .warp-bar button{padding:4px 9px;font-size:11px;border-radius:999px}
+
+  /* ===== 右下 推力パッド & カメラ ===== */
+  #hud-right{
+    position:absolute;right:14px;bottom:14px;z-index:20;
+    background:var(--glass);backdrop-filter:blur(12px);
+    border:1px solid var(--line);border-radius:14px;padding:10px 12px;
+    display:flex;flex-direction:column;gap:8px;align-items:center;
+  }
+  .thrust-pad{display:grid;grid-template-columns:repeat(4,54px);gap:5px}
+  .thrust-pad button{height:38px;font-size:12px;padding:0;touch-action:none}
+  .cam-row{display:flex;gap:5px;width:100%}
+  .cam-row button{flex:1;font-size:11px;padding:5px 6px}
+  .key-help{font-size:10px;color:var(--muted);text-align:center;line-height:1.4}
+
+  /* ===== サイドドロワー (デフォルト閉) ===== */
+  #drawer{
+    position:absolute;top:78px;right:14px;bottom:14px;
+    width:360px;max-width:calc(100vw - 28px);
+    z-index:30;
+    background:var(--glass-strong);
+    backdrop-filter:blur(16px);
+    -webkit-backdrop-filter:blur(16px);
+    border:1px solid var(--line-bright);
+    border-radius:16px;
+    box-shadow:0 16px 48px rgba(0,0,0,0.7);
+    display:flex;flex-direction:column;
+    transform:translateX(calc(100% + 28px));
+    transition:transform .24s cubic-bezier(.22,1,.36,1);
+  }
+  #drawer.open{transform:translateX(0)}
+  .drawer-head{
+    display:flex;align-items:center;justify-content:space-between;
+    padding:10px 14px;border-bottom:1px solid var(--line);
+  }
+  .drawer-tabs{display:flex;gap:4px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .drawer-tabs button{flex:1;padding:6px 4px;font-size:11px}
+  .drawer-body{flex:1;overflow-y:auto;padding:12px}
+  .tab-pane{display:none}
+  .tab-pane.active{display:block}
+  .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px;margin:6px 0}
   .kv b{text-align:right;font-variant-numeric:tabular-nums}
-  .ok{color:var(--good)} .bad{color:var(--bad)} .warn{color:var(--warn)} .muted{color:var(--muted)}
-  #log{background:#060a18;border:1px solid var(--line);border-radius:8px;height:180px;overflow-y:auto;padding:8px;font-size:12px;line-height:1.65}
-  #log div{border-bottom:1px dotted #1d2947;padding:2px 0}
-  .officer{border:1px solid var(--line);border-radius:8px;padding:8px;margin:6px 0;background:var(--panel2)}
-  .officer .name{font-weight:700}
-  .stats{font-size:12px;color:var(--muted)}
-  .bar{height:8px;background:#0a1024;border-radius:4px;overflow:hidden;border:1px solid var(--line)}
-  .bar>i{display:block;height:100%;background:var(--accent2)}
-  .thrust-pad{display:grid;grid-template-columns:repeat(4,64px);gap:6px;justify-content:center;margin-top:6px}
-  .thrust-pad button{height:44px;font-size:14px;user-select:none;-webkit-user-select:none;touch-action:none}
-  .sys-btn{display:block;width:100%;text-align:left;margin:4px 0}
+  .sys-btn{display:block;width:100%;text-align:left;margin:6px 0;padding:9px 11px}
   .sys-btn.current{border-color:var(--accent2);color:var(--accent2)}
-  #status-banner{font-size:14px;padding:8px 10px;border-radius:8px;background:#0a1024;border:1px solid var(--line);margin-top:8px;min-height:38px;width:880px}
-  kbd{background:#0a1024;border:1px solid var(--line);border-radius:4px;padding:0 5px;font-size:11px}
-  @media (max-width:1150px){main{flex-direction:column}#side{max-height:none}#view3d,#status-banner{width:100%}}
+  .officer{border:1px solid var(--line);border-radius:10px;padding:9px;margin:7px 0;background:rgba(8,14,32,0.65)}
+  .officer .name{font-weight:700;font-size:13px}
+  .stats{font-size:11px;color:var(--muted);margin:3px 0 6px}
+  #log{background:rgba(4,8,18,0.85);border:1px solid var(--line);border-radius:8px;height:320px;overflow-y:auto;padding:8px;font-size:12px;line-height:1.6}
+  #log div{border-bottom:1px dotted rgba(92,138,225,0.2);padding:3px 0}
+
+  /* ===== 部下ダイアログポップアップ ===== */
+  #officer-popup{
+    position:absolute;left:14px;top:92px;z-index:25;
+    width:min(360px, calc(100vw - 28px));
+    background:var(--glass-strong);
+    backdrop-filter:blur(14px);
+    border:1px solid var(--accent2);
+    border-radius:14px;padding:11px 14px;
+    box-shadow:0 12px 34px rgba(0,0,0,0.65);
+    display:flex;gap:11px;align-items:flex-start;
+    opacity:0;transform:translateY(-10px);pointer-events:none;
+    transition:opacity .25s ease, transform .25s ease;
+  }
+  #officer-popup.show{opacity:1;transform:translateY(0);pointer-events:auto}
+  .avatar{
+    width:40px;height:40px;border-radius:50%;flex-shrink:0;
+    display:flex;align-items:center;justify-content:center;
+    font-weight:800;font-size:16px;color:#061024;
+    background:linear-gradient(135deg,#ffb35c,#ff8fa3);
+    box-shadow:0 0 12px rgba(255,179,92,0.45);
+  }
+  .op-meta{font-size:11px;color:var(--accent2);font-weight:700}
+  .op-text{font-size:13px;line-height:1.45;margin-top:2px;color:#fff}
+
+  /* ===== 成功祝福アニメーションバナー ===== */
+  #celebration-banner{
+    position:absolute;top:24%;left:50%;transform:translate(-50%,-50%) scale(0.8);
+    z-index:35;pointer-events:none;opacity:0;
+    background:linear-gradient(90deg, rgba(16,185,129,0.2), rgba(71,229,161,0.92), rgba(16,185,129,0.2));
+    border-top:2px solid #a7f3d0;border-bottom:2px solid #a7f3d0;
+    padding:14px 48px;text-align:center;
+    box-shadow:0 0 40px rgba(71,229,161,0.6);
+  }
+  #celebration-banner.play{animation:celebratePop 2.2s ease forwards}
+  #celebration-banner h2{margin:0;font-size:26px;color:#031b11;letter-spacing:.1em;text-shadow:0 1px 0 rgba(255,255,255,0.5)}
+  #celebration-banner p{margin:3px 0 0;font-size:13px;color:#042f1e;font-weight:700}
+  @keyframes celebratePop{
+    0%{opacity:0;transform:translate(-50%,-50%) scale(0.75)}
+    15%{opacity:1;transform:translate(-50%,-50%) scale(1.06)}
+    25%{transform:translate(-50%,-50%) scale(1)}
+    80%{opacity:1;transform:translate(-50%,-50%) scale(1)}
+    100%{opacity:0;transform:translate(-50%,-60%) scale(0.95)}
+  }
+
+  /* ===== スタート画面 ===== */
+  #start-screen{
+    position:fixed;inset:0;z-index:50;
+    background:radial-gradient(circle at 50% 28%, rgba(36,72,150,0.42), rgba(4,7,17,0.97) 72%);
+    backdrop-filter:blur(10px);
+    display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto;
+  }
+  #start-screen.hidden{display:none}
+  .start-card-wrap{width:min(920px,100%);text-align:center}
+  .logo-badge{
+    display:inline-block;padding:4px 14px;border-radius:999px;
+    border:1px solid rgba(88,180,255,0.5);background:rgba(88,180,255,0.12);
+    color:var(--accent);font-size:12px;font-weight:700;letter-spacing:.12em;margin-bottom:10px;
+  }
+  .start-title{
+    font-size:clamp(30px,5vw,52px);font-weight:900;margin:0;letter-spacing:.06em;
+    background:linear-gradient(135deg,#ffffff 20%,#8ec5ff 60%,#47e5a1 100%);
+    -webkit-background-clip:text;-webkit-text-fill-color:transparent;
+    filter:drop-shadow(0 6px 24px rgba(88,180,255,0.35));
+  }
+  .start-pitch{color:var(--muted);font-size:15px;margin:10px auto 26px;max-width:640px;line-height:1.6}
+  .scenario-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:26px;text-align:left}
+  .sc-card{
+    background:rgba(13,22,46,0.82);
+    border:2px solid var(--line);
+    border-radius:16px;padding:16px;cursor:pointer;
+    transition:all .18s ease;position:relative;
+  }
+  .sc-card:hover{border-color:rgba(88,180,255,0.65);transform:translateY(-3px)}
+  .sc-card.selected{
+    border-color:var(--accent);
+    background:rgba(22,42,86,0.92);
+    box-shadow:0 0 28px rgba(88,180,255,0.32);
+  }
+  .sc-diff{font-size:11px;font-weight:700;color:var(--accent2);letter-spacing:.06em}
+  .sc-name{font-size:19px;font-weight:800;margin:4px 0 6px;color:#fff}
+  .sc-cmd{font-size:13px;color:#dbeafe;margin-bottom:8px;font-weight:600}
+  .sc-spec{font-size:12px;color:var(--muted);line-height:1.5}
+  #btn-sortie{font-size:18px;padding:14px 48px;border-radius:12px;letter-spacing:.08em}
+
+  /* ===== 結果モーダル ===== */
+  #result-modal{
+    position:fixed;inset:0;z-index:45;
+    background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
+    display:none;align-items:center;justify-content:center;padding:18px;
+  }
+  #result-modal.open{display:flex}
+  .modal-box{
+    width:min(480px,100%);
+    background:var(--glass-strong);
+    border:1px solid var(--line-bright);
+    border-radius:18px;padding:24px;text-align:center;
+    box-shadow:0 20px 60px rgba(0,0,0,0.8);
+  }
+  .modal-box h2{margin:0 0 8px;font-size:24px}
+  .modal-box p{color:var(--muted);font-size:14px;line-height:1.55;margin:0 0 16px}
+  .merit-box{
+    background:rgba(6,11,24,0.8);border:1px solid var(--line);
+    border-radius:12px;padding:14px;margin-bottom:18px;text-align:left;
+  }
+  .merit-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px;font-size:13px}
+  .merit-row b{font-size:18px;color:var(--accent2);font-variant-numeric:tabular-nums}
+  .modal-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+
+  /* ===== モバイル縦積み対応 ===== */
+  @media (max-width:960px){
+    html,body{overflow:auto;height:auto}
+    #app{display:flex;flex-direction:column;height:auto;min-height:100vh;overflow:visible}
+    #view3d{position:relative;height:54vh;min-height:320px}
+    #mission-banner{position:relative;top:auto;left:auto;transform:none;width:100%;border-radius:0;border-left:none;border-right:none;flex-wrap:wrap;order:-1}
+    #hud-left,#hud-bottom,#hud-right{position:relative;left:auto;right:auto;bottom:auto;transform:none;width:100%;min-width:0;border-radius:0;border-left:none;border-right:none}
+    #officer-popup{position:fixed;top:auto;bottom:14px;left:12px;right:12px;width:auto}
+    .scenario-grid{grid-template-columns:1fr}
+    #drawer{position:fixed;top:0;right:0;bottom:0;border-radius:14px 0 0 14px}
+  }
 </style>
 </head>
 <body>
-<header>
-  <div>
-    <h1>🚀 宇宙シミュレーター 試作 v0.1（フル3D）</h1>
-    <div class="sub">Three.js / WebGL ― 位置・速度・重力すべて3次元ベクトル計算。惑星軌道は傾いており、平面変更も必要です。恒星間だけワープで誤魔化します</div>
+<div id="app">
+  <!-- 3Dキャンバス -->
+  <div id="view3d"></div>
+
+  <!-- 画面上ターゲットマーカー -->
+  <div id="target-marker">
+    <div class="tm-box">
+      <div class="tm-arrow" id="tm-arrow"></div>
+      <div class="tm-reticle" id="tm-reticle"></div>
+      <div class="tm-label" id="tm-label">目標</div>
+    </div>
   </div>
-  <div class="row" style="margin-left:auto">
-    <label>シナリオ（開始ランク）：
-      <select id="scenario">
-        <option value="captain">新任艦長（艦1隻）</option>
-        <option value="squadron">戦隊司令（僚艦2隻）</option>
-        <option value="fleet">艦隊司令（僚艦4隻＋豊富な補給）</option>
-      </select>
-    </label>
-    <button id="btn-apply-scenario">このシナリオで開始</button>
-    <button id="btn-reset">リセット</button>
+
+  <!-- 常時表示 目標バナー -->
+  <header id="mission-banner">
+    <div class="mb-left">
+      <div class="mb-eyebrow">
+        <span class="mb-badge" id="mb-num">MISSION 1 / 3</span>
+        <span class="mb-sys" id="mb-sys">📍 ソル系</span>
+      </div>
+      <div class="mb-title" id="mb-title">補給艦とランデブーせよ</div>
+      <div class="mb-obj" id="mb-obj">目標艦「あけぼの」に接近し、相対速度を合わせてドッキングせよ。</div>
+    </div>
+    <div class="mb-right">
+      <div id="mission-timer">残り 420s</div>
+      <div class="top-actions">
+        <button id="btn-mute" class="icon-btn" title="効果音オン/オフ">🔊 音ON</button>
+        <button id="btn-drawer-toggle" class="icon-btn">☰ 指揮パネル</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- 部下ダイアログポップアップ -->
+  <div id="officer-popup" role="status">
+    <div class="avatar" id="op-avatar">佐</div>
+    <div>
+      <div class="op-meta" id="op-name">佐藤 澪（副長）</div>
+      <div class="op-text" id="op-text">準備完了です、艦長。</div>
+    </div>
   </div>
-</header>
-<main>
-  <section id="stage">
-    <div id="view3d"></div>
-    <div id="status-banner">目標艦とランデブーしてください。3次元距離が近く、相対速度が小さいときにドッキング成功です。速すぎる接触は衝突になります。</div>
-    <div class="row" style="justify-content:center;margin-top:10px;width:880px;max-width:100%">
-      <span>時間：</span>
-      <button data-warp="0">⏸ 停止</button>
+
+  <!-- 成功祝福バナー -->
+  <div id="celebration-banner">
+    <h2>DOCKING COMPLETE</h2>
+    <p id="cel-sub">ランデブー成功！任務を達成しました</p>
+  </div>
+
+  <!-- 左下HUD: 相対速度・距離・Δv・支援 -->
+  <section id="hud-left">
+    <div class="hud-metrics">
+      <div class="metric-card">
+        <div class="metric-label">目標までの3D距離</div>
+        <div class="metric-val" id="hud-dist">-</div>
+      </div>
+      <div class="metric-card safe" id="vel-gauge">
+        <div class="metric-label">相対速度 <span class="vel-tag" id="vel-tag">安全圏</span></div>
+        <div class="metric-val" id="hud-rel">-</div>
+      </div>
+    </div>
+    <div class="dv-row">
+      <span>残り Δv（推進剤）</span>
+      <b id="hud-dv">-</b>
+    </div>
+    <div class="bar"><i id="dv-bar" style="width:100%"></i></div>
+    <div class="hud-btns">
+      <button id="btn-assist" class="amber">🎯 ランデブー支援 (<span id="assist-left">3</span>)</button>
+      <button id="btn-resupply" disabled>⛽ 補給</button>
+    </div>
+  </section>
+
+  <!-- 中央下HUD: ヒント・時間ワープ・メッセージ欄 -->
+  <section id="hud-bottom">
+    <div id="hint">目標艦は傾斜軌道にいます。まずは方向を確認して接近しましょう。</div>
+    <div class="warp-bar">
+      <span>時間:</span>
+      <button data-warp="0">⏸</button>
       <button data-warp="1" class="active">1x</button>
       <button data-warp="3">3x</button>
       <button data-warp="8">8x</button>
-      <span class="muted">経過 <b id="clock">0</b> 秒</span>
-      <span style="margin-left:14px">視点：</span>
+      <span style="color:var(--muted);margin-left:4px">T+<b id="clock">0</b>s</span>
+    </div>
+    <div id="status-msg">システム稼働中</div>
+  </section>
+
+  <!-- 右下HUD: 推力パッド・視点 -->
+  <section id="hud-right">
+    <div class="thrust-pad" aria-label="推力ボタン">
+      <span></span><button data-thrust="fwd">▲ 前</button><span></span><button data-thrust="up">⬆ 上</button>
+      <button data-thrust="left">◀ 左</button><button data-thrust="back">▼ 後</button><button data-thrust="right">▶ 右</button><button data-thrust="down">⬇ 下</button>
+    </div>
+    <div class="cam-row">
       <button id="btn-cam-free" class="active">自由視点</button>
       <button id="btn-cam-follow">自艦追従</button>
       <button id="btn-cam-reset">視点リセット</button>
     </div>
-    <div class="thrust-pad" aria-label="推力ボタン">
-      <span></span><button data-thrust="fwd">▲ 前</button><span></span><button data-thrust="up">⬆ 上昇</button>
-      <button data-thrust="left">◀ 左</button><button data-thrust="back">▼ 後</button><button data-thrust="right">▶ 右</button><button data-thrust="down">⬇ 下降</button>
+    <div class="key-help">
+      <kbd>WASD</kbd>前後左右 / <kbd>R</kbd><kbd>F</kbd>上下推力 / <kbd>M</kbd>支援 / <kbd>Space</kbd>停止
     </div>
-    <p class="muted" style="font-size:12px;text-align:center;width:880px;max-width:100%">
-      操艦：<kbd>W</kbd>/<kbd>S</kbd> 前後、<kbd>A</kbd>/<kbd>D</kbd> 左右、<kbd>R</kbd>/<kbd>F</kbd> または <kbd>Q</kbd>/<kbd>E</kbd> 上下（軌道面の外への推力）、<kbd>M</kbd> 相対速度合わせ、<kbd>Space</kbd> 停止／再開<br>
-      カメラ：ドラッグ＝回転、ホイール＝ズーム、右ドラッグ／Shift+ドラッグ＝パン（平行移動）
-    </p>
   </section>
 
-  <aside id="side">
-    <div class="panel">
-      <h2>📡 ランデブー HUD（3次元）</h2>
-      <div class="kv">
-        <span>目標までの3D距離</span><b id="hud-dist">-</b>
-        <span>相対速度（大きさ）</span><b id="hud-rel">-</b>
-        <span>相対速度ベクトル (x,y,z)</span><b id="hud-relvec">-</b>
-        <span>自艦速度 (x,y,z)</span><b id="hud-vel">-</b>
-        <span>自艦位置 (x,y,z)</span><b id="hud-pos">-</b>
-        <span>残り Δv（推進剤）</span><b id="hud-dv">-</b>
+  <!-- サイドドロワー (デフォルト閉: 銀河マップ / 生産・補給・政治 / 部下 / ログ) -->
+  <aside id="drawer">
+    <div class="drawer-head">
+      <strong>艦隊指揮ドロワー</strong>
+      <div style="display:flex;gap:6px">
+        <button id="btn-reset" style="padding:4px 9px;font-size:11px">最初から</button>
+        <button id="btn-drawer-close" style="padding:4px 9px;font-size:11px">✕</button>
       </div>
-      <div class="bar" style="margin:8px 0"><i id="dv-bar" style="width:100%"></i></div>
-      <div class="row">
-        <button id="btn-match">目標に相対速度を合わせる (M)</button>
-        <button id="btn-resupply" disabled>補給を受ける（ドッキング中のみ）</button>
+    </div>
+    <div class="drawer-tabs">
+      <button class="active" data-tab="galaxy">🌌 銀河</button>
+      <button data-tab="prod">🏭 生産・政治</button>
+      <button data-tab="officers">👥 部下</button>
+      <button data-tab="log">📜 ログ</button>
+    </div>
+    <div class="drawer-body">
+      <div class="tab-pane active" id="tab-galaxy">
+        <div class="kv"><span>ワープ燃料</span><b id="res-warp">-</b><span>恒星距離</span><b id="star-dist">-</b></div>
+        <p style="font-size:12px;color:var(--muted);margin:6px 0 10px">ワープ条件：恒星からの3D距離 <b>340以上</b>（外縁域）＋ワープ燃料が必要。</p>
+        <div id="galaxy"></div>
       </div>
-      <div id="dock-state" class="muted" style="font-size:13px">状態：航行中</div>
-    </div>
 
-    <div class="panel">
-      <h2>🌌 銀河マップ（ワープ）</h2>
-      <div id="galaxy"></div>
-      <p class="muted" style="font-size:12px">ワープ条件：恒星からの3D距離 340 以上（外縁域）＋ワープ燃料が必要。系内の移動は重力と推力だけのリアル計算です。</p>
-      <div class="kv"><span>ワープ燃料</span><b id="res-warp">-</b></div>
-    </div>
-
-    <div class="panel">
-      <h2>🏭 生産・補給・政治</h2>
-      <div class="kv">
-        <span>推進剤ストック</span><b id="res-prop">-</b>
-        <span>補給物資</span><b id="res-sup">-</b>
-        <span>資金（予算）</span><b id="res-cred">-</b>
-        <span>政治的支持</span><b id="res-pol">-</b>
+      <div class="tab-pane" id="tab-prod">
+        <div class="kv">
+          <span>推進剤ストック</span><b id="res-prop">-</b>
+          <span>補給物資</span><b id="res-sup">-</b>
+          <span>資金（予算）</span><b id="res-cred">-</b>
+          <span>政治的支持</span><b id="res-pol">-</b>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--line);margin:10px 0">
+        <div style="font-size:13px;font-weight:700;margin-bottom:4px">生産キュー</div>
+        <div id="prod-state" style="font-size:12px;color:var(--muted)">空き</div>
+        <div class="bar amber" style="margin:6px 0"><i id="prod-bar" style="width:0%"></i></div>
+        <button id="btn-build" style="width:100%;margin-top:4px">小型艦を建造（資金120／物資20）</button>
       </div>
-      <h3>生産キュー</h3>
-      <div id="prod-state" class="muted" style="font-size:13px">空き</div>
-      <div class="bar" style="margin:6px 0"><i id="prod-bar" style="width:0%"></i></div>
-      <div class="row"><button id="btn-build">小型艦を建造（資金120／物資20）</button></div>
-    </div>
 
-    <div class="panel">
-      <h2>👥 部下（将校）</h2>
-      <div id="officers"></div>
-      <p class="muted" style="font-size:12px">役割を割り当てると、各将校が自律的に政治・補給イベントを起こします（v0.1簡易版）。</p>
-    </div>
+      <div class="tab-pane" id="tab-officers">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">役割を割り当てると、将校が自律的に政治・補給イベントを起こします。</p>
+        <div id="officers"></div>
+      </div>
 
-    <div class="panel">
-      <h2>📜 イベントログ</h2>
-      <div id="log"></div>
+      <div class="tab-pane" id="tab-log">
+        <div id="log"></div>
+      </div>
     </div>
   </aside>
-</main>
+</div>
+
+<!-- スタート画面 (id="start-screen") -->
+<div id="start-screen">
+  <div class="start-card-wrap">
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.2</div>
+    <h1 class="start-title">宇宙艦隊シミュレーター</h1>
+    <p class="start-pitch">3次元ニュートン重力と傾斜軌道が織りなすリアルな宇宙航行。艦隊を率い、軌道面を合わせて補給艦とランデブーせよ。</p>
+    <div class="scenario-grid" id="scenario-cards">
+      <div class="sc-card selected" data-scenario="captain">
+        <div class="sc-diff">難易度：★★★ 標準</div>
+        <div class="sc-name">新任艦長</div>
+        <div class="sc-cmd">指揮：単艦（自艦1隻）</div>
+        <div class="sc-spec">Δv 55 / ワープ燃料 3 / 資金 200<br>限られた推進剤で軌道力学を体感する基本コース。</div>
+      </div>
+      <div class="sc-card" data-scenario="squadron">
+        <div class="sc-diff">難易度：★★☆ 戦術</div>
+        <div class="sc-name">戦隊司令</div>
+        <div class="sc-cmd">指揮：自艦＋僚艦2隻</div>
+        <div class="sc-spec">Δv 70 / ワープ燃料 4 / 資金 350<br>護衛戦隊を率いて余裕ある作戦行動が可能。</div>
+      </div>
+      <div class="sc-card" data-scenario="fleet">
+        <div class="sc-diff">難易度：★☆☆ 余裕</div>
+        <div class="sc-name">艦隊司令</div>
+        <div class="sc-cmd">指揮：自艦＋僚艦4隻＋豊富資源</div>
+        <div class="sc-spec">Δv 85 / ワープ燃料 6 / 資金 600<br>大規模艦隊と潤沢な補給で全ミッション制覇へ。</div>
+      </div>
+    </div>
+    <button id="btn-sortie" class="primary">🚀 出撃する</button>
+  </div>
+</div>
+
+<!-- 結果モーダル (成功 / 失敗 / エンディング) -->
+<div id="result-modal">
+  <div class="modal-box">
+    <h2 id="rm-title">任務成功</h2>
+    <p id="rm-desc">補給艦とのランデブーに成功しました。</p>
+    <div class="merit-box">
+      <div class="merit-row">
+        <span>通算功績ポイント</span>
+        <b id="rm-merit">0 pt</b>
+      </div>
+      <div class="merit-row" style="margin-bottom:6px;font-size:12px">
+        <span>階級：<strong id="rm-rank" style="color:var(--accent)">少尉</strong></span>
+        <span id="rm-next-rank" style="color:var(--muted)">次の昇進まで 100 pt</span>
+      </div>
+      <div class="bar amber"><i id="rm-promo-bar" style="width:0%"></i></div>
+    </div>
+    <div class="modal-actions">
+      <button id="btn-rm-next" class="primary">次のミッションへ ➔</button>
+      <button id="btn-rm-retry" class="amber">↻ 再挑戦</button>
+      <button id="btn-rm-title">タイトルへ</button>
+    </div>
+  </div>
+</div>
+
 <!-- Three.js: 同梱ファイル(three.min.js)を優先し、無い場合のみCDNから読み込む -->
 <script src="three.min.js"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');}</script>
 <script>
 "use strict";
-/* ===== 宇宙シミュレーター試作 v0.1 フル3D版 =====
-   位置・速度・加速度はすべて3次元ベクトル {x,y,z}。
-   y が軌道面の外(上下)方向。重力も3D距離で計算する。 */
+/* ===== 宇宙シミュレーター 試作 v0.2 フル3D版 ===== */
 
-// ---------- 定義 ----------
+// ---------- 既存データ定義 (v0.1互換維持) ----------
 const SYSTEMS = [
   { id:'sol', name:'ソル系', starColor:0xffd166, starGM:20000, warpCost:0,
     planets:[
@@ -189,18 +604,72 @@ const OFFICER_DEFS = [
 ];
 const ROLES = ['待機','艦隊戦術担当','補給管理担当','政治工作担当','造船監督担当'];
 
-// ---------- 3Dベクトル小道具 (物理は素のx,y,zで計算) ----------
+// ---------- ミッション & 昇進定義 ----------
+const MISSIONS = [
+  { id:1, title:'補給艦とランデブーせよ',
+    obj:'目標艦「あけぼの」に接近（距離12未満・相対速度1.5以下）してドッキングせよ。',
+    startSys:'sol', reqSys:null, timeLimit:0, merit:120,
+    startQuote:'艦長、まずはソル系の補給艦と合流しましょう。目標は18°の傾斜軌道にいます。R/Fキーの上下推力が鍵です！' },
+  { id:2, title:'外縁へ出てワープし、ケンタウリ系の目標艦と合流せよ',
+    obj:'恒星距離340以上の外縁域へ進み、「指揮パネル＞銀河」からケンタウリ系へワープ後、目標艦とドッキングせよ。',
+    startSys:'sol', reqSys:'centauri', timeLimit:0, merit:200,
+    startQuote:'ソル系外縁（距離340以上）からケンタウリ系へワープします。ワープ後、現地の目標艦とランデブーしてください！' },
+  { id:3, title:'制限時間内に補給を届けよ',
+    obj:'420秒以内にシリウス系の目標艦とランデブーし、前線への補給を完了せよ。',
+    startSys:'sirius', reqSys:'sirius', timeLimit:420, merit:280,
+    startQuote:'時間との戦いです！420秒以内に目標艦へ到達してください。時間倍率(3x/8x)と予測軌道ラインを活用しましょう！' }
+];
+const RANKS = [
+  { name:'少尉', min:0 },
+  { name:'中尉', min:120 },
+  { name:'大尉', min:300 },
+  { name:'少佐', min:500 },
+  { name:'艦隊提督', min:600 }
+];
+
+// ---------- WebAudio 効果音 ----------
+let audioCtx = null, isMuted = false;
+function ensureAudio(){
+  if(!audioCtx && (window.AudioContext || window.webkitAudioContext)){
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if(audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+}
+function playSfx(type){
+  if(isMuted) return;
+  try{
+    ensureAudio();
+    if(!audioCtx) return;
+    const now = audioCtx.currentTime;
+    const tone = (freq, dur, wave='sine', delay=0, vol=0.12, endFreq=null)=>{
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = wave;
+      osc.frequency.setValueAtTime(freq, now + delay);
+      if(endFreq) osc.frequency.exponentialRampToValueAtTime(endFreq, now + delay + dur);
+      gain.gain.setValueAtTime(0.001, now + delay);
+      gain.gain.linearRampToValueAtTime(vol, now + delay + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + delay + dur);
+      osc.connect(gain); gain.connect(audioCtx.destination);
+      osc.start(now + delay); osc.stop(now + delay + dur + 0.02);
+    };
+    if(type==='click') tone(680, 0.07, 'triangle', 0, 0.08, 860);
+    else if(type==='assist') { tone(320, 0.18, 'sawtooth', 0, 0.08, 520); tone(480, 0.2, 'sine', 0.06, 0.09, 640); }
+    else if(type==='warp') { tone(180, 0.45, 'sine', 0, 0.14, 720); tone(270, 0.45, 'triangle', 0.05, 0.1, 960); }
+    else if(type==='success') { tone(523.25, 0.18, 'triangle', 0, 0.14); tone(659.25, 0.18, 'triangle', 0.12, 0.14); tone(783.99, 0.25, 'triangle', 0.24, 0.15); tone(1046.5, 0.42, 'sine', 0.36, 0.16); }
+    else if(type==='fail') { tone(300, 0.22, 'sawtooth', 0, 0.12, 220); tone(210, 0.38, 'sawtooth', 0.18, 0.13, 110); }
+  }catch(_){}
+}
+
+// ---------- 3Dベクトル小道具 (物理コア) ----------
 function orbitState(gm, r, phase, incDeg, nodeDeg){
-  // 軌道面内での円軌道の位置・速度を作り、軌道傾斜(inc)と昇交点(node)で3Dへ回転させる
   const v = Math.sqrt(gm / r);
   let px = Math.cos(phase)*r, py = 0, pz = Math.sin(phase)*r;
   let vx = -Math.sin(phase)*v, vy = 0, vz = Math.cos(phase)*v;
   const inc = incDeg*Math.PI/180, node = nodeDeg*Math.PI/180;
   function rot(x,y,z){
-    // X軸まわり inc 回転
     let y1 = y*Math.cos(inc) - z*Math.sin(inc);
     let z1 = y*Math.sin(inc) + z*Math.cos(inc);
-    // Y軸まわり node 回転
     let x2 = x*Math.cos(node) + z1*Math.sin(node);
     let z2 = -x*Math.sin(node) + z1*Math.cos(node);
     return [x2, y1, z2];
@@ -212,17 +681,23 @@ function makeBody(state, color, radius, name, gm){
   return Object.assign({}, state, { color, radius, name, gm:gm||0, trail:[] });
 }
 
-// ---------- 状態 ----------
+// ---------- ゲーム状態 ----------
 let S = null;
+let selectedScenario = 'captain';
+let currentMissionIdx = 0;
+let meritTotal = 0;
+let gameStarted = false;
+let dvEmptyTimer = 0;
+
+function getMission(){ return MISSIONS[currentMissionIdx]; }
+
 function loadSystem(sys){
   S.sys = sys;
   S.planets = sys.planets.map((p,i)=>{
     const st = orbitState(sys.starGM, p.r, 0.7 + i*1.35, p.inc, p.node);
     return makeBody(st, p.color, p.r>250?9:7, p.name, p.gm);
   });
-  // 目標艦: 傾斜18°の軌道。平面変更なしでは会えない相手
   S.target = makeBody(orbitState(sys.starGM, 255, 2.4, 18, 40), 0x52e6a8, 8, '目標艦「あけぼの」', 0);
-  // 自艦: ほぼ黄道面、円軌道の92%速度からスタート
   const st = orbitState(sys.starGM, 170, 0.2, 1, 0);
   st.vx*=0.92; st.vy*=0.92; st.vz*=0.92;
   S.ship = makeBody(st, 0x6ea8ff, 5, '自艦', 0);
@@ -238,22 +713,53 @@ function makeWing(i){
   w.off = { x:-20*(i+1), y: 6*((i%2)?1:-1)*(i+1), z: 14*(i+1) };
   return w;
 }
-function resetGame(){
-  const cfg = SCENARIOS[document.getElementById('scenario').value];
-  S = { cfg, time:0, warp:1,
+
+function startMission(idx){
+  currentMissionIdx = idx;
+  const m = getMission();
+  const cfg = SCENARIOS[selectedScenario];
+  S = {
+    cfg, time:0, warp:1,
     dv: cfg.maxDv, maxDv: cfg.maxDv,
     res:{ prop:cfg.prop, sup:cfg.sup, cred:cfg.cred, pol:cfg.pol, warp:cfg.warp },
     prod:null,
     officers: OFFICER_DEFS.map(o=>Object.assign({}, o, { role:'待機' })),
-    eventTimer: 14 };
-  loadSystem(SYSTEMS[0]);
-  document.querySelectorAll('[data-warp]').forEach(b=>b.classList.toggle('active', b.dataset.warp==='1'));
-  logEvent('シナリオ「'+cfg.label+'」で出撃。目標艦は傾斜軌道にいます。上下推力(R/F)で軌道面を合わせてください。');
-  setBanner('目標艦とランデブーしてください。3次元距離が近く、相対速度が小さいときにドッキング成功です。速すぎる接触は衝突になります。','');
+    eventTimer: 14,
+    assistUses: 3,
+    missionEnded: false
+  };
+  dvEmptyTimer = 0;
+  const sysObj = SYSTEMS.find(s=>s.id===m.startSys) || SYSTEMS[0];
+  loadSystem(sysObj);
+  setWarp(1);
+  updateMissionBanner();
+  document.getElementById('result-modal').classList.remove('open');
+  document.getElementById('assist-left').textContent = S.assistUses;
+  document.getElementById('btn-assist').disabled = false;
+  logEvent('🚀 ミッション'+m.id+'「'+m.title+'」開始（'+cfg.label+'）。');
+  setStatusMsg('目標艦へ向けて航行中。軌道面と速度を合わせてください。');
+  showOfficerPopup(S.officers[0], m.startQuote);
   renderOfficers(); renderGalaxy(); updatePanels();
 }
 
-// ---------- 物理: 3Dニュートン重力 ----------
+function updateMissionBanner(){
+  const m = getMission();
+  document.getElementById('mb-num').textContent = 'MISSION '+m.id+' / '+MISSIONS.length;
+  document.getElementById('mb-sys').textContent = '📍 '+(S?S.sys.name:'ソル系');
+  document.getElementById('mb-title').textContent = m.title;
+  document.getElementById('mb-obj').textContent = m.obj;
+  const tm = document.getElementById('mission-timer');
+  if(m.timeLimit > 0){
+    tm.style.display = 'block';
+    const rem = Math.max(0, Math.ceil(m.timeLimit - (S?S.time:0)));
+    tm.textContent = '残り '+rem+'s';
+    tm.classList.toggle('urgent', rem <= 60);
+  } else {
+    tm.style.display = 'none';
+  }
+}
+
+// ---------- 物理: 3Dニュートン重力 (v0.1互換) ----------
 function gravityAt(x,y,z,out){
   const r2 = x*x+y*y+z*z, r = Math.sqrt(r2)||0.001;
   const a = -S.sys.starGM/(r2*r);
@@ -286,16 +792,18 @@ function currentThrust(){
   let tx=0, ty=0, tz=0;
   if(keys['a']||keys['arrowleft']||pad.left) tx-=1;
   if(keys['d']||keys['arrowright']||pad.right) tx+=1;
-  if(keys['r']||keys['q']||pad.up) ty+=1;      // 上昇(軌道面の外)
-  if(keys['f']||keys['e']||pad.down) ty-=1;    // 下降
+  if(keys['r']||keys['q']||pad.up) ty+=1;
+  if(keys['f']||keys['e']||pad.down) ty-=1;
   if(keys['w']||keys['arrowup']||pad.fwd) tz-=1;
   if(keys['s']||keys['arrowdown']||pad.back) tz+=1;
   if(!tx&&!ty&&!tz) return null;
   const m=Math.hypot(tx,ty,tz);
   return { x:tx/m*THRUST, y:ty/m*THRUST, z:tz/m*THRUST };
 }
+let isThrusting = false;
 function physics(simDt){
   const n=Math.max(1, Math.ceil(simDt/0.008)), h=simDt/n;
+  isThrusting = false;
   for(let i=0;i<n;i++){
     for(const p of S.planets) stepPlanet(p,h);
     stepBody(S.target,h,null);
@@ -305,6 +813,7 @@ function physics(simDt){
     } else if(!S.failed){
       const th=currentThrust();
       if(th && S.dv>0){
+        isThrusting = true;
         const use=Math.min(S.dv, THRUST*h), sc=use/(THRUST*h);
         stepBody(S.ship,h,{x:th.x*sc,y:th.y*sc,z:th.z*sc});
         S.dv-=use;
@@ -322,11 +831,12 @@ function physics(simDt){
     }
     S.time+=h;
   }
-  if(Math.random()<0.4){
-    const push=b=>{ b.trail.push([b.x,b.y,b.z]); const lim=b===S.ship?220:150; if(b.trail.length>lim)b.trail.shift(); };
+  if(Math.random()<0.45){
+    const push=b=>{ b.trail.push([b.x,b.y,b.z]); const lim=b===S.ship?200:140; if(b.trail.length>lim)b.trail.shift(); };
     S.planets.forEach(push); push(S.ship); push(S.target); S.wings.forEach(push);
   }
   checkRendezvous();
+  checkMissionConditions(simDt);
   if(S.prod){
     S.prod.remain-=simDt;
     if(S.prod.remain<=0){ S.prod=null; addWingMesh(makeWing(S.wings.length), true); logEvent('🏭 小型艦が完成し、僚艦として配備されました。'); updatePanels(); }
@@ -335,124 +845,373 @@ function physics(simDt){
 function relState(){
   const dx=S.target.x-S.ship.x, dy=S.target.y-S.ship.y, dz=S.target.z-S.ship.z;
   const rvx=S.ship.vx-S.target.vx, rvy=S.ship.vy-S.target.vy, rvz=S.ship.vz-S.target.vz;
-  return { dist:Math.hypot(dx,dy,dz), rvx, rvy, rvz, rel:Math.hypot(rvx,rvy,rvz) };
+  return { dist:Math.hypot(dx,dy,dz), dx, dy, dz, rvx, rvy, rvz, rel:Math.hypot(rvx,rvy,rvz) };
 }
 function checkRendezvous(){
-  if(S.docked||S.failed) return;
+  if(S.docked||S.failed||S.missionEnded) return;
   const r=relState();
   if(r.dist<7 && r.rel>2.0){
-    S.failed=true;
-    setBanner('💥 衝突！ 相対速度 '+r.rel.toFixed(2)+' のまま接触しました。「位置」だけでなく「3D速度ベクトルを合わせる」のがランデブーです。リセットして再挑戦してください。','bad');
-    logEvent('💥 目標艦に高速で接触し衝突。作戦は失敗しました。');
+    S.failed=true; S.missionEnded=true;
+    logEvent('💥 目標艦に高速で接触し衝突（相対速度 '+r.rel.toFixed(2)+'）。');
+    setStatusMsg('💥 衝突！相対速度 '+r.rel.toFixed(2)+' のまま接触しました。');
+    playSfx('fail');
+    showOfficerPopup(S.officers[0], '衝撃を確認！相対速度が速すぎました…次は手前で減速しましょう！');
+    openResultModal(false, '衝突・作戦失敗', '相対速度 '+r.rel.toFixed(2)+' のまま目標艦に接触しました。距離12手前で相対速度1.5以下に減速してください。');
   } else if(r.dist<12 && r.rel<=1.5){
     S.docked=true; S.succeeded=true;
     S.res.pol=Math.min(100,S.res.pol+3);
-    setBanner('✅ ドッキング成功！ 補給を受けるか、ワープで別恒星系へ移動できます。','ok');
-    logEvent('✅ 目標艦「あけぼの」とのランデブーに成功。政治的支持 +3。');
+    const m = getMission();
+    if(m.reqSys && S.sys.id !== m.reqSys){
+      setStatusMsg('✅ ドッキング成功（現在地は'+S.sys.name+'。目標はケンタウリ系です）');
+      logEvent('✅ '+S.sys.name+'の目標艦とドッキング。補給可能。');
+      updatePanels();
+      return;
+    }
+    S.missionEnded=true;
+    logEvent('✅ ミッション'+m.id+'「'+m.title+'」達成！');
+    setStatusMsg('✅ ドッキング成功！ミッション達成！');
+    playSfx('success');
+    triggerCelebration('ミッション '+m.id+' 達成！');
+    showOfficerPopup(S.officers[1], '見事なランデブーです、艦長！補給物資の移送を開始しました。');
+    const prevMerit = meritTotal;
+    meritTotal += m.merit;
+    openResultModal(true, 'ミッション '+m.id+' 達成！', '目標艦「あけぼの」とのランデブーに成功。功績 +'+m.merit+' pt 獲得！', prevMerit);
     updatePanels();
   }
 }
-</script>
-<script>
-"use strict";
-/* ===== Three.js 描画・カメラ・UI ===== */
-const container = document.getElementById('view3d');
-let renderer, scene, camera, sysGroup=null;
-let cam = { az:0.9, pol:1.02, dist:640, target:null, follow:false };
-let starMesh, planetMeshes=[], shipMesh, targetMesh, wingMeshes=[], trailLines={};
+function checkMissionConditions(simDt){
+  if(S.missionEnded || S.docked || S.failed) return;
+  const m = getMission();
+  if(m.timeLimit > 0 && S.time >= m.timeLimit){
+    S.failed=true; S.missionEnded=true;
+    playSfx('fail');
+    showOfficerPopup(S.officers[2], '制限時間に間に合いませんでした…！時間倍率も使って再挑戦しましょう。');
+    openResultModal(false, '時間切れ・作戦失敗', '制限時間（'+m.timeLimit+'秒）以内にランデブーを完了できませんでした。');
+    return;
+  }
+  const r = relState();
+  if(S.dv <= 0.01 && r.dist >= 12){
+    dvEmptyTimer += simDt;
+    if(dvEmptyTimer > 4.5){
+      S.failed=true; S.missionEnded=true;
+      playSfx('fail');
+      showOfficerPopup(S.officers[1], '推進剤（Δv）が完全に枯渇しました…。無駄な噴射を抑えて再挑戦しましょう。');
+      openResultModal(false, 'Δv 枯渇・到達不能', '推進剤を使い切り、目標艦に到達できなくなりました。予測軌道ラインを見て効率よく噴射しましょう。');
+    }
+  } else {
+    dvEmptyTimer = 0;
+  }
+}
 
+// ---------- Canvas手続きテクスチャ生成 ----------
+let _glowTex=null, _nebulaTex=null;
 function glowTexture(){
   const c=document.createElement('canvas'); c.width=c.height=128;
   const g=c.getContext('2d');
   const grad=g.createRadialGradient(64,64,2,64,64,64);
-  grad.addColorStop(0,'rgba(255,255,255,1)'); grad.addColorStop(0.35,'rgba(255,255,255,.45)'); grad.addColorStop(1,'rgba(255,255,255,0)');
+  grad.addColorStop(0,'rgba(255,255,255,1)');
+  grad.addColorStop(0.28,'rgba(255,255,255,0.55)');
+  grad.addColorStop(0.65,'rgba(255,255,255,0.12)');
+  grad.addColorStop(1,'rgba(255,255,255,0)');
   g.fillStyle=grad; g.fillRect(0,0,128,128);
   return new THREE.CanvasTexture(c);
 }
-let _glowTex=null;
-function glowSprite(color, scale){
+function nebulaTexture(){
+  const c=document.createElement('canvas'); c.width=c.height=256;
+  const g=c.getContext('2d');
+  for(let i=0;i<7;i++){
+    const x=128+(Math.random()-0.5)*70, y=128+(Math.random()-0.5)*70, r=60+Math.random()*65;
+    const grad=g.createRadialGradient(x,y,4,x,y,r);
+    grad.addColorStop(0,'rgba(255,255,255,0.22)');
+    grad.addColorStop(1,'rgba(255,255,255,0)');
+    g.fillStyle=grad; g.fillRect(0,0,256,256);
+  }
+  return new THREE.CanvasTexture(c);
+}
+function glowSprite(color, scale, opacity=0.9){
   if(!_glowTex) _glowTex=glowTexture();
-  const m=new THREE.SpriteMaterial({ map:_glowTex, color, transparent:true, blending:THREE.AdditiveBlending, depthWrite:false });
+  const m=new THREE.SpriteMaterial({ map:_glowTex, color, transparent:true, opacity, blending:THREE.AdditiveBlending, depthWrite:false });
   const sp=new THREE.Sprite(m); sp.scale.set(scale,scale,1); return sp;
 }
-function makeTrail(color){
+function makePlanetTexture(p){
+  const c=document.createElement('canvas'); c.width=256; c.height=128;
+  const g=c.getContext('2d');
+  const col = new THREE.Color(p.color);
+  const r0=Math.floor(col.r*255), g0=Math.floor(col.g*255), b0=Math.floor(col.b*255);
+  g.fillStyle='rgb('+r0+','+g0+','+b0+')';
+  g.fillRect(0,0,256,128);
+
+  if(p.name.includes('ガス')){
+    for(let y=0;y<128;y+=3){
+      const k=0.65+0.45*Math.sin(y*0.22+Math.random()*0.4);
+      g.fillStyle='rgba('+Math.min(255,Math.floor(r0*k))+','+Math.min(255,Math.floor(g0*k))+','+Math.min(255,Math.floor(b0*k))+',0.65)';
+      g.fillRect(0,y,256,3);
+    }
+    g.fillStyle='rgba(255,220,180,0.45)';
+    g.beginPath(); g.ellipse(140,78,24,10,0,0,Math.PI*2); g.fill();
+  } else if(p.name.includes('居住') || p.name.includes('海洋')){
+    g.fillStyle='#19589c'; g.fillRect(0,0,256,128);
+    g.fillStyle=p.name.includes('海洋')?'#2874b8':'#45b36b';
+    for(let i=0;i<26;i++){
+      g.beginPath();
+      g.ellipse(Math.random()*256, 15+Math.random()*98, 12+Math.random()*28, 8+Math.random()*18, Math.random()*3, 0, Math.PI*2);
+      g.fill();
+    }
+    g.fillStyle='rgba(255,255,255,0.32)';
+    for(let i=0;i<18;i++){
+      g.beginPath(); g.ellipse(Math.random()*256, Math.random()*128, 22+Math.random()*30, 3+Math.random()*4, 0, 0, Math.PI*2); g.fill();
+    }
+  } else if(p.name.includes('氷')){
+    g.fillStyle='#b8d4f0'; g.fillRect(0,0,256,128);
+    g.strokeStyle='rgba(255,255,255,0.6)'; g.lineWidth=1.5;
+    for(let i=0;i<30;i++){
+      g.beginPath();
+      let x=Math.random()*256, y=Math.random()*128;
+      g.moveTo(x,y); g.lineTo(x+(Math.random()-0.5)*55, y+(Math.random()-0.5)*35); g.stroke();
+    }
+  } else {
+    for(let i=0;i<40;i++){
+      const x=Math.random()*256, y=Math.random()*128, rad=3+Math.random()*11;
+      g.fillStyle='rgba(0,0,0,0.18)'; g.beginPath(); g.arc(x,y,rad,0,Math.PI*2); g.fill();
+      g.strokeStyle='rgba(255,255,255,0.16)'; g.lineWidth=1; g.stroke();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = THREE.RepeatWrapping;
+  return tex;
+}
+
+// ---------- ローポリ宇宙船モデル ----------
+function buildPlayerShipMesh(){
+  const grp = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color:0xc8dcff, metalness:0.55, roughness:0.32 });
+  const accentMat = new THREE.MeshStandardMaterial({ color:0x3b82f6, metalness:0.4, roughness:0.35, emissive:0x0b2554 });
+  const darkMat = new THREE.MeshStandardMaterial({ color:0x1e293b, metalness:0.7, roughness:0.4 });
+
+  // 船体ハル (+Z前方)
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(2.1, 6.5, 6), hullMat);
+  nose.rotation.x = Math.PI/2; nose.position.z = 4.2; grp.add(nose);
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 7.2, 6), hullMat);
+  body.rotation.x = Math.PI/2; body.position.z = -1.2; grp.add(body);
+
+  // 艦橋
+  const bridge = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.4, 2.8), accentMat);
+  bridge.position.set(0, 1.9, -0.5); grp.add(bridge);
+
+  // 左右ウィング＆エンジンナセル
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(9.6, 0.35, 3.2), accentMat);
+  wing.position.set(0, -0.1, -2.2); grp.add(wing);
+  const flames = [];
+  [-3.8, 3.8].forEach(x=>{
+    const nac = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, 4.4, 8), darkMat);
+    nac.rotation.x = Math.PI/2; nac.position.set(x, -0.1, -2.5); grp.add(nac);
+    const fl = new THREE.Mesh(
+      new THREE.ConeGeometry(0.85, 5.5, 8),
+      new THREE.MeshBasicMaterial({ color:0x60d5ff, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending })
+    );
+    fl.rotation.x = -Math.PI/2; fl.position.set(x, -0.1, -6.8);
+    grp.add(fl); flames.push(fl);
+  });
+  grp.userData.flames = flames;
+  grp.add(glowSprite(0x6ea8ff, 28, 0.55));
+  return grp;
+}
+function buildTargetShipMesh(){
+  const grp = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({ color:0xdff7ec, metalness:0.45, roughness:0.4 });
+  const podMat = new THREE.MeshStandardMaterial({ color:0x34d399, emissive:0x094e35, metalness:0.35, roughness:0.35 });
+  const spine = new THREE.Mesh(new THREE.CylinderGeometry(1.8, 2.2, 16, 8), hullMat);
+  spine.rotation.x = Math.PI/2; grp.add(spine);
+  const cmd = new THREE.Mesh(new THREE.BoxGeometry(4.2, 3.2, 4.5), hullMat);
+  cmd.position.set(0, 0.5, 7.2); grp.add(cmd);
+  [[3.2,0],[-3.2,0],[0,3.2],[0,-3.2]].forEach(([x,y])=>{
+    const pod = new THREE.Mesh(new THREE.CylinderGeometry(1.25, 1.25, 7.5, 8), podMat);
+    pod.rotation.x = Math.PI/2; pod.position.set(x, y, -1); grp.add(pod);
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(9.5, 0.65, 10, 36), new THREE.MeshBasicMaterial({ color:0x47e5a1, transparent:true, opacity:0.78 }));
+  ring.rotation.x = Math.PI/3; grp.add(ring);
+  grp.userData.ring = ring;
+  grp.add(glowSprite(0x47e5a1, 46, 0.65));
+  return grp;
+}
+function buildWingMesh(){
+  const grp = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({ color:0xffd166, metalness:0.5, roughness:0.35, emissive:0x3d2804 });
+  const body = new THREE.Mesh(new THREE.ConeGeometry(1.8, 6.2, 5), mat);
+  body.rotation.x = Math.PI/2; grp.add(body);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.25, 2.0), mat);
+  wing.position.set(0, 0, -1.3); grp.add(wing);
+  const fl = new THREE.Mesh(
+    new THREE.ConeGeometry(0.55, 3.2, 6),
+    new THREE.MeshBasicMaterial({ color:0xffb35c, transparent:true, opacity:0.75, blending:THREE.AdditiveBlending })
+  );
+  fl.rotation.x = -Math.PI/2; fl.position.set(0, 0, -4.4); grp.add(fl);
+  grp.userData.flame = fl;
+  return grp;
+}
+
+// ---------- Three.js 描画・予測軌道・カメラ ----------
+const container = document.getElementById('view3d');
+let renderer, scene, camera, sysGroup=null;
+let cam = { az:0.9, pol:1.02, dist:620, target:null, follow:false };
+let starMesh, planetMeshes=[], shipMesh, targetMesh, wingMeshes=[], trailLines={}, predLine=null;
+let frameCount = 0;
+
+function makeTrail(color, isDashed=false){
   const geo=new THREE.BufferGeometry();
-  const mat=new THREE.LineBasicMaterial({ color, transparent:true, opacity:0.55 });
-  const line=new THREE.Line(geo, mat); line.frustumCulled=false; return line;
+  const mat=new THREE.LineBasicMaterial({ vertexColors:true, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending });
+  const line=new THREE.Line(geo, mat);
+  line.frustumCulled=false;
+  line.userData.baseColor = new THREE.Color(color);
+  return line;
 }
-function updateTrail(line, body){
-  if(body.trail.length<2){ line.visible=false; return; }
+function updateTrail(line, ptsArray){
+  const len = ptsArray.length;
+  if(len < 2){ line.visible=false; return; }
   line.visible=true;
-  const pts=body.trail.map(p=>new THREE.Vector3(p[0],p[1],p[2]));
-  line.geometry.dispose(); line.geometry=new THREE.BufferGeometry().setFromPoints(pts);
+  const pos = new Float32Array(len*3);
+  const col = new Float32Array(len*3);
+  const c = line.userData.baseColor;
+  for(let i=0;i<len;i++){
+    const p = ptsArray[i];
+    pos[i*3]=p[0]; pos[i*3+1]=p[1]; pos[i*3+2]=p[2];
+    const t = Math.pow(i/(len-1), 1.6);
+    col[i*3]=c.r*t; col[i*3+1]=c.g*t; col[i*3+2]=c.b*t;
+  }
+  line.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  line.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+  line.geometry.computeBoundingSphere();
 }
+function updatePredictedTrajectory(){
+  if(!predLine || !S || S.docked){ if(predLine) predLine.visible=false; return; }
+  const sim = { x:S.ship.x, y:S.ship.y, z:S.ship.z, vx:S.ship.vx, vy:S.ship.vy, vz:S.ship.vz };
+  const steps = 110, h = 0.32;
+  const pts = [[sim.x, sim.y, sim.z]];
+  const g = {x:0,y:0,z:0};
+  for(let i=0;i<steps;i++){
+    gravityAt(sim.x,sim.y,sim.z,g);
+    sim.vx+=g.x*h; sim.vy+=g.y*h; sim.vz+=g.z*h;
+    sim.x+=sim.vx*h; sim.y+=sim.vy*h; sim.z+=sim.vz*h;
+    pts.push([sim.x,sim.y,sim.z]);
+  }
+  const len = pts.length;
+  const pos = new Float32Array(len*3);
+  const col = new Float32Array(len*3);
+  const c = predLine.userData.baseColor;
+  for(let i=0;i<len;i++){
+    const t = 1 - (i/(len-1));
+    pos[i*3]=pts[i][0]; pos[i*3+1]=pts[i][1]; pos[i*3+2]=pts[i][2];
+    col[i*3]=c.r*t; col[i*3+1]=c.g*t; col[i*3+2]=c.b*t;
+  }
+  predLine.visible = true;
+  predLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos,3));
+  predLine.geometry.setAttribute('color', new THREE.BufferAttribute(col,3));
+  predLine.geometry.computeBoundingSphere();
+}
+
 function buildSystemMeshes(){
   if(!scene) return;
-  if(sysGroup){ scene.remove(sysGroup); }
+  if(sysGroup) scene.remove(sysGroup);
   sysGroup=new THREE.Group(); scene.add(sysGroup); trailLines={};
-  // 恒星
+
   starMesh=new THREE.Mesh(
     new THREE.SphereGeometry(17,32,32),
-    new THREE.MeshBasicMaterial({ color:S.sys.starColor }));
-  starMesh.add(glowSprite(S.sys.starColor, 110));
+    new THREE.MeshBasicMaterial({ color:S.sys.starColor })
+  );
+  starMesh.add(glowSprite(S.sys.starColor, 130, 0.95));
+  starMesh.add(glowSprite(0xffffff, 52, 0.8));
   sysGroup.add(starMesh);
-  const light=new THREE.PointLight(0xffffff, 1.7, 0, 0); sysGroup.add(light);
-  // 惑星
+  sysGroup.add(new THREE.PointLight(0xfff5e4, 2.2, 0, 0));
+
   planetMeshes=S.planets.map(p=>{
+    const tex = makePlanetTexture(p);
     const m=new THREE.Mesh(
-      new THREE.SphereGeometry(p.radius,24,24),
-      new THREE.MeshStandardMaterial({ color:p.color, roughness:0.85, metalness:0.1 }));
+      new THREE.SphereGeometry(p.radius,28,24),
+      new THREE.MeshStandardMaterial({ map:tex, roughness:0.78, metalness:0.08 })
+    );
+    m.add(glowSprite(p.color, p.radius*3.2, 0.28));
     sysGroup.add(m);
     trailLines['p'+p.name]=makeTrail(p.color); sysGroup.add(trailLines['p'+p.name]);
     return m;
   });
-  // 目標艦
-  targetMesh=new THREE.Group();
-  const tCore=new THREE.Mesh(new THREE.SphereGeometry(6,20,20), new THREE.MeshStandardMaterial({ color:0x52e6a8, emissive:0x0d5c3a, roughness:0.4 }));
-  const tRing=new THREE.Mesh(new THREE.TorusGeometry(10,1.1,10,40), new THREE.MeshBasicMaterial({ color:0x52e6a8 }));
-  tRing.rotation.x=Math.PI/3; targetMesh.add(tCore); targetMesh.add(tRing); targetMesh.add(glowSprite(0x52e6a8,42));
-  sysGroup.add(targetMesh);
-  trailLines.target=makeTrail(0x52e6a8); sysGroup.add(trailLines.target);
-  // 自艦
-  shipMesh=new THREE.Group();
-  const sCore=new THREE.Mesh(new THREE.OctahedronGeometry(5.5), new THREE.MeshBasicMaterial({ color:0x9cc4ff }));
-  shipMesh.add(sCore); shipMesh.add(glowSprite(0x6ea8ff,36));
-  sysGroup.add(shipMesh);
-  trailLines.ship=makeTrail(0x6ea8ff); sysGroup.add(trailLines.ship);
-  // 僚艦
-  wingMeshes=S.wings.map(w=>{
-    const m=new THREE.Mesh(new THREE.OctahedronGeometry(3.6), new THREE.MeshBasicMaterial({ color:0xffd166 }));
-    sysGroup.add(m); return m;
+
+  targetMesh = buildTargetShipMesh(); sysGroup.add(targetMesh);
+  trailLines.target = makeTrail(0x47e5a1); sysGroup.add(trailLines.target);
+
+  shipMesh = buildPlayerShipMesh(); sysGroup.add(shipMesh);
+  trailLines.ship = makeTrail(0x58b4ff); sysGroup.add(trailLines.ship);
+
+  predLine = makeTrail(0x38bdf8); sysGroup.add(predLine);
+
+  wingMeshes = S.wings.map(()=>{
+    const m = buildWingMesh(); sysGroup.add(m); return m;
   });
 }
 function addWingMesh(w, pushState){
   if(pushState) S.wings.push(w);
-  const m=new THREE.Mesh(new THREE.OctahedronGeometry(3.6), new THREE.MeshBasicMaterial({ color:0xffd166 }));
+  const m = buildWingMesh();
   if(sysGroup) sysGroup.add(m);
   wingMeshes.push(m);
 }
+
 function initThree(){
-  renderer=new THREE.WebGLRenderer({ antialias:true });
-  renderer.setSize(container.clientWidth||880, container.clientHeight||680);
+  renderer=new THREE.WebGLRenderer({ antialias:true, powerPreference:'high-performance' });
+  renderer.setSize(container.clientWidth||window.innerWidth, container.clientHeight||window.innerHeight);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio||1, 2));
   container.appendChild(renderer.domElement);
-  scene=new THREE.Scene(); scene.background=new THREE.Color(0x01030a);
-  camera=new THREE.PerspectiveCamera(55, (container.clientWidth||880)/(container.clientHeight||680), 0.1, 20000);
+
+  scene=new THREE.Scene(); scene.background=new THREE.Color(0x02050f);
+  camera=new THREE.PerspectiveCamera(55, (container.clientWidth||window.innerWidth)/(container.clientHeight||window.innerHeight), 0.5, 22000);
   cam.target=new THREE.Vector3(0,0,0);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-  // 星空
-  const starGeo=new THREE.BufferGeometry(); const N=1800; const pos=new Float32Array(N*3);
-  for(let i=0;i<N;i++){
-    const r=5000+Math.random()*4000, th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
-    pos[i*3]=r*Math.sin(ph)*Math.cos(th); pos[i*3+1]=r*Math.cos(ph); pos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+
+  // 立体感を出す環境光 + リムライト
+  scene.add(new THREE.AmbientLight(0x9bb8ff, 0.45));
+  const rim = new THREE.DirectionalLight(0x7dd3fc, 0.55);
+  rim.position.set(-400, 350, -300);
+  scene.add(rim);
+
+  // 多層星屑レイヤー
+  const makeStars = (N, rMin, rMax, size, op)=>{
+    const geo=new THREE.BufferGeometry();
+    const pos=new Float32Array(N*3), col=new Float32Array(N*3);
+    const palette=[[0.8,0.9,1],[1,0.95,0.85],[0.7,0.82,1],[1,0.82,0.75]];
+    for(let i=0;i<N;i++){
+      const r=rMin+Math.random()*(rMax-rMin), th=Math.random()*Math.PI*2, ph=Math.acos(2*Math.random()-1);
+      pos[i*3]=r*Math.sin(ph)*Math.cos(th); pos[i*3+1]=r*Math.cos(ph); pos[i*3+2]=r*Math.sin(ph)*Math.sin(th);
+      const c=palette[i%palette.length];
+      col[i*3]=c[0]; col[i*3+1]=c[1]; col[i*3+2]=c[2];
+    }
+    geo.setAttribute('position', new THREE.BufferAttribute(pos,3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col,3));
+    scene.add(new THREE.Points(geo, new THREE.PointsMaterial({ vertexColors:true, size, sizeAttenuation:true, transparent:true, opacity:op })));
+  };
+  makeStars(1600, 4800, 9500, 15, 0.88);
+  makeStars(1200, 7000, 13000, 9, 0.45);
+
+  // 手続き生成 星雲スプライト
+  _nebulaTex = nebulaTexture();
+  const nebColors=[0x3b4cca, 0x1e6b7b, 0x6b2d75, 0x25408f, 0x195e63];
+  for(let i=0;i<6;i++){
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map:_nebulaTex, color:nebColors[i%nebColors.length],
+      transparent:true, opacity:0.16, blending:THREE.AdditiveBlending, depthWrite:false
+    }));
+    const r=6500+Math.random()*2000, th=i*1.05, ph=0.8+Math.random()*1.4;
+    sp.position.set(r*Math.sin(ph)*Math.cos(th), r*Math.cos(ph), r*Math.sin(ph)*Math.sin(th));
+    const sc=3400+Math.random()*1800; sp.scale.set(sc,sc,1);
+    scene.add(sp);
   }
-  starGeo.setAttribute('position', new THREE.BufferAttribute(pos,3));
-  scene.add(new THREE.Points(starGeo, new THREE.PointsMaterial({ color:0xffffff, size:14, sizeAttenuation:true, transparent:true, opacity:0.85 })));
-  // 基準面グリッド (あくまで補助。世界は3D)
-  const grid=new THREE.GridHelper(760, 19, 0x27355f, 0x1a2547);
-  grid.material.transparent=true; grid.material.opacity=0.35; scene.add(grid);
+
+  const grid=new THREE.GridHelper(760, 19, 0x2a4278, 0x162244);
+  grid.material.transparent=true; grid.material.opacity=0.28; scene.add(grid);
+
   setupCameraControls();
+  window.addEventListener('resize', ()=>{
+    const w=container.clientWidth||window.innerWidth, h=container.clientHeight||window.innerHeight;
+    camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h);
+  });
 }
+
 function setupCameraControls(){
   let dragging=false, panning=false, lx=0, ly=0;
   const el=renderer.domElement;
@@ -488,17 +1247,83 @@ function setCamButtons(){
   document.getElementById('btn-cam-free').classList.toggle('active', !cam.follow);
   document.getElementById('btn-cam-follow').classList.toggle('active', cam.follow);
 }
+
+const _lookTmp = new THREE.Vector3();
+function orientShip(mesh, body){
+  _lookTmp.set(body.x + body.vx, body.y + body.vy, body.z + body.vz);
+  mesh.lookAt(_lookTmp);
+}
 function syncMeshes(){
   if(!sysGroup||!S) return;
-  S.planets.forEach((p,i)=>{ planetMeshes[i].position.set(p.x,p.y,p.z); updateTrail(trailLines['p'+p.name], p); });
-  targetMesh.position.set(S.target.x,S.target.y,S.target.z); targetMesh.rotation.y+=0.01;
-  shipMesh.position.set(S.ship.x,S.ship.y,S.ship.z); shipMesh.rotation.y+=0.03; shipMesh.rotation.x+=0.008;
-  S.wings.forEach((w,i)=>{ if(wingMeshes[i]) wingMeshes[i].position.set(w.x,w.y,w.z); });
-  updateTrail(trailLines.ship, S.ship); updateTrail(trailLines.target, S.target);
+  S.planets.forEach((p,i)=>{
+    planetMeshes[i].position.set(p.x,p.y,p.z);
+    planetMeshes[i].rotation.y += 0.004;
+    updateTrail(trailLines['p'+p.name], p.trail);
+  });
+  targetMesh.position.set(S.target.x,S.target.y,S.target.z);
+  orientShip(targetMesh, S.target);
+  if(targetMesh.userData.ring) targetMesh.userData.ring.rotation.z += 0.015;
+
+  shipMesh.position.set(S.ship.x,S.ship.y,S.ship.z);
+  orientShip(shipMesh, S.ship);
+  if(shipMesh.userData.flames){
+    const active = isThrusting && S.dv > 0 && S.warp > 0;
+    const flicker = active ? (0.85 + Math.random()*0.45) : 0.18;
+    shipMesh.userData.flames.forEach(fl=>{
+      fl.scale.set(active?1.15:0.55, flicker, active?1.15:0.55);
+      fl.material.opacity = active ? 0.92 : 0.25;
+    });
+  }
+
+  S.wings.forEach((w,i)=>{
+    if(wingMeshes[i]){
+      wingMeshes[i].position.set(w.x,w.y,w.z);
+      orientShip(wingMeshes[i], w);
+      if(wingMeshes[i].userData.flame){
+        const f = isThrusting ? (0.7+Math.random()*0.4) : 0.3;
+        wingMeshes[i].userData.flame.scale.set(1, f, 1);
+      }
+    }
+  });
+  updateTrail(trailLines.ship, S.ship.trail);
+  updateTrail(trailLines.target, S.target.trail);
+  if(frameCount % 3 === 0) updatePredictedTrajectory();
 }
 
-// ---------- UI: ログ/バナー/資源 ----------
-const logEl=document.getElementById('log');
+// ---------- 画面上ターゲットマーカー ----------
+const _proj = new THREE.Vector3();
+function updateTargetMarker(){
+  const mk = document.getElementById('target-marker');
+  if(!S || !camera || !gameStarted){ mk.style.display='none'; return; }
+  const rect = container.getBoundingClientRect();
+  _proj.set(S.target.x, S.target.y, S.target.z).project(camera);
+  const behind = _proj.z > 1;
+  let nx = _proj.x, ny = _proj.y;
+  if(behind){ nx = -nx; ny = -ny; }
+  const onScreen = !behind && Math.abs(nx) <= 0.92 && Math.abs(ny) <= 0.90;
+  const arrow = document.getElementById('tm-arrow');
+  const reticle = document.getElementById('tm-reticle');
+  const dist = relState().dist;
+  document.getElementById('tm-label').textContent = '目標 '+dist.toFixed(0);
+  mk.style.display = 'block';
+
+  if(onScreen){
+    arrow.style.display='none'; reticle.style.display='block';
+    mk.style.left = (rect.left + (nx*0.5+0.5)*rect.width) + 'px';
+    mk.style.top  = (rect.top + (-ny*0.5+0.5)*rect.height) + 'px';
+  } else {
+    arrow.style.display='block'; reticle.style.display='none';
+    const ang = Math.atan2(ny, nx);
+    const maxN = Math.max(Math.abs(nx)/0.9, Math.abs(ny)/0.85, 1);
+    const cx = nx/maxN, cy = ny/maxN;
+    mk.style.left = (rect.left + (cx*0.5+0.5)*rect.width) + 'px';
+    mk.style.top  = (rect.top + (-cy*0.5+0.5)*rect.height) + 'px';
+    arrow.style.transform = 'rotate('+(-ang + Math.PI/2)+'rad)';
+  }
+}
+
+// ---------- HUD・ヒント・結果モーダル ----------
+const logEl = document.getElementById('log');
 function logEvent(text){
   const d=document.createElement('div');
   d.textContent='[T+'+Math.floor(S?S.time:0)+'s] '+text;
@@ -506,12 +1331,74 @@ function logEvent(text){
   while(logEl.children.length>60) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop=logEl.scrollHeight;
 }
-function setBanner(text, kind){
-  const b=document.getElementById('status-banner');
-  b.textContent=text;
-  b.style.color = kind==='bad' ? '#ff6b7a' : kind==='ok' ? '#52e6a8' : '';
-  b.style.borderColor = kind==='bad' ? '#ff6b7a' : kind==='ok' ? '#52e6a8' : '';
+function setStatusMsg(text){
+  document.getElementById('status-msg').textContent = text;
 }
+let popupTimer = null;
+function showOfficerPopup(officer, text){
+  const pop = document.getElementById('officer-popup');
+  document.getElementById('op-avatar').textContent = officer.name.slice(0,1);
+  document.getElementById('op-name').textContent = officer.name + '（' + (officer.role==='待機'?'副長':officer.role) + '）';
+  document.getElementById('op-text').textContent = text;
+  pop.classList.add('show');
+  clearTimeout(popupTimer);
+  popupTimer = setTimeout(()=>pop.classList.remove('show'), 5200);
+}
+function triggerCelebration(subText){
+  const el = document.getElementById('celebration-banner');
+  document.getElementById('cel-sub').textContent = subText;
+  el.classList.remove('play'); void el.offsetWidth; el.classList.add('play');
+}
+
+function updateHint(r){
+  const h = document.getElementById('hint');
+  const m = getMission();
+  let txt = '', cls = '';
+  if(S.docked){
+    txt = '✅ ドッキング中！「補給」でΔv回復、またはワープで別星系へ移動できます。'; cls='good';
+  } else if(m.reqSys && S.sys.id !== m.reqSys){
+    const sd = distFromStar();
+    if(sd < 340){ txt = '🌀 目標はケンタウリ系。まずは恒星距離340以上の外縁域へ移動しましょう（現在 '+Math.floor(sd)+'）。'; cls='warn'; }
+    else { txt = '🌀 外縁域に到達！右上の「指揮パネル＞銀河」からケンタウリ系へワープしてください。'; cls='good'; }
+  } else if(S.dv < 8){
+    txt = '⚠️ 残りΔvが少ない！無駄な噴射を控え、接近時に「ランデブー支援」を活用しましょう。'; cls='danger';
+  } else if(r.dist < 28 && r.rel > 2.0){
+    txt = '🔥 距離が近いが相対速度が大きい（'+r.rel.toFixed(2)+'）！このままでは衝突します。逆噴射か「ランデブー支援」を！'; cls='danger';
+  } else if(r.dist < 22 && r.rel <= 1.5){
+    txt = '🎯 理想的な接近です！距離12未満で自動ドッキングします。'; cls='good';
+  } else if(Math.abs(r.dy) > 28){
+    txt = '📐 軌道面が上下にズレています（高さ差 '+Math.abs(r.dy).toFixed(0)+'）。R/Fキーで上下推力を入れましょう。'; cls='warn';
+  } else if(r.rel > 5.0 && r.dist < 90){
+    txt = '⚡ 相対速度が大きめです。目標の進行方向と反対側へ噴射して減速を。'; cls='warn';
+  } else {
+    txt = '🧭 目標マーカー方向へ緩やかに接近中。予測軌道ラインを見ながら軌道を合わせましょう。';
+  }
+  h.textContent = txt;
+  h.className = cls;
+}
+
+function updateHUD(){
+  if(!S) return;
+  const r = relState();
+  document.getElementById('hud-dist').textContent = r.dist.toFixed(1);
+  document.getElementById('hud-rel').textContent = r.rel.toFixed(2);
+  const vg = document.getElementById('vel-gauge');
+  const vt = document.getElementById('vel-tag');
+  vg.classList.remove('safe','caution','danger');
+  if(r.rel <= 1.5){ vg.classList.add('safe'); vt.textContent='安全圏'; }
+  else if(r.rel <= 2.5){ vg.classList.add('caution'); vt.textContent='注意'; }
+  else { vg.classList.add('danger'); vt.textContent='危険'; }
+
+  document.getElementById('hud-dv').textContent = S.dv.toFixed(1)+' / '+S.maxDv;
+  document.getElementById('dv-bar').style.width = (S.dv/S.maxDv*100)+'%';
+  document.getElementById('clock').textContent = Math.floor(S.time);
+  document.getElementById('btn-resupply').disabled = !S.docked;
+  document.getElementById('btn-assist').disabled = S.docked || S.failed || S.assistUses<=0 || S.dv<=0;
+  document.getElementById('assist-left').textContent = S.assistUses;
+  updateMissionBanner();
+  updateHint(r);
+}
+
 function updatePanels(){
   if(!S) return;
   document.getElementById('res-prop').textContent=S.res.prop;
@@ -519,22 +1406,35 @@ function updatePanels(){
   document.getElementById('res-cred').textContent=S.res.cred;
   document.getElementById('res-pol').textContent=S.res.pol;
   document.getElementById('res-warp').textContent=S.res.warp;
+  document.getElementById('star-dist').textContent=Math.floor(distFromStar());
   const ps=document.getElementById('prod-state'), pb=document.getElementById('prod-bar');
   if(S.prod){ ps.textContent='建造中… 残り '+Math.ceil(S.prod.remain)+' 秒'; pb.style.width=((1-S.prod.remain/S.prod.total)*100)+'%'; }
   else { ps.textContent='空き'; pb.style.width='0%'; }
 }
-function updateHUD(){
-  const r=relState();
-  document.getElementById('hud-dist').textContent=r.dist.toFixed(1);
-  document.getElementById('hud-rel').textContent=r.rel.toFixed(2);
-  document.getElementById('hud-relvec').textContent='('+r.rvx.toFixed(2)+', '+r.rvy.toFixed(2)+', '+r.rvz.toFixed(2)+')';
-  document.getElementById('hud-vel').textContent='('+S.ship.vx.toFixed(2)+', '+S.ship.vy.toFixed(2)+', '+S.ship.vz.toFixed(2)+')';
-  document.getElementById('hud-pos').textContent='('+S.ship.x.toFixed(0)+', '+S.ship.y.toFixed(0)+', '+S.ship.z.toFixed(0)+')';
-  document.getElementById('hud-dv').textContent=S.dv.toFixed(1)+' / '+S.maxDv;
-  document.getElementById('dv-bar').style.width=(S.dv/S.maxDv*100)+'%';
-  document.getElementById('clock').textContent=Math.floor(S.time);
-  document.getElementById('dock-state').textContent='状態：'+(S.failed?'衝突・作戦失敗':S.docked?'ドッキング中（補給・ワープ可）':'航行中');
-  document.getElementById('btn-resupply').disabled=!S.docked;
+
+function getRankInfo(pts){
+  let cur = RANKS[0], next = RANKS[1];
+  for(let i=0;i<RANKS.length;i++){
+    if(pts >= RANKS[i].min){ cur = RANKS[i]; next = RANKS[i+1] || null; }
+  }
+  const pct = next ? Math.min(100, ((pts - cur.min)/(next.min - cur.min))*100) : 100;
+  return { cur, next, pct };
+}
+function openResultModal(isSuccess, title, desc, prevMerit=meritTotal){
+  const isFinal = isSuccess && currentMissionIdx >= MISSIONS.length - 1;
+  document.getElementById('rm-title').textContent = isFinal ? '🏆 全ミッション制覇！' : title;
+  document.getElementById('rm-desc').textContent = isFinal ? 'すべての任務を完遂し、艦隊の英雄となりました！' : desc;
+  document.getElementById('rm-merit').textContent = meritTotal + ' pt';
+  const ri = getRankInfo(meritTotal);
+  document.getElementById('rm-rank').textContent = ri.cur.name;
+  document.getElementById('rm-next-rank').textContent = ri.next ? ('次の昇進まで '+(ri.next.min - meritTotal)+' pt') : '最高階級に到達！';
+  const bar = document.getElementById('rm-promo-bar');
+  bar.style.width = getRankInfo(prevMerit).pct + '%';
+  setTimeout(()=>{ bar.style.width = ri.pct + '%'; }, 120);
+
+  document.getElementById('btn-rm-next').style.display = (isSuccess && !isFinal) ? 'inline-block' : 'none';
+  document.getElementById('btn-rm-retry').style.display = isSuccess ? 'none' : 'inline-block';
+  document.getElementById('result-modal').classList.add('open');
 }
 
 // ---------- 銀河/ワープ ----------
@@ -552,86 +1452,144 @@ function renderGalaxy(){
 }
 function doWarp(sys){
   if(S.sys.id===sys.id) return;
-  if(distFromStar()<340){ logEvent('⚠️ ワープ不可：恒星に近すぎます。距離340以上の外縁域まで出てください（現在 '+Math.floor(distFromStar())+'）。'); return; }
-  if(S.res.warp<sys.warpCost){ logEvent('⚠️ ワープ燃料が不足しています。'); return; }
+  if(distFromStar()<340){
+    playSfx('fail');
+    logEvent('⚠️ ワープ不可：恒星に近すぎます（距離340以上必要／現在 '+Math.floor(distFromStar())+'）。');
+    setStatusMsg('⚠️ ワープ不可：恒星距離340以上まで離れてください。');
+    return;
+  }
+  if(S.res.warp<sys.warpCost){
+    playSfx('fail');
+    logEvent('⚠️ ワープ燃料が不足しています。');
+    return;
+  }
+  playSfx('warp');
   S.res.warp-=sys.warpCost;
   S.docked=false;
   loadSystem(sys);
   const st=orbitState(sys.starGM, 385, 4.0, 2, 0);
   st.vx*=0.95; st.vy*=0.95; st.vz*=0.95;
   Object.assign(S.ship, st); S.ship.trail=[];
-  logEvent('🌀 '+sys.name+' へワープしました（燃料 -'+sys.warpCost+'）。この系でも目標艦とのランデブーが任務です。');
-  setBanner(sys.name+' に到着。新しい目標艦とのランデブーを目指してください。','');
-  renderGalaxy(); updatePanels();
+  logEvent('🌀 '+sys.name+' へワープしました（燃料 -'+sys.warpCost+'）。');
+  setStatusMsg('🌀 '+sys.name+' に到着。目標艦とのランデブーを目指してください。');
+  showOfficerPopup(S.officers[0], sys.name+'へワープ完了！目標艦の信号を再捕捉しました。');
+  renderGalaxy(); updatePanels(); updateMissionBanner();
 }
 
 // ---------- 部下・イベント ----------
 function renderOfficers(){
   const wrap=document.getElementById('officers'); wrap.innerHTML='';
-  S.officers.forEach((o,idx)=>{
+  S.officers.forEach(o=>{
     const div=document.createElement('div'); div.className='officer';
     div.innerHTML='<span class="name">'+o.name+'</span><div class="stats">戦術 '+o.tactics+'／補給 '+o.logistics+'／政治 '+o.politics+'／忠誠 '+o.loyalty+'／野心 '+o.ambition+'</div>';
     const sel=document.createElement('select');
     ROLES.forEach(r=>{ const op=document.createElement('option'); op.value=r; op.textContent=r; if(o.role===r)op.selected=true; sel.appendChild(op); });
-    sel.onchange=()=>{ o.role=sel.value; logEvent('👥 '+o.name+' を「'+o.role+'」に配置しました。'); };
+    sel.onchange=()=>{ playSfx('click'); o.role=sel.value; logEvent('👥 '+o.name+' を「'+o.role+'」に配置しました。'); };
     div.appendChild(sel); wrap.appendChild(div);
   });
 }
 const EVENTS=[
   o=>{ S.res.pol=Math.min(100,S.res.pol+4); return ['🏛️ '+o.name+' が議会工作を行い、艦隊予算への支持が広がった。政治的支持 +4', true]; },
   o=>{ S.res.cred=Math.max(0,S.res.cred-15); S.res.pol=Math.min(100,S.res.pol+2); return ['🍷 '+o.name+' が有力議員との会食を設定。資金 -15、政治的支持 +2', true]; },
-  o=>{ S.res.sup=Math.max(0,S.res.sup-8); return ['📦 '+o.name+' が前線からの補給要請を取り次いだ。補給物資 -8（現場は助かったようだ）', true]; },
-  o=>{ S.res.prop+=10; S.res.cred=Math.max(0,S.res.cred-10); return ['⛽ '+o.name+' が燃料商社と有利な契約を結んだ。推進剤ストック +10、資金 -10', true]; },
-  (o,other)=>{ S.res.pol=Math.max(0,S.res.pol-3); return ['⚡ '+o.name+' と '+other.name+' が作戦方針で対立し、司令部がざわついている。政治的支持 -3', true]; },
+  o=>{ S.res.sup=Math.max(0,S.res.sup-8); return ['📦 '+o.name+' が前線からの補給要請を取り次いだ。補給物資 -8', false]; },
+  o=>{ S.res.prop+=10; S.res.cred=Math.max(0,S.res.cred-10); return ['⛽ '+o.name+' が燃料商社と有利な契約を結んだ。推進剤ストック +10、資金 -10', false]; },
+  (o,other)=>{ S.res.pol=Math.max(0,S.res.pol-3); return ['⚡ '+o.name+' と '+other.name+' が作戦方針で対立！政治的支持 -3', true]; },
   o=>{ return ['🌟 '+o.name+' が次の昇進人事を巡って根回しを始めた（野心 '+o.ambition+'）。', false]; },
-  o=>{ S.res.sup+=6; return ['🔧 '+o.name+' が倉庫の在庫を棚卸しし、眠っていた補給物資を発掘した。補給物資 +6', true]; },
-  o=>{ return ['🗣️ '+o.name+' が「'+(o.role==='待機'?'現場に出たい':o.role+'として成果を出す')+'」と周囲にアピールしている。', false]; },
+  o=>{ S.res.sup+=6; return ['🔧 '+o.name+' が倉庫の在庫を棚卸しし、補給物資を発掘した。補給物資 +6', false]; },
+  o=>{ return ['🗣️ '+o.name+' が「'+(o.role==='待機'?'現場に出たい':o.role+'として成果を出す')+'」と意欲を見せている。', false]; },
 ];
 function triggerEvent(){
   const o=S.officers[Math.floor(Math.random()*S.officers.length)];
   let other=S.officers[Math.floor(Math.random()*S.officers.length)];
   if(other===o) other=S.officers[(S.officers.indexOf(o)+1)%S.officers.length];
   const ev=EVENTS[Math.floor(Math.random()*EVENTS.length)];
-  const [text]=ev(o,other);
-  logEvent(text); updatePanels();
+  const [text, major]=ev(o,other);
+  logEvent(text);
+  if(major) showOfficerPopup(o, text);
+  updatePanels();
 }
 
-// ---------- アクション ----------
-function matchVelocity(){
-  if(S.docked||S.failed) return;
-  const r=relState(); if(r.rel<0.01) return;
-  const use=Math.min(S.dv, r.rel), frac=use/r.rel;
-  S.ship.vx-=(S.ship.vx-S.target.vx)*frac;
-  S.ship.vy-=(S.ship.vy-S.target.vy)*frac;
-  S.ship.vz-=(S.ship.vz-S.target.vz)*frac;
-  S.dv-=use;
-  logEvent('🎯 相対速度合わせバーン実施。Δv -'+use.toFixed(1)+'、残り相対速度 '+(r.rel-use).toFixed(2));
+// ---------- アクション (ランデブー支援 1.5倍コスト・回数制限) ----------
+function assistBurn(){
+  if(!S || S.docked || S.failed || S.assistUses<=0 || S.dv<=0) return;
+  const r=relState();
+  if(r.rel < 0.05) return;
+  const fullCost = r.rel * 1.5;
+  const useDv = Math.min(S.dv, fullCost);
+  const frac = useDv / fullCost;
+  S.ship.vx -= (S.ship.vx - S.target.vx) * frac;
+  S.ship.vy -= (S.ship.vy - S.target.vy) * frac;
+  S.ship.vz -= (S.ship.vz - S.target.vz) * frac;
+  S.dv -= useDv;
+  S.assistUses--;
+  playSfx('assist');
+  logEvent('🎯 ランデブー支援バーン実施（Δv -'+useDv.toFixed(1)+'／残回数 '+S.assistUses+'）。');
+  setStatusMsg('🎯 ランデブー支援実行！相対速度を補正しました（残り '+S.assistUses+' 回）。');
+  updateHUD();
 }
 function resupply(){
   if(!S.docked) return;
-  if(S.res.prop<15||S.res.sup<10||S.res.cred<20){ logEvent('⚠️ 補給に必要な資源が不足しています（推進剤15／物資10／資金20）。'); return; }
+  if(S.res.prop<15||S.res.sup<10||S.res.cred<20){ playSfx('fail'); logEvent('⚠️ 補給資源が不足（推進剤15／物資10／資金20）。'); return; }
   S.res.prop-=15; S.res.sup-=10; S.res.cred-=20;
   S.dv=S.maxDv;
+  playSfx('success');
   logEvent('✅ 補給完了：自艦のΔvが全回復しました。');
-  updatePanels();
+  updatePanels(); updateHUD();
 }
 function buildShip(){
   if(S.prod){ logEvent('⚠️ 既に建造中です。'); return; }
-  if(S.res.cred<120||S.res.sup<20){ logEvent('⚠️ 建造資源が不足しています（資金120／物資20）。'); return; }
+  if(S.res.cred<120||S.res.sup<20){ playSfx('fail'); logEvent('⚠️ 建造資源が不足（資金120／物資20）。'); return; }
+  playSfx('click');
   S.res.cred-=120; S.res.sup-=20;
   S.prod={ remain:60, total:60 };
   const builder=S.officers.find(o=>o.role==='造船監督担当');
-  if(builder){ S.prod.remain=Math.max(30, 60-builder.tactics*0.2); S.prod.total=S.prod.remain; logEvent('🏭 '+builder.name+' の監督で小型艦の建造を開始（短縮あり）。'); }
+  if(builder){ S.prod.remain=Math.max(30, 60-builder.tactics*0.2); S.prod.total=S.prod.remain; logEvent('🏭 '+builder.name+' の監督で小型艦を建造開始（短縮）。'); }
   else logEvent('🏭 小型艦の建造を開始しました（約60秒）。');
   updatePanels();
 }
 
-// ---------- 入力 ----------
+// ---------- UIイベント配線 ----------
+document.querySelectorAll('.sc-card').forEach(card=>{
+  card.addEventListener('click', ()=>{
+    playSfx('click');
+    document.querySelectorAll('.sc-card').forEach(c=>c.classList.remove('selected'));
+    card.classList.add('selected');
+    selectedScenario = card.dataset.scenario;
+  });
+});
+document.getElementById('btn-sortie').addEventListener('click', ()=>{
+  playSfx('warp');
+  document.getElementById('start-screen').classList.add('hidden');
+  gameStarted = true;
+  if(!scene) initThree();
+  startMission(0);
+});
+
+const drawer = document.getElementById('drawer');
+document.getElementById('btn-drawer-toggle').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.toggle('open'); });
+document.getElementById('btn-drawer-close').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.remove('open'); });
+document.querySelectorAll('.drawer-tabs button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    playSfx('click');
+    document.querySelectorAll('.drawer-tabs button').forEach(b=>b.classList.remove('active'));
+    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
+  });
+});
+
+document.getElementById('btn-mute').addEventListener('click', e=>{
+  isMuted = !isMuted;
+  e.currentTarget.textContent = isMuted ? '🔇 消音' : '🔊 音ON';
+  if(!isMuted) playSfx('click');
+});
+
 window.addEventListener('keydown', e=>{
+  if(!gameStarted) return;
   const k=e.key.toLowerCase(); keys[k]=true;
-  if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k===' '?' ':e.key.toLowerCase())) e.preventDefault();
-  if(e.key===' '){ e.preventDefault(); togglePause(); }
-  if(k==='m') matchVelocity();
+  if([' ','arrowup','arrowdown','arrowleft','arrowright'].includes(k===' '?' ':k)) e.preventDefault();
+  if(e.key===' ') togglePause();
+  if(k==='m') assistBurn();
 });
 window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()]=false; });
 document.querySelectorAll('[data-thrust]').forEach(b=>{
@@ -641,47 +1599,58 @@ document.querySelectorAll('[data-thrust]').forEach(b=>{
   b.addEventListener('pointerdown', on); b.addEventListener('pointerup', off);
   b.addEventListener('pointerleave', off); b.addEventListener('pointercancel', off);
 });
+
 let prevWarp=1;
-function togglePause(){
-  if(S.warp===0){ setWarp(prevWarp); } else { prevWarp=S.warp; setWarp(0); }
-}
+function togglePause(){ if(!S) return; if(S.warp===0){ setWarp(prevWarp); } else { prevWarp=S.warp; setWarp(0); } }
 function setWarp(w){
-  S.warp=w;
+  if(S) S.warp=w;
   document.querySelectorAll('[data-warp]').forEach(b=>b.classList.toggle('active', Number(b.dataset.warp)===w));
 }
-document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', ()=>{ prevWarp=Number(b.dataset.warp)||1; setWarp(Number(b.dataset.warp)); }));
-document.getElementById('btn-match').addEventListener('click', matchVelocity);
+document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', ()=>{
+  playSfx('click');
+  prevWarp=Number(b.dataset.warp)||1;
+  setWarp(Number(b.dataset.warp));
+}));
+document.getElementById('btn-assist').addEventListener('click', assistBurn);
 document.getElementById('btn-resupply').addEventListener('click', resupply);
 document.getElementById('btn-build').addEventListener('click', buildShip);
-document.getElementById('btn-reset').addEventListener('click', resetGame);
-document.getElementById('btn-apply-scenario').addEventListener('click', resetGame);
-document.getElementById('btn-cam-free').addEventListener('click', ()=>{ cam.follow=false; setCamButtons(); });
-document.getElementById('btn-cam-follow').addEventListener('click', ()=>{ cam.follow=true; setCamButtons(); });
-document.getElementById('btn-cam-reset').addEventListener('click', ()=>{ cam.az=0.9; cam.pol=1.02; cam.dist=640; cam.follow=false; if(cam.target) cam.target.set(0,0,0); setCamButtons(); });
+document.getElementById('btn-reset').addEventListener('click', ()=>{ playSfx('click'); startMission(currentMissionIdx); drawer.classList.remove('open'); });
+document.getElementById('btn-cam-free').addEventListener('click', ()=>{ playSfx('click'); cam.follow=false; setCamButtons(); });
+document.getElementById('btn-cam-follow').addEventListener('click', ()=>{ playSfx('click'); cam.follow=true; setCamButtons(); });
+document.getElementById('btn-cam-reset').addEventListener('click', ()=>{ playSfx('click'); cam.az=0.9; cam.pol=1.02; cam.dist=620; cam.follow=false; if(cam.target) cam.target.set(0,0,0); setCamButtons(); });
+
+document.getElementById('btn-rm-next').addEventListener('click', ()=>{ playSfx('warp'); startMission(currentMissionIdx+1); });
+document.getElementById('btn-rm-retry').addEventListener('click', ()=>{ playSfx('click'); startMission(currentMissionIdx); });
+document.getElementById('btn-rm-title').addEventListener('click', ()=>{
+  playSfx('click');
+  document.getElementById('result-modal').classList.remove('open');
+  document.getElementById('start-screen').classList.remove('hidden');
+  gameStarted = false;
+});
 
 // ---------- メインループ ----------
 let lastT=performance.now(), panelTimer=0, galaxyTimer=0;
 function animate(now){
   requestAnimationFrame(animate);
   const dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
-  if(S){
+  frameCount++;
+  if(S && gameStarted){
     if(S.warp>0){
       physics(dt*S.warp);
       S.eventTimer-=dt;
       if(S.eventTimer<=0){ triggerEvent(); S.eventTimer=14+Math.random()*14; }
     }
-    syncMeshes(); updateCamera(); updateHUD();
+    syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker();
     panelTimer+=dt; galaxyTimer+=dt;
     if(panelTimer>0.25){ panelTimer=0; updatePanels(); }
     if(galaxyTimer>1.2){ galaxyTimer=0; renderGalaxy(); }
   }
-  if(renderer) renderer.render(scene, camera);
+  if(renderer && scene && camera) renderer.render(scene, camera);
 }
 if(!window.THREE){
-  setBanner('⚠️ Three.js の読み込みに失敗しました。three.min.js が index.html と同じフォルダにあるか、ネット接続(CDN)を確認してください。','bad');
+  setStatusMsg('⚠️ Three.js の読み込みに失敗しました。three.min.js またはネット接続を確認してください。');
 } else {
   initThree();
-  resetGame();
   requestAnimationFrame(animate);
 }
 </script>
