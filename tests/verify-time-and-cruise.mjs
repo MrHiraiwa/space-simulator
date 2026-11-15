@@ -197,7 +197,9 @@ try {
     if (st.b) { berthingSeen = true; check('arrival: berthing is its own operation phase', st.ph === 'berthing'); break; }
     if (st.docked || st.ended) break;
     if (!dragDone && st.tut === 3) { await dragCamera(); dragDone = true; }
-    if (st.ph === 'captain') await ev(`(() => { const b = document.getElementById('btn-order-match'); if (b && !b.disabled) b.click(); return 'ok'; })()`);
+    // order speed-matching only at tutorial step 5 (the designed moment):
+    // clicking after step 6 has released the plan would re-block the executor
+    if (st.ph === 'captain' && st.tut === 5) await ev(`(() => { const b = document.getElementById('btn-order-match'); if (b && !b.disabled) b.click(); return 'ok'; })()`);
     await sleep(700);
   }
   // berthing lasts 5 sim-seconds (~0.6s real at x8), so polling can miss the live
