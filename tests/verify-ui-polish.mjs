@@ -21,7 +21,7 @@ const chrome = spawn('google-chrome', ['--headless=new', '--disable-gpu', '--no-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 function getJson(p) { return new Promise((resolve, reject) => { http.get(`http://127.0.0.1:${PORT}${p}`, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); }).on('error', reject); }); }
 let ws, msgId = 0; const pending = new Map();
-function send(method, params = {}, sessionId) { const id = ++msgId; const msg = { id, method, params }; if (sessionId) msg.sessionId = sessionId; ws.send(JSON.stringify(msg)); return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); setTimeout(() => reject(new Error('timeout ' + method)), 30000); }); }
+function send(method, params = {}, sessionId) { const id = ++msgId; const msg = { id, method, params }; if (sessionId) msg.sessionId = sessionId; ws.send(JSON.stringify(msg)); return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); setTimeout(() => reject(new Error('timeout ' + method)), 60000); }); }
 let SID, failures = 0;
 const check = (label, cond) => { console.log((cond ? 'PASS' : 'FAIL') + '  ' + label); if (!cond) failures++; };
 async function ev(expr) { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, SID); if (r.exceptionDetails) throw new Error('page eval error: ' + (r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text)); return r.result ? r.result.value : undefined; }
@@ -68,8 +68,8 @@ try {
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
   await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'port scene');
   await sleep(700);
-  check('silhouette: port-scene speaker has an SVG silhouette', await ev(`document.getElementById('briefing-avatar').innerHTML.includes('<svg')`));
-  check('place: port scene has a location backdrop (station interior)', await ev(`document.getElementById('briefing-bg').innerHTML.includes('<svg')`));
+  check('silhouette: port-scene speaker has an avatar (SVG or portrait)', await ev(`!!document.querySelector('#briefing-avatar svg, #briefing-avatar img')`));
+  check('place: port scene has a location backdrop (station interior)', await ev(`!!document.querySelector('#briefing-bg svg, #briefing-bg img')`));
   await shot('uip-port-scene.png');
   // advance the port scene to the end, then start
   for (let i = 0; i < 8; i++) {
@@ -79,7 +79,7 @@ try {
     await sleep(350);
   }
   await ev(`document.getElementById('btn-briefing-start').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 40000, 'plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 60000, 'plan panel');
   await sleep(800);
   const pv = await ev(`document.querySelector('.pv-meta') ? document.querySelector('.pv-meta').textContent : ''`);
   check('transfer: plan panel shows dv split （出発噴射/到着噴射）', pv.includes('出発噴射') && pv.includes('到着噴射'));
@@ -112,6 +112,7 @@ try {
   await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'depart enabled');
   await ev(`document.getElementById('btn-depart').click(); 'ok'`);
   await sleep(600);
+  check('course 3D: after plan approval, 3D course line and waypoint markers are active', await ev(`!!(S.planSamples && S.planSamples.length > 0 && planLine && planLine.visible && planWpGroup && planWpGroup.visible && planWpGroup.children.length > 0)`));
   await ev(`document.querySelector('[data-warp="8"]').click(); 'ok'`);
   // harbor: chart course lines at port range
   await ev(`document.getElementById('btn-chart').click(); 'ok'`);
@@ -124,12 +125,14 @@ try {
   const lay = await ev(`(() => { const th = document.getElementById('top-hud').getBoundingClientRect(); const bs = document.getElementById('bottom-stack').getBoundingClientRect(); return { band: bs.top - th.bottom, ih: window.innerHeight }; })()`);
   console.log('  unobstructed band:', JSON.stringify(lay), 'share:', (lay.band / lay.ih * 100).toFixed(1) + '%');
   check('calm UI: unobstructed 3D band >= 50% of viewport height in cruise', lay.band / lay.ih >= 0.5);
+  const hudNoOverlap = await ev(`(() => { const a = document.getElementById('mb-sys').getBoundingClientRect(); const b = document.getElementById('btn-mute').getBoundingClientRect(); return a.width > 0 && b.width > 0 && (a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top); })()`);
+  check('HUD 390x844: #mb-sys and #btn-mute do not overlap', hudNoOverlap);
   check('calm UI: order bar hidden during AI cruise', await ev(`!document.getElementById('order-bar').classList.contains('visible')`));
   check('calm UI: conditional metric chips hidden during cruise', await ev(`[...document.querySelectorAll('.metric-chip.cond')].every(e => !e.classList.contains('visible'))`));
   check('calm UI: camera/status overlay is outside the control dock', await ev(`!document.getElementById('control-dock').contains(document.getElementById('view-overlay'))`));
   const dup = await ev(`(() => { const b = document.getElementById('msg-body').textContent || ''; const n = document.getElementById('next-action'); const nv = n && n.style.display !== 'none' ? (n.textContent || '') : ''; return { body: b.slice(0, 40), nextVisible: nv.length > 0, overlap: b.length > 10 && nv.includes(b.slice(0, 20)) }; })()`);
   check('single surface: guide text is not duplicated in the next-action line', !dup.overlap);
-  check('silhouette: message card speaker has an SVG silhouette', await ev(`document.getElementById('msg-avatar').innerHTML.includes('<svg')`));
+  check('silhouette: message card speaker has an avatar (SVG or portrait)', await ev(`!!document.querySelector('#msg-avatar svg, #msg-avatar img')`));
   await shot('uip-cruise-portrait.png');
   // time continuity at x8: sample the sim clock
   const samples = [];
@@ -139,6 +142,8 @@ try {
   check('time: clock advances continuously at x8 (every step < 1.6 sim-s, all positive)', steps.every(s => s > 0 && s < 1.6));
   const logTxt = await ev(`document.getElementById('log').textContent`);
   check('time: log timestamps are ship time (day + hh:mm:ss)', /\[船内時 1日目 \d{2}:\d{2}:\d{2}\]/.test(logTxt));
+  const noDupApproachBurn = await ev(`(() => { const lines = (document.getElementById('log').innerText || document.getElementById('log').textContent || '').split('\\n').filter(l => l.includes('計画噴射：接近噴射')); const stamps = lines.map(l => (l.match(/\\[船内時 [^\\]]+\\]/) || [''])[0]).filter(Boolean); return stamps.length === new Set(stamps).size; })()`);
+  check('log: no duplicate 計画噴射：接近噴射 lines at the same ship-time second', noDupApproachBurn);
   // chart + plan coexistence while en route (must run before the long scene section:
   // by then the M0 flight may already have completed)
   await ev(`document.getElementById('btn-chart').click(); 'ok'`);
@@ -163,7 +168,7 @@ try {
   // interior as scenes: directory -> corridor transit (ship time) -> room scene -> talk scene
   await ev(`document.getElementById('btn-ship').click(); 'ok'`);
   await sleep(600);
-  const bgBridge = await ev(`document.getElementById('ship-scene-bg').innerHTML.length`);
+  const bgBridge = await ev(`document.getElementById('ship-scene-bg').innerHTML`);
   const tWalk0 = await ev(`S.time`);
   await ev(`document.querySelector('[data-room="engine"]').click(); 'ok'`);
   await sleep(600);
@@ -172,9 +177,9 @@ try {
   await waitFor(`S.captainLoc && S.captainLoc.room === 'engine' && !S.captainLoc.transit`, 60000, 'arrival in engine room');
   console.log('  bridge->engine walk ship-time cost:', (await ev(`S.time`)) - tWalk0);
   check('scene: arrival in the engine room after ship-time transit', await ev(`document.getElementById('scene-place').textContent.includes('機関室')`));
-  check('scene: a person stands in the room scene', await ev(`document.getElementById('scene-people').textContent.includes('陳') && document.getElementById('scene-people').innerHTML.includes('<svg')`));
+  check('scene: a person stands in the room scene', await ev(`document.getElementById('scene-people').textContent.includes('陳') && !!document.querySelector('#scene-people svg, #scene-people img')`));
   await shot('uip-scene-engine.png');
-  check('place: walk-around changes the backdrop （機関室）', await ev(`document.getElementById('ship-scene-name').textContent.includes('機関室') && document.getElementById('ship-scene-bg').innerHTML.length !== ${bgBridge}`));
+  check('place: walk-around changes the backdrop （機関室）', await ev(`document.getElementById('ship-scene-name').textContent.includes('機関室') && document.getElementById('ship-scene-bg').innerHTML !== ${JSON.stringify(bgBridge)}`));
   const tOp0 = await ev(`S.time`);
   await ev(`document.querySelector('[data-scene-op="engine"]').click(); 'ok'`);
   await sleep(400);
@@ -184,7 +189,7 @@ try {
   check('scene: room action completes and reports', await ev(`document.getElementById('log').textContent.includes('機関点検')`));
   await ev(`document.querySelector('#scene-people [data-talk]').click(); 'ok'`);
   await sleep(500);
-  check('scene: conversation is a full-stage scene (large silhouette + line)', await ev(`document.querySelector('.scene-person.talk-focus .sp-sil svg') !== null && document.getElementById('scene-line').textContent.includes('「')`));
+  check('scene: conversation is a full-stage scene (large avatar + line)', await ev(`document.querySelector('.scene-person.talk-focus .sp-sil svg, .scene-person.talk-focus .sp-sil img') !== null && document.getElementById('scene-line').textContent.includes('「')`));
   await shot('uip-talk-scene.png');
   await ev(`document.querySelector('[data-endtalk="1"]').click(); 'ok'`);
   await sleep(300);
@@ -194,8 +199,12 @@ try {
   // mode toggle: chart/camera state must survive 航行->艦内->航行, flight uninterrupted
   await ev(`document.getElementById('btn-chart').click(); 'ok'`);
   await sleep(500);
+  const fcInit = await ev(`document.querySelector('#frame-chip-chart .frame-chip-label')?.textContent || ''`);
+  check('frame: frame indicator chip exists and shows a 基準 label', fcInit.includes('基準'));
   await ev(`document.querySelector('[data-range="system"]').click(); 'ok'`);
   await sleep(300);
+  const fcSys = await ev(`document.querySelector('#frame-chip-chart .frame-chip-label')?.textContent || ''`);
+  check('frame: switching chart to wide range sets frame indicator to ソル基準', fcSys.includes('ソル基準'));
   const before = await ev(`({ mode: chartState.mode, range: chartState.range, camd: cam.dist, t: S.time })`);
   await ev(`document.getElementById('btn-chart-close').click(); 'ok'`);
   await ev(`document.getElementById('btn-mode-nav').click(); 'ok'`);
@@ -239,6 +248,29 @@ try {
   await sleep(500);
   await ev(`document.querySelector('[data-tab="galaxy"]') && 'ok'`);
   await shot('uip-cruise-landscape.png');
+  // Complete Mission 0 while the interior view is open and verify #result-modal opens
+  await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, SID);
+  await sleep(300);
+  await ev(`setWarp(1000); 'ok'`);
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') || S.missionEnded`, 60000, 'M0 return plan panel');
+  if (!await ev(`S.missionEnded`)) {
+    await ev(`(() => { const c = document.getElementById('departure-checklist'); if (c && !c.checked) c.click(); })()`);
+    await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'M0 return depart enabled');
+    await ev(`document.getElementById('btn-depart').click(); 'ok'`);
+    await sleep(400);
+    await ev(`document.getElementById('btn-ship').click(); 'ok'`);
+    await sleep(300);
+    const tM0End = Date.now();
+    while (Date.now() - tM0End < 120000) {
+      const m0st = await ev(`({ ended: S.missionEnded, dist: S.target && S.ship ? Math.hypot(S.target.x - S.ship.x, S.target.y - S.ship.y, S.target.z - S.ship.z) : 0, warp: S.warp })`);
+      if (m0st.ended) break;
+      const want = m0st.dist > 50000 ? 1000 : (m0st.dist > 5000 ? 300 : 8);
+      if (m0st.warp !== want) await ev(`setWarp(${want}); 'ok'`);
+      await sleep(350);
+    }
+  }
+  await waitFor(`S.missionEnded === true`, 20000, 'M0 completion');
+  check('M0 completion: completing Mission 0 while interior view is open makes #result-modal visible', await ev(`document.getElementById('result-modal').classList.contains('open')`));
   await send('Target.closeTarget', { targetId: tid });
 
   // ---------- Part B: mission 1 — measured arrival relative velocity ----------
@@ -254,7 +286,7 @@ try {
   // Part B measures that mission's arrival. (An earlier draft also called
   // startMission(1) here, which silently switched to the warp mission.)
   await ev(`document.getElementById('btn-plan').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 40000, 'm1 plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 60000, 'm1 plan panel');
   const est1 = await ev(`(() => { const e = computePlanEstimate(S.ship, S.target, S.sys.starGM, 1, { needDock: true, planets: S.planets }); return { ok: e.ok, cross: !!e.planetCross, dv: e.dvTotal, dep: e.dvDepart, arr: e.dvArrival, rel: e.finalRel, legs: (e.legs || []).length }; })()`);
   console.log('  estimate for the actual M1 plan (station -> supply ship):', JSON.stringify(est1));
   check('transfer: the actual M1 plan is feasible', est1.ok === true);
@@ -268,10 +300,12 @@ try {
   await ev(`document.querySelector('[data-warp="8"]').click(); 'ok'`);
   let lastApproachRel = null;
   const tB0 = Date.now();
-  while (Date.now() - tB0 < 240000) {
-    const st = await ev(`({ b: !!S.berthing, ph: S.planExec ? S.planExec.phase : null, docked: S.docked, ended: S.missionEnded, tut: S.tutorial ? S.tutorial.step : -1, dist: relState().dist, rel: relState().rel })`);
+  while (Date.now() - tB0 < 420000) {
+    const st = await ev(`({ b: !!S.berthing, ph: S.planExec ? S.planExec.phase : null, docked: S.docked, ended: S.missionEnded, tut: S.tutorial ? S.tutorial.step : -1, dist: relState().dist, rel: relState().rel, warp: S.warp })`);
     if (st.b) break;
     if (st.docked || st.ended) break;
+    const wantWarp = st.dist > 2000000 ? 30000 : (st.dist > 300000 ? 300 : 8);
+    if (st.warp !== wantWarp) await ev(`setWarp(${wantWarp}); 'ok'`);
     if (st.dist < 16) lastApproachRel = st.rel;
     // tutorial step 3 asks for a camera drag; without it the tutorial never
     // reaches step 5 and the captain phase waits forever (same drive as

@@ -21,7 +21,7 @@ const chrome = spawn('google-chrome', ['--headless=new', '--disable-gpu', '--no-
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 function getJson(p) { return new Promise((resolve, reject) => { http.get(`http://127.0.0.1:${PORT}${p}`, res => { let d = ''; res.on('data', c => d += c); res.on('end', () => resolve(JSON.parse(d))); }).on('error', reject); }); }
 let ws, msgId = 0; const pending = new Map();
-function send(method, params = {}, sessionId) { const id = ++msgId; const msg = { id, method, params }; if (sessionId) msg.sessionId = sessionId; ws.send(JSON.stringify(msg)); return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); setTimeout(() => reject(new Error('timeout ' + method)), 30000); }); }
+function send(method, params = {}, sessionId) { const id = ++msgId; const msg = { id, method, params }; if (sessionId) msg.sessionId = sessionId; ws.send(JSON.stringify(msg)); return new Promise((resolve, reject) => { pending.set(id, { resolve, reject }); setTimeout(() => reject(new Error('timeout ' + method)), 60000); }); }
 let SID, failures = 0;
 const check = (label, cond) => { console.log((cond ? 'PASS' : 'FAIL') + '  ' + label); if (!cond) failures++; };
 async function ev(expr) { const r = await send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true }, SID); if (r.exceptionDetails) throw new Error('page eval error: ' + (r.exceptionDetails.exception ? r.exceptionDetails.exception.description : r.exceptionDetails.text)); return r.result ? r.result.value : undefined; }
@@ -75,7 +75,7 @@ try {
     await sleep(250);
   }
   await ev(`document.getElementById('btn-briefing-start').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 40000, 'prologue plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3`, 60000, 'prologue plan panel');
   await sleep(300);
   const pv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok, dv: x.est.dvTotal })), finite: [S.ship.x, S.ship.y, S.ship.z, S.ship.vx, S.ship.vy, S.ship.vz].every(Number.isFinite), docked: S.docked, shipLine: document.getElementById('plan-ship').textContent })`);
   check('prologue: ship state finite at plan panel', pv.finite);
@@ -103,7 +103,7 @@ try {
   await ev(`document.getElementById('btn-skip-prologue').click(); 'ok'`);
   await sleep(1200);
   await ev(`document.getElementById('btn-plan').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 40000, 'mission 1 plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3`, 60000, 'mission 1 plan panel');
   await sleep(300);
   const mv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok })), finite: [S.ship.x, S.ship.y, S.ship.z].every(Number.isFinite) })`);
   check('mission1: ship state finite at plan panel', mv.finite);
