@@ -52,17 +52,22 @@ try {
   await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal');
   check('career: creation screen opens after scenario select', true);
   check('career: creation lists are data-driven and populated', await ev(`document.querySelectorAll('#cr-tracks .cr-opt').length === 3 && document.querySelectorAll('#cr-origins .cr-opt').length === 6 && document.querySelectorAll('#cr-homes .cr-opt').length === 4 && document.querySelectorAll('#cr-traits .cr-opt').length === 8 && document.querySelectorAll('#cr-portraits .cr-face').length >= 3`));
-  // give the captain a custom name and pick the patrol track, then confirm
-  await ev(`{ const i = document.getElementById('cr-name'); i.value = '星野 テスト'; i.dispatchEvent(new Event('input', { bubbles: true })); document.querySelectorAll('#cr-tracks .cr-opt')[2].click(); 'ok' }`);
+  // give the captain a custom name, a custom AI name, and pick the patrol track, then confirm
+  await ev(`{ const i = document.getElementById('cr-name'); i.value = '星野 テスト'; i.dispatchEvent(new Event('input', { bubbles: true })); const a = document.getElementById('cr-ainame'); a.value = 'ミラ'; a.dispatchEvent(new Event('input', { bubbles: true })); document.querySelectorAll('#cr-tracks .cr-opt')[2].click(); 'ok' }`);
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
   await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'port scene');
   check('port scene: captain record stored in game state', await ev(`!!(S.captain && S.captain.id === 'captain' && S.captain.abilities && S.captain.flags)`));
   check('port scene: chosen name is used in the opening dialogue', await ev(`document.getElementById('briefing-body').textContent.includes('星野')`));
   check('port scene: ship starts DOCKED at the station', await ev(`S.docked === true && S.dockedTo === S.station`));
-  // page through the port scene to the bridge button (officers are page 2)
-  await ev(`document.getElementById('btn-briefing-next').click(); 'ok'`);
-  await sleep(250);
+  // page through the port scene to the officers page (control welcome = p1, guide = p2, officers = p3)
+  for (let i = 0; i < 4; i++) {
+    const has = await ev(`document.getElementById('briefing-officers').textContent.includes('配置')`);
+    if (has) break;
+    await ev(`document.getElementById('btn-briefing-next').click(); 'ok'`);
+    await sleep(250);
+  }
   check('port scene: officers introduced with posts', await ev(`document.getElementById('briefing-officers').textContent.includes('配置')`));
+  check('creation: custom AI name reaches the plan panel header', await ev(`document.getElementById('plan-ai-head').textContent.includes('ミラ')`));
   for (let i = 0; i < 5; i++) {
     const vis = await ev(`document.getElementById('btn-briefing-start').style.display !== 'none'`);
     if (vis) break;
@@ -84,6 +89,8 @@ try {
   await sleep(800);
   check('prologue: departure undocks the ship (departure is an event)', await ev(`S.docked === false`));
   check('prologue: plan execution active after depart', await ev(`!!(S.planExec && S.planExec.active)`));
+  check('prologue: departure begins with the undock operation phase', await ev(`['undock', 'harbor'].includes(S.planExec.phase)`));
+  check('time control: ff-bar present with plain-language label and 4 rates', await ev(`!!document.querySelector('.ff-bar .ff-label') && document.querySelectorAll('[data-warp]').length === 4`));
   await send('Target.closeTarget', { targetId: tid });
 
   // ---- mission 1 flow: creation (saved profile) -> port scene skip -> plan

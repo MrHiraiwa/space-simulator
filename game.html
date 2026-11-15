@@ -226,12 +226,26 @@
   .bar.amber>i{background:linear-gradient(90deg,#ffb35c,#ffd166)}
 
   .dock-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
-  .warp-bar{
+  /* 待機（時間を進める）: プレイヤー向けのシステム操作。作中の技術ではないので、艦内UIとは見た目を区別する */
+  .ff-bar{
     display:inline-flex;align-items:center;gap:3px;
-    background:rgba(6,11,24,0.72);border:1px solid var(--line);border-radius:999px;padding:3px 7px;
+    background:rgba(43,36,74,0.85);border:1px dashed rgba(196,181,253,0.6);border-radius:999px;padding:3px 7px;
     font-size:11px;
   }
-  .warp-bar button{padding:4px 8px;font-size:11px;border-radius:999px;min-height:30px}
+  .ff-bar .ff-label{color:#c4b5fd;font-weight:700;font-size:10px;white-space:nowrap}
+  .ship-sec{font-size:12px;font-weight:700;margin:12px 0 6px;color:var(--accent2)}
+  .ship-line{font-size:12px;background:rgba(6,11,24,0.72);border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:6px;line-height:1.5;min-height:20px}
+  .ship-line .who{font-weight:700;color:var(--accent)}
+  .ship-btns{display:flex;flex-wrap:wrap;gap:5px}
+  .ship-btns button{font-size:11px;padding:5px 8px}
+  .ship-btns button small{display:block;font-size:9px;color:var(--muted);font-weight:400}
+  .ship-btns button.active{border-color:var(--accent);background:rgba(22,42,86,0.95)}
+  .traffic-row{display:flex;justify-content:space-between;gap:6px;font-size:11px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;margin-bottom:4px;background:rgba(6,11,24,0.55)}
+  .traffic-row .tn{font-weight:700}
+  .traffic-row .tm{color:var(--muted);white-space:nowrap}
+  .npc-label{position:fixed;transform:translate(-50%,-130%);font-size:10px;font-weight:700;color:#e2e8f0;background:rgba(4,8,20,0.62);border:1px solid rgba(148,163,184,0.5);border-radius:5px;padding:1px 5px;pointer-events:none;z-index:15;white-space:nowrap;display:none}
+  .ff-bar .ff-now{color:#e9d5ff;font-weight:700;font-size:10px;white-space:nowrap}
+  .ff-bar button{padding:4px 8px;font-size:11px;border-radius:999px;min-height:30px;white-space:nowrap}
   .dock-actions > button{padding:6px 9px;font-size:12px}
 
   .dock-foot{
@@ -333,12 +347,12 @@
   }
 
   /* ===== 航海計画パネル (#plan-panel) & モーダル共通 ===== */
-  #plan-panel,#result-modal,#briefing-modal,#creation-modal{
+  #plan-panel,#result-modal,#briefing-modal,#creation-modal,#chart-panel{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
     display:none;align-items:center;justify-content:center;padding:12px;
   }
-  #plan-panel.open,#result-modal.open,#briefing-modal.open,#creation-modal.open{display:flex}
+  #plan-panel.open,#result-modal.open,#briefing-modal.open,#creation-modal.open,#chart-panel.open{display:flex}
   .modal-box{
     width:min(92vw, 560px);max-width:100vw;
     max-height:88vh;max-height:88dvh;overflow-y:auto;
@@ -431,7 +445,7 @@
   /* ===== モバイル対応 (720px / 480px) ===== */
   @media (max-width:720px){
     button{min-height:44px}
-    .warp-bar button,.cam-row button{min-height:36px}
+    .ff-bar button,.cam-row button{min-height:36px}
     .ps-actions button,.tut-actions button{min-height:44px}
     #order-bar{grid-template-columns:repeat(5, 1fr);gap:4px}
     #order-bar button{min-height:54px;font-size:11px;padding:4px 2px}
@@ -486,6 +500,7 @@
   <div id="view3d"></div>
 
   <!-- 画面上ターゲットマーカー -->
+  <div id="npc-labels"></div>
   <div id="target-marker">
     <div class="tm-box">
       <div class="tm-arrow" id="tm-arrow"></div>
@@ -564,14 +579,18 @@
         </div>
 
         <div class="dock-actions">
-          <div class="warp-bar">
+          <div class="ff-bar" role="group" aria-label="待機（時間を進める）">
+            <span class="ff-label">⏳ 待機（時間を進める）</span>
+            <button data-warp="1" class="active">等速</button>
+            <button data-warp="3">×3</button>
+            <button data-warp="8">×8</button>
             <button data-warp="0">⏸</button>
-            <button data-warp="1" class="active">1x</button>
-            <button data-warp="3">3x</button>
-            <button data-warp="8">8x</button>
+            <span class="ff-now" id="ff-now">等速で見守り中</span>
             <span style="color:var(--muted);margin:0 3px">T+<b id="clock">0</b>s</span>
           </div>
           <button id="btn-plan" class="teal">🗺 航海計画</button>
+          <button id="btn-ship" class="teal">🚶 艦内</button>
+          <button id="btn-chart" class="teal">🧭 海図</button>
           <button id="btn-assist" class="amber">🎯 支援(<span id="assist-left">3</span>)</button>
           <button id="btn-resupply" disabled>⛽ 補給</button>
         </div>
@@ -610,6 +629,8 @@
       <button class="active" data-tab="galaxy">🌌 銀河</button>
       <button data-tab="prod">🏭 生産・政治</button>
       <button data-tab="officers">👥 部下</button>
+      <button data-tab="ship">🚶 艦内</button>
+      <button data-tab="traffic">📡 交通</button>
       <button data-tab="log">📜 航海日誌</button>
     </div>
     <div class="drawer-body">
@@ -638,6 +659,24 @@
         <div id="officers"></div>
       </div>
 
+      <div class="tab-pane" id="tab-ship">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">航行中は当直と航行AIが艦を運航しています。艦長は艦内を回り、乗組員と話したり、点検や訓練ができます（航行は止まりません）。</p>
+        <div class="ship-sec">🗣 乗組員と話す</div>
+        <div id="ship-crew"></div>
+        <div class="ship-line" id="ship-dialogue">話したい相手を選んでください。</div>
+        <div class="ship-sec">🗺 艦内を見回る</div>
+        <div id="ship-rooms"></div>
+        <div class="ship-line" id="ship-room-line">区画を選ぶと、その場所の様子と誰がいるかが分かります。</div>
+        <div class="ship-sec">🛠 小さなオペレーション</div>
+        <div id="ship-ops"></div>
+        <div class="ship-line" id="ship-op-line">点検・見回り・訓練は艦内時間を使います。</div>
+      </div>
+
+      <div class="tab-pane" id="tab-traffic">
+        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">周辺のコンタクト（自艦からの距離順）。管制のアドバイザリはこの中の艦を指します。</p>
+        <div id="traffic-list"></div>
+      </div>
+
       <div class="tab-pane" id="tab-log">
         <div id="log"></div>
       </div>
@@ -650,11 +689,33 @@
 </div>
 
 <!-- 航海計画パネル (#plan-panel) -->
+<!-- 海図パネル (#chart-panel) -->
+<div id="chart-panel">
+  <div class="modal-box" style="text-align:left;max-width:560px">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <div>
+        <div style="font-size:11px;color:var(--accent);font-weight:700">海図 — 航行AI <span id="chart-ai-name">イオ</span> が表示を管理</div>
+        <div style="font-size:15px;font-weight:800">表示範囲：<span id="chart-range-name">広域</span>（<span id="chart-mode-name">自動</span>）</div>
+      </div>
+      <button id="btn-chart-close" style="padding:4px 10px">✕</button>
+    </div>
+    <div class="ship-btns" style="margin:8px 0" id="chart-range-btns">
+      <button data-range="auto">🤖 自動（AIに任せる）</button>
+      <button data-range="port">港内</button>
+      <button data-range="local">近傍</button>
+      <button data-range="system">広域</button>
+    </div>
+    <div class="ship-line" id="chart-note" style="margin:0 0 8px">状況に合わせて表示範囲を切り替えます。</div>
+    <canvas id="chart-canvas" width="520" height="520" style="width:100%;height:auto;background:rgba(3,6,16,0.9);border:1px solid var(--line);border-radius:10px"></canvas>
+    <div id="chart-contacts" style="margin-top:8px"></div>
+  </div>
+</div>
+
 <div id="plan-panel">
   <div class="modal-box">
     <div class="plan-head">
       <div>
-        <div style="font-size:11px;color:var(--accent);font-weight:700">航行AI イオ — 航海計画提案（提示：航法士官 三浦 葵）</div>
+        <div id="plan-ai-head" style="font-size:11px;color:var(--accent);font-weight:700">航行AI イオ — 航海計画提案（提示：航法士官 三浦 葵）</div>
         <div class="plan-route-name" id="plan-route-name">標準航路 ソル内周回路 R1</div>
       </div>
       <button id="btn-plan-close" style="padding:4px 10px;font-size:12px">✕</button>
@@ -663,7 +724,7 @@
     <div id="plan-ship" style="font-size:11px;color:var(--muted);margin:2px 0 8px">自艦：輸送艦「さくら」 質量 420t ／ 推力 2,940kN（加速 約7.0）／ 最大貨物 120t — 積荷が多い航程では加速が鈍ります</div>
     <div class="plan-variants" id="plan-variants"></div>
     <div id="departure-checklist" title="タップで早送り"></div>
-    <div class="plan-note">※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AIイオとクルーが計画に沿って運航し、艦長は承認・監視・例外判断を行います。</div>
+    <div class="plan-note" id="plan-note">※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AIイオとクルーが計画に沿って運航し、艦長は承認・監視・例外判断を行います。</div>
     <div class="modal-actions">
       <button id="btn-depart" class="primary" disabled>出航用意よし — 出航</button>
     </div>
@@ -675,7 +736,7 @@
   <div class="modal-box" style="text-align:left">
     <div class="cr-kicker">着任辞令 — 艦長任命手続き</div>
     <h2 style="margin:4px 0 6px;font-size:20px">艦長登録</h2>
-    <p class="cr-note" style="margin:0">港の司令部で辞令を受け取ります。ここで決めた艦長像は、NPCと同一の人物データとして記録され、今後の会話・人事・キャリアに使われます。まずは好みで選んでください（おすすめ配分もあります）。</p>
+    <p class="cr-note" style="margin:0">港の司令部で辞令を受け取ります。ここで決めた艦長像は、他の人物と同一の形式の人物データとして記録され、今後の会話・人事・キャリアに使われます。まずは好みで選んでください（おすすめ配分もあります）。</p>
     <div class="cr-sec">艦長名</div>
     <div style="display:flex;gap:10px;align-items:center">
       <div class="cr-face" id="cr-face-preview" style="cursor:default">結<span class="motif" id="cr-face-motif">★</span></div>
@@ -693,6 +754,10 @@
     <div id="cr-abilities"></div>
     <div class="cr-sec">特性（2つまで）</div>
     <div class="cr-opts" id="cr-traits"></div>
+    <div class="cr-sec">航行AIの名前</div>
+    <p class="cr-note" style="margin:0 0 6px">あなたの艦の航行AIです。計画の提案や報告、海図の管理を担当します。名前は艦ごとに付けるものです（候補から選ぶか、自由に入力）。</p>
+    <div class="cr-opts" id="cr-ainames"></div>
+    <input id="cr-ainame" type="text" maxlength="8" value="イオ" style="margin-top:6px;width:100%;box-sizing:border-box;background:rgba(6,11,24,0.85);border:1px solid var(--line-bright);border-radius:9px;color:#fff;font-size:14px;padding:8px 10px">
     <div class="modal-actions" style="margin-top:16px">
       <button id="btn-creation-done" class="primary">任命を受ける — 港へ向かう</button>
     </div>
@@ -814,6 +879,14 @@ const SCENARIOS = {
   squadron: { label:'戦隊司令', maxDv:70, wings:2, prop:90,  sup:70,  cred:350, pol:60, warp:4 },
   fleet:    { label:'艦隊司令', maxDv:85, wings:4, prop:140, sup:110, cred:600, pol:70, warp:6 },
 };
+const AI_NAME_PRESETS = ['イオ', 'ミラ', 'ソラ', 'ハル', 'ノヴァ', 'ユキ'];
+function renderAiNameChoices(){
+  const wrap = document.getElementById('cr-ainames'); if(!wrap || !crDraft) return;
+  wrap.innerHTML = AI_NAME_PRESETS.map(n => '<button type="button" class="cr-opt' + (crDraft.aiName === n ? ' selected' : '') + '" data-ainame="' + n + '"><div class="t">' + n + '</div></button>').join('');
+  wrap.querySelectorAll('[data-ainame]').forEach(b => b.addEventListener('click', ()=>{ crDraft.aiName = b.dataset.ainame; const inp = document.getElementById('cr-ainame'); if(inp) inp.value = crDraft.aiName; renderAiNameChoices(); }));
+  const inp = document.getElementById('cr-ainame');
+  if(inp && inp.value !== (crDraft.aiName || 'イオ')) inp.value = crDraft.aiName || 'イオ';
+}
 const OFFICER_DEFS = [
   { name:'佐藤 澪', post:'戦術', tactics:82, logistics:45, politics:60, loyalty:78, ambition:55 },
   { name:'高橋 蓮', post:'補給', tactics:64, logistics:88, politics:40, loyalty:85, ambition:35 },
@@ -825,6 +898,7 @@ const ROLES = ['待機','艦隊戦術担当','補給管理担当','政治工作�
 // ---------- 登場人物・自艦定義 ----------
 const GUIDE = { name:'榊原 凛', rank:'少佐', title:'教導士官', initial:'榊', color:'#2dd4bf', tactics:90, logistics:70, politics:60, loyalty:90, ambition:30, role:'教導' };
 const HELM  = { name:'三浦 葵', rank:'少尉', title:'航法士官', initial:'三', color:'#f59e0b', tactics:70, logistics:60, politics:30, loyalty:80, ambition:40, role:'航法' };
+const CTRL  = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#38bdf8' };
 const CONTROL = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#94a3b8', tactics:50, logistics:50, politics:50, loyalty:50, ambition:0, role:'管制' };
 let SHIP_NAME = '輸送艦 さくら';
 let SHIP_CALLSIGN = 'サクラ';
@@ -883,7 +957,7 @@ let captainProfile = null;
 function trackData(id){ return TRACKS.find(t => t.id === id) || TRACKS[0]; }
 function shipDisplay(){ const tr = trackData(captainProfile ? captainProfile.track : 'transport'); return tr.shipClass + '「' + tr.shipName + '」'; }
 function defaultCaptainProfile(){
-  return { id:'captain', name:'結城 凪', initial:'結', color:'#38bdf8', motif:'★', portrait:'p1', track:'transport', origin:'union', homePort:'aoba',
+  return { id:'captain', name:'結城 凪', initial:'結', color:'#38bdf8', motif:'★', portrait:'p1', aiName:'イオ', track:'transport', origin:'union', homePort:'aoba',
     abilities:{ ops:2, logi:3, nego:2, cmd:1, pop:2 }, traits:['cautious', 'caring'], flags:{ origin_union:true, contact_aoba:true, trait_cautious:true, trait_caring:true }, fame:0, relations:{}, ship:null };
 }
 function loadCaptainProfile(){ try { const raw = localStorage.getItem('ss_captain_v1'); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
@@ -896,7 +970,8 @@ function buildCaptainRecord(draft){
   (draft.traits || []).forEach(t => { flags['trait_' + t] = true; });
   return { id:'captain', name:draft.name, initial:(draft.name || '艦').slice(0, 1), color:pt.color, motif:pt.motif,
     portrait:draft.portrait, track:draft.track, origin:draft.origin, homePort:draft.homePort,
-    abilities:Object.assign({}, draft.abilities), traits:(draft.traits || []).slice(), flags, fame:0, relations:{}, ship:null };
+    aiName:(draft.aiName || 'イオ'), abilities:Object.assign({}, draft.abilities), traits:(draft.traits || []).slice(), flags, fame:0, relations:{}, ship:null,
+    ai:{ id:'ship-ai', name:(draft.aiName || 'イオ'), role:'航行AI', personality:'冷静で簡潔。判断材料を先に示す。' } };
 }
 function applyCaptain(){
   if(!captainProfile) captainProfile = loadCaptainProfile() || defaultCaptainProfile();
@@ -915,6 +990,10 @@ function applyCaptain(){
       if(org.mod.pol) S.res.pol = Math.min(100, S.res.pol + org.mod.pol);
     }
     if(captainProfile.abilities && captainProfile.abilities.pop) S.res.pol = Math.min(100, S.res.pol + captainProfile.abilities.pop * 2);
+    const ph = document.getElementById('plan-ai-head');
+    if(ph) ph.textContent = '航行AI ' + (captainProfile.aiName || 'イオ') + ' — 航海計画提案（提示：航法士官 三浦 葵）';
+    const pn = document.getElementById('plan-note');
+    if(pn) pn.textContent = '※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AI' + (captainProfile.aiName || 'イオ') + 'とクルーが計画に沿って運航し、艦長は承認・監視・例外判断を行います。';
   }
 }
 
@@ -995,14 +1074,17 @@ function renderAbilities(){
 function autoAssignAbilities(){ if(!crDraft) return; crDraft.abilities = Object.assign({}, trackData(crDraft.track).rec); renderCreation(); }
 function openCreation(){
   const saved = loadCaptainProfile();
-  crDraft = saved ? { name:saved.name, portrait:saved.portrait, track:saved.track, origin:saved.origin, homePort:saved.homePort, abilities:Object.assign({}, saved.abilities), traits:(saved.traits || []).slice() } : (() => { const d0 = defaultCaptainProfile(); return { name:d0.name, portrait:d0.portrait, track:d0.track, origin:d0.origin, homePort:d0.homePort, abilities:Object.assign({}, d0.abilities), traits:d0.traits.slice() }; })();
+  crDraft = saved ? { name:saved.name, portrait:saved.portrait, aiName:saved.aiName || 'イオ', track:saved.track, origin:saved.origin, homePort:saved.homePort, abilities:Object.assign({}, saved.abilities), traits:(saved.traits || []).slice() } : (() => { const d0 = defaultCaptainProfile(); return { name:d0.name, portrait:d0.portrait, aiName:d0.aiName, track:d0.track, origin:d0.origin, homePort:d0.homePort, abilities:Object.assign({}, d0.abilities), traits:d0.traits.slice() }; })();
   renderCreation();
   document.getElementById('cr-name').oninput = (e) => { crDraft.name = e.target.value; renderCreation(); };
+  document.getElementById('cr-ainame').oninput = (e) => { crDraft.aiName = e.target.value; };
+  renderAiNameChoices();
   document.getElementById('creation-modal').classList.add('open');
 }
 function finishCreation(){
   const name = (document.getElementById('cr-name').value || '').trim() || '結城 凪';
   crDraft.name = name;
+  crDraft.aiName = (document.getElementById('cr-ainame').value || '').trim() || 'イオ';
   captainProfile = buildCaptainRecord(crDraft);
   saveCaptainProfile(captainProfile);
   playSfx('click');
@@ -1023,7 +1105,7 @@ const MISSIONS = [
   { id:3, title:'制限時間内に補給を届けよ',
     obj:'420秒以内にシリウス系の目標艦と接舷し、前線への補給を完了せよ。',
     startSys:'sirius', reqSys:'sirius', timeLimit:420, merit:280,
-    startQuote:'時間との戦いです！420秒以内に目標艦へ到達してください。時間倍率(3x/8x)と航海計画を活用しましょう！' }
+    startQuote:'時間との戦いです！420秒以内に目標艦へ到達してください。航海計画では「最速」案を選び、迷わず出航しましょう！' }
 ];
 const RANKS = [
   { name:'少尉', min:0 },
@@ -1400,6 +1482,9 @@ function loadSystem(sys){
   for(let i=0;i<S.cfg.wings;i++) S.wings.push(makeWing(i));
   S.station = null;
   S.npcs = makeAmbientNPCs(sys);
+  // 交通の可視化: 航路交通をプレイヤーの行動圏（あおば宙域・標準航路）に寄せ、必ず目に入るようにする
+  if(S.npcs[0]) Object.assign(S.npcs[0], orbitState(sys.starGM, 185, 0.55, 2, 10));
+  if(S.npcs[1]) Object.assign(S.npcs[1], orbitState(sys.starGM, 205, 0.85, 6, 30));
   S.docked=false; S.failed=false; S.succeeded=false;
   buildSystemMeshes();
 }
@@ -1418,6 +1503,9 @@ function loadPrologueSystem(){
   S.ship = makeBody(st, 0x6ea8ff, 5, SHIP_NAME, 0);
   S.wings = [];
   S.npcs = makeAmbientNPCs(sys);
+  // 交通の可視化: 最も近い航路交通をステーション近傍に寄せる
+  if(S.npcs[0]) Object.assign(S.npcs[0], orbitState(sys.starGM, 185, 2.98, 2, 10));
+  buildPortCraft();
   S.docked=false; S.failed=false; S.succeeded=false;
   buildSystemMeshes();
 }
@@ -1436,7 +1524,7 @@ function createBaseState(cfg, isPrologue){
     dv: cfg.maxDv, maxDv: cfg.maxDv,
     res:{ prop:cfg.prop, sup:cfg.sup, cred:cfg.cred, pol:cfg.pol, warp:cfg.warp },
     prod:null,
-    officers: OFFICER_DEFS.map(o=>Object.assign({}, o, { role:'待機' })),
+    officers: OFFICER_DEFS.map(o=>Object.assign({}, o, { role:'待機', rel:{ aff:0, trust:0 }, chatIdx:0 })),
     eventTimer: 16,
     trafficTimer: 45 + Math.random()*30,
     assistUses: 3,
@@ -1452,6 +1540,9 @@ function createBaseState(cfg, isPrologue){
     prologue: !!isPrologue,
     approach: { established:false, fixPassed:false, midPassed:false, lastWarnTime:-99, seqAdvised:false },
     planExec: null,
+    berthing: null,
+    opLast: {},
+    depBriefed: false,
     planSamples: null,
     coach: { minDistSeen: 9999, lastDist: 9999, lastOvershootWarn: -99, lastSpeedWarn: -99 },
     tutorial: null
@@ -1464,6 +1555,7 @@ function startPrologue(){
   dvEmptyTimer = 0;
   applyCaptain();
   loadPrologueSystem();
+  frameCamOnShip();
   // 港から始まる：最初はステーションに接舷中。出航は艦長が承認するイベントとして扱う。
   S.docked = true; S.dockedTo = S.station;
   S.ship.x = S.station.x; S.ship.y = S.station.y; S.ship.z = S.station.z;
@@ -1489,6 +1581,10 @@ function startMission(idx){
   applyCaptain();
   const sysObj = SYSTEMS.find(s=>s.id===m.startSys) || SYSTEMS[0];
   loadSystem(sysObj);
+  frameCamOnShip();
+  if(idx === 0){
+    logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、こちらあおば管制。ここはソル系・居住惑星宙域、あおば管制区です。本日の訓練空域は確保済み。補給艦「あけぼの」は所定軌道で待機しています。');
+  }
   setWarp(1);
   updateManualUI();
   updateMissionBanner();
@@ -1514,7 +1610,7 @@ function updateMissionBanner(){
     document.getElementById('mb-num').textContent = 'MISSION 0 / 処女航海';
     document.getElementById('mb-sys').textContent = '📍 ソル系';
     document.getElementById('mb-title').textContent = '処女航海：輸送艦「さくら」慣熟航行';
-    document.getElementById('mb-obj').textContent = '教導士官 榊原少佐の案内で、航海計画の承認・カメラ・時間倍率・帰投を体験しよう。';
+    document.getElementById('mb-obj').textContent = '教導士官 榊原少佐の案内で、航海計画の承認・カメラ・航行中の待機・帰投を体験しよう。';
     document.getElementById('mission-timer').style.display = 'none';
     return;
   }
@@ -1678,6 +1774,7 @@ function physics(simDt){
   checkRendezvous();
   checkMissionConditions(simDt);
   updatePlanExecution(simDt);
+  updateBerthing(simDt);
   updateCoaching();
   updateTutorialAndPrologue(simDt);
   if(S.prod){
@@ -1742,6 +1839,40 @@ function checkRendezvous(){
       }
       return;
     }
+    if(!S.berthing) startBerthing();
+    return;
+  }
+}
+
+// 接舷オペレーション（最終進入→接舷→係留・到着手続き）を実フェーズとして実行し、
+// 完了後に completeDocking() で従来の達成処理を行う
+function startBerthing(){
+  const t = S.target;
+  S.berthing = { t: 0, target: t, ox: S.ship.x - t.x, oy: S.ship.y - t.y, oz: S.ship.z - t.z, moored: false };
+  if(S.planExec){ S.planExec.phase = 'berthing'; S.planExec.active = false; }
+  logEvent('⚓ 接舷作業開始 — 最終進入。微速で寄せます。');
+  showOfficerPopup(HELM, '接舷します。最終進入、速力良好。');
+  updatePlanStatusUI();
+}
+function updateBerthing(simDt){
+  if(!S || !S.berthing) return;
+  const b = S.berthing, t = b.target;
+  b.t += simDt;
+  const k = Math.max(0, 1 - b.t / 2.5);
+  S.ship.x = t.x + b.ox * k; S.ship.y = t.y + b.oy * k; S.ship.z = t.z + b.oz * k;
+  S.ship.vx = t.vx; S.ship.vy = t.vy; S.ship.vz = t.vz;
+  if(!b.moored && b.t >= 2.5){
+    b.moored = true;
+    logEvent('⚓ 接舷完了。係留を開始します。');
+    showOfficerPopup(HELM, '接舷完了。係留作業に入ります。');
+  }
+  if(b.t >= 5){
+    S.berthing = null;
+    logEvent('⚓ 係留完了 — 外部電源接続よし。到着手続きを完了します。');
+    completeDocking();
+  }
+}
+function completeDocking(){
     S.docked=true; S.succeeded=true;
     S.res.pol=Math.min(100,S.res.pol+3);
     const m = getMission();
@@ -1765,16 +1896,15 @@ function checkRendezvous(){
     meritTotal += m.merit;
     openResultModal(true, 'ミッション '+m.id+' 達成！', '補給艦「あけぼの」との接舷に成功。功績 +'+m.merit+' pt 獲得！', prevMerit);
     updatePanels();
-  }
 }
 
 function checkMissionConditions(simDt){
-  if(!S || S.prologue || S.missionEnded || S.docked || S.failed) return;
+  if(!S || S.prologue || S.missionEnded || S.docked || S.failed || S.berthing) return;
   const m = getMission();
   if(m.timeLimit > 0 && S.time >= m.timeLimit){
     S.failed=true; S.missionEnded=true;
     playSfx('fail');
-    showOfficerPopup(GUIDE, '制限時間に間に合いませんでした…！時間倍率(3x/8x)も活用して再挑戦しましょう。');
+    showOfficerPopup(GUIDE, '制限時間に間に合いませんでした…！次は「最速」案で行きましょう。推進剤は多く使いますが、系内で速くする方法は、それだけです。');
     openResultModal(false, '時間切れ・作戦失敗', '制限時間（'+m.timeLimit+'秒）以内に接舷を完了できませんでした。');
     return;
   }
@@ -1784,7 +1914,7 @@ function checkMissionConditions(simDt){
     if(dvEmptyTimer > 4.5){
       S.failed=true; S.missionEnded=true;
       playSfx('fail');
-      showOfficerPopup(GUIDE, '推進剤（Δv）が完全に枯渇しました…。省燃料の航海計画で再挑戦しましょう。');
+      showOfficerPopup(GUIDE, '推進剤（Δv）が完全に枯渇しました…。次は省燃料の航海計画で、余裕を持って臨みましょう。');
       openResultModal(false, 'Δv 枯渇・到達不能', '推進剤を使い切り、目標艦に到達できなくなりました。');
     }
   } else {
@@ -1863,6 +1993,10 @@ function openMissionPlanPanel(){
 
 function openPlanPanel(cfg){
   if(!S) return;
+  if(S.docked && !S.depBriefed){
+    S.depBriefed = true;
+    logEvent('📡 あおば管制: 出発手順を送ります。離舷ののち、港内コースを制限速度で進み、出域点で本航行へ移行してください。');
+  }
   const variants = [
     { id:'std', label:'標準', scale:1.0 },
     { id:'eco', label:'省燃料', scale:0.8 },
@@ -1886,9 +2020,9 @@ function openPlanPanel(cfg){
       const card = document.createElement('div');
       card.className = 'pv-card' + (i === planPanelState.selIdx ? ' selected' : '') + (!v.est.ok ? ' invalid' : '');
       const vNote = v.id === 'eco' ? '噴射を抑え、軌道の流れを使う' : (v.id === 'fast' ? '噴射を多めに使い到着を早める' : '消費と時間のバランス型');
-      card.innerHTML = '<div class="pv-title">'+v.label+'（×'+v.scale.toFixed(1)+'）'+(i === recIdx ? ' <span style="color:var(--teal);font-size:11px">🤖 イオ推奨</span>' : '')+'</div>' +
+      card.innerHTML = '<div class="pv-title">'+v.label+'（×'+v.scale.toFixed(1)+'）'+(i === recIdx ? ' <span style="color:var(--teal);font-size:11px">🤖 '+aiName()+'推奨</span>' : '')+'</div>' +
         (v.est.ok
-          ? '<div class="pv-meta">推定Δv: <b>'+v.est.dvTotal.toFixed(1)+'</b><br>推定時間: 約'+Math.round(v.est.timeTotal)+'秒<br><span style="color:var(--muted)">'+vNote+(i === recIdx ? ' ／ イオ：推進剤消費が最小の案です' : '')+'</span></div>'
+          ? '<div class="pv-meta">推定Δv: <b>'+v.est.dvTotal.toFixed(1)+'</b><br>推定時間: 約'+Math.round(v.est.timeTotal)+'秒<br><span style="color:var(--muted)">'+vNote+(i === recIdx ? ' ／ '+aiName()+'：推進剤消費が最小の案です' : '')+'</span></div>'
           : '<div class="pv-meta" style="color:var(--bad)">成立せず</div>');
       if(v.est.ok){
         card.onclick = () => {
@@ -1911,7 +2045,7 @@ function openPlanPanel(cfg){
     const all = [
       { who:'機関', text:'機関、全系統正常' },
       { who:'推進剤', text:'三浦「推進剤 Δv 残量 '+S.dv.toFixed(1)+'／計画消費 '+estDv.toFixed(1)+'、'+(S.dv>=estDv?'余裕あり':'残量注意')+'」' },
-      { who:'航路計画', text:'三浦「イオの航海計画、受領。針路設定完了」' },
+      { who:'航路計画', text:'三浦「'+aiName()+'の航海計画、受領。針路設定完了」' },
       { who:'管制許可', text:'あおば管制「『'+SHIP_CALLSIGN+'』、出航を許可する」' }
     ];
     return cfg.shortChecklist ? [all[1], all[3]] : all;
@@ -1962,12 +2096,18 @@ function confirmDeparture(){
   const cfg = planPanelState.cfg;
   closePlanPanel();
   playSfx('click');
+  const wasDocked = !!S.docked;
+  const depAnchor = S.dockedTo || S.station || null;
   if(S.docked){
     S.docked = false; S.dockedTo = null;
-    logEvent('⚓ 離舷 — 係留を解除。' + SHIP_NAME + '、出航します。');
-    showOfficerPopup(HELM, '離舷完了。推進、微速前進します。');
+    logEvent('⚓ 離舷作業開始 — 係留を解除し、内部電源へ切り替えます。');
+    showOfficerPopup(HELM, '離舷作業を開始します。係留を解除、微速で離れます。');
+    if(S.prologue && !depExplainedShown){
+      depExplainedShown = true;
+      setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '出発は一連の作業です。離舷、港内航行、出域、それから本航行に入ります。港の中は混んでいるので、ゆっくり進みます。'); }, 2600);
+    }
   }
-  logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。');
+  logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。離舷後は港内コースを制限速度で進み、出域点で本航行へ移行せよ。');
   S.planSamples = v.est.samples;
   updatePlanLineMesh();
   S.planExec = {
@@ -1977,7 +2117,13 @@ function confirmDeparture(){
     targetBody: cfg.targetBody,
     arrivalDist: cfg.arrivalDist,
     needDock: cfg.needDock,
-    phase: 'depart',
+    phase: wasDocked ? 'undock' : 'depart',
+    depAnchor: wasDocked ? depAnchor : null,
+    depT: 0,
+    depSep: null,
+    depFix: null,
+    depFixDist0: 46,
+    depTrafficNoted: false,
     paused: false,
     deviated: false,
     manualModified: false,
@@ -1993,6 +2139,56 @@ function confirmDeparture(){
   updatePlanStatusUI();
 }
 
+function steerShipTo(dvx, dvy, dvz, accel, simDt){
+  const cx = dvx - S.ship.vx, cy = dvy - S.ship.vy, cz = dvz - S.ship.vz;
+  const mag = Math.hypot(cx, cy, cz);
+  if(mag < 1e-6) return;
+  const s = Math.min(1, (accel * simDt) / mag);
+  S.ship.vx += cx * s; S.ship.vy += cy * s; S.ship.vz += cz * s;
+}
+function updateDepartureOps(simDt){
+  const pe = S.planExec;
+  const anchor = pe.depAnchor || S.station || S.target;
+  pe.depT += simDt;
+  if(!pe.depSep){
+    const rp = Math.hypot(anchor.x, anchor.y, anchor.z) || 1;
+    const radial = { x: anchor.x / rp, y: anchor.y / rp, z: anchor.z / rp };
+    const vp = Math.hypot(anchor.vx, anchor.vy, anchor.vz) || 1;
+    const prog = { x: anchor.vx / vp, y: anchor.vy / vp, z: anchor.vz / vp };
+    let sx = radial.x * 0.55 + prog.x * 0.85, sy = radial.y * 0.55 + prog.y * 0.85, sz = radial.z * 0.55 + prog.z * 0.85;
+    const sm = Math.hypot(sx, sy, sz) || 1;
+    pe.depSep = { x: sx / sm, y: sy / sm, z: sz / sm };
+  }
+  const distA = Math.hypot(S.ship.x - anchor.x, S.ship.y - anchor.y, S.ship.z - anchor.z);
+  if(pe.phase === 'undock'){
+    const spd = Math.min(1.1, 0.3 + pe.depT * 0.16);
+    steerShipTo(anchor.vx + pe.depSep.x * spd, anchor.vy + pe.depSep.y * spd, anchor.vz + pe.depSep.z * spd, 2.0, simDt);
+    if(pe.depT >= 5 && distA >= 6.5){
+      pe.phase = 'harbor'; pe.depT = 0;
+      logEvent('⚓ 三浦: 離舷完了。港内航行へ移行します。');
+      showOfficerPopup(HELM, '離舷完了。港内航行に入ります。制限速度を守ります。');
+      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、港内航行を許可。出域点へ進め。港内制限速度 2.4。');
+    }
+    return;
+  }
+  // harbor: 出域点はステーション相対で定義する（出発レーン方向へ48離れた点）。
+  // ステーションと一緒に運動する相対飛行なので、追跡は安定する。
+  steerShipTo(anchor.vx + pe.depSep.x * 2.4, anchor.vy + pe.depSep.y * 2.4, anchor.vz + pe.depSep.z * 2.4, 2.0, simDt);
+  if(!pe.depTrafficNoted && distA >= 26){
+    pe.depTrafficNoted = true;
+    const hold = (S.portCraft || []).find(c => c.cat === 'holding');
+    logEvent('📡 あおば管制: 港内は混雑しています。' + (hold ? '沖待ちの' + hold.name + 'と接舷艦に注意。' : '接舷艦と沖待ち艦に注意。') + '制限速度を維持せよ。');
+    if(S.prologue && !chartIntroShown){
+      chartIntroShown = true;
+      setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。海図を見れば、周りの艦と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
+    }
+  }
+  if(distA >= 48){
+    pe.phase = 'depart';
+    logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出域を確認。航路管制へ移管する。良い航行を。');
+    showOfficerPopup(HELM, '出域点に到達。ここから本航行に入ります。');
+  }
+}
 function updatePlanExecution(simDt){
   if(!S || !S.planExec || !S.planExec.active || S.docked || S.failed) return;
   const pe = S.planExec;
@@ -2013,6 +2209,11 @@ function updatePlanExecution(simDt){
         logEvent('⚠️ 三浦: 計画からの逸脱を検知。自動噴射を一時停止します。');
       }
     }
+  }
+  // 出発オペレーション（離舷→港内航行→出域）は本航行の前に実フェーズとして実行する
+  if(pe.phase === 'undock' || pe.phase === 'harbor'){
+    updateDepartureOps(simDt);
+    return;
   }
   if(pe.paused || pe.manualModified || S.activeBurn) return;
 
@@ -2129,11 +2330,25 @@ function deriveNextAction(){
   if(!S) return { text:'', cls:'' };
   if(S.docked || S.failed || S.missionEnded) return { text:'', cls:'' };
   if(S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText){
-    return { text: S.tutorial.nextActionText, cls: '' };
+    let tt = S.tutorial.nextActionText;
+    if(S.planExec && S.planExec.active && S.planExec.phase === 'cruise') tt += '。艦内を回って乗組員と話せます（「艦内」）';
+    return { text: tt, cls: '' };
   }
   if(S.planExec && S.planExec.active && !S.planExec.paused && !S.planExec.manualModified){
-    const phMap = { depart:'出航噴射', cruise:'巡航（次の噴射は距離48で減速）', brake:'減速進入', captain:'艦長の速度同調命令待ち', join:'進入コース合流', final:'最終接近' };
-    return { text:'計画実行中: '+(phMap[S.planExec.phase]||pePhaseName(S.planExec.phase)), cls:'good' };
+    const phMap = { undock:'離舷作業', harbor:'港内航行（制限速度）', depart:'出航噴射', cruise:'巡航（次の噴射は距離48で減速）', brake:'減速進入', captain:'艦長の速度同調命令待ち', join:'進入コース合流', final:'最終接近' };
+    let t = '計画実行中: '+(phMap[S.planExec.phase]||pePhaseName(S.planExec.phase));
+    const pe = S.planExec;
+    if(pe.phase === 'undock' || pe.phase === 'harbor'){
+      t += ' — 出域後に本航行へ入ります。当直の報告を待とう';
+    } else if(pe.remTime && isFinite(pe.remTime) && pe.remTime > 0){
+      t += ' — 到着まで約'+Math.round(pe.remTime)+'秒';
+      if(pe.phase === 'cruise') t += '。艦内を回って乗組員と話せます（「艦内」）' + (S.warp > 1 ? '（×'+S.warp+' で早送り中）' : '');
+      else t += (S.warp > 1) ? '（×'+S.warp+' で早送り中）' : '。当直に任せて「待機」で時間を進められます';
+    }
+    return { text: t, cls:'good' };
+  }
+  if(S.berthing){
+    return { text:'接舷作業中 — 係留と到着手続きを行っています', cls:'good' };
   }
   const r = relState();
   if(!S.prologue && !S.approach.established && r.dist < 30) return { text:'「進入合流」で進入コースに戻ろう', cls:'warn' };
@@ -2144,7 +2359,7 @@ function deriveNextAction(){
   if(r.dist < 26 && r.rel <= 1.5) return { text:'そのまま近づけばくっつける', cls:'good' };
   return { text:'接近中…（距離 '+r.dist.toFixed(0)+'）近づいたら「減速」', cls:'' };
 }
-function pePhaseName(p){ return ({depart:'出航',cruise:'巡航',brake:'減速',captain:'艦長指示待ち',join:'進入合流',final:'最終接近',done:'完了'})[p] || p; }
+function pePhaseName(p){ return ({undock:'離舷作業',harbor:'港内航行',depart:'出航',cruise:'巡航',brake:'減速',captain:'艦長指示待ち',join:'進入合流',final:'最終接近',berthing:'接舷作業',done:'完了'})[p] || p; }
 
 // ---------- プロローグ (Mission 0) & チュートリアル (Mission 1) ----------
 let camAzAccum = 0;
@@ -2175,9 +2390,10 @@ function initPrologueFlow(){
   const offHtml = S.officers.map(o => '<div>・' + o.name + '（配置：' + (o.post || '待機') + '）「' + (OFFICER_INTRO[o.name] || '') + '」</div>').join('')
     + '<div>・三浦 葵（配置：航法）「航法と運航計画を担当します。よろしくお願いします」</div>';
   portScenePages = [
+    { who: CTRL, text: 'こちら、あおば管制。' + cap.name + '艦長、居住惑星のそばを回る軌道ステーション「あおば」へようこそ。地表からシャトルで上がってこられたばかりですね。貴艦は第6バースに接舷しています。接舷中の艦と沖待ちの艦が多い港ですので、港内では管制の指示に従ってください。' },
     { who: GUIDE, text: cap.name + '艦長、着任おめでとうございます。教導士官の榊原凛です。' + home.label + 'からの赴任ですね。' + org.line },
     { who: GUIDE, text: 'まず、クルーを紹介します。本日付で着任した、艦長の部下たちです。', officersHtml: offHtml },
-    { who: HELM, text: 'そして艦長の船です。' + tr.shipClass + '「' + tr.shipName + '」。' + tr.desc + '操船は私たち航法と艦載AI「イオ」が行います。艦長の仕事は判断と責任です。' },
+    { who: HELM, text: 'そして艦長の船です。' + tr.shipClass + '「' + tr.shipName + '」。' + tr.desc + '操船は私たち航法と艦載AI「'+aiName()+'」が行います。艦長の仕事は判断と責任です。' },
     { who: GUIDE, text: 'このあと艦橋で、居住惑星への観光航行——処女航海の計画を承認していただきます。失敗のない航行ですから、気楽にどうぞ。では艦橋へ。' }
   ];
   portSceneIdx = 0;
@@ -2216,7 +2432,7 @@ function startPrologueSteps(){
     steps: [
       {
         title: 'A1: 観光航海計画の承認',
-        desc: '榊原「まず航海計画を立てます。航行AI『イオ』が計算し、航法士官が提案しますから、艦長は承認するだけです。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
+        desc: '榊原「まず航海計画を立てます。航行AI『'+aiName()+'』が計算し、航法士官が提案しますから、艦長は承認するだけです。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
         hl: '#btn-plan',
         autoAction: () => {
           openPlanPanel({
@@ -2230,13 +2446,13 @@ function startPrologueSteps(){
       },
       {
         title: 'A2: 艦橋からの視界確認（カメラ回転）',
-        desc: '榊原「巡航中に画面をドラッグして、周囲の宇宙を見渡してみましょう」',
+        desc: '榊原「巡航中です。周囲の宇宙をよく見渡しておきましょう。星も、他の艦も、ここから見えます」画面をドラッグすると視点を回せます',
         hl: null,
         autoAction: () => { camAzAccum += 0.4; cam.az += 0.4; }
       },
       {
-        title: 'A3: 時間倍率の変更（3x以上）',
-        desc: '榊原「広い宇宙では時間を早送りできます。下の時間倍率を 3x 以上に上げてみましょう（確認できたら戻しても構いません）」',
+        title: 'A3: 待機（時間を進める）',
+        desc: '榊原「この航程は到着まで、艦長に判断いただくことは何もありません。何かあれば当直がお呼びしますから、艦長はお休みください」【システム】航行中は下の「待機（時間を進める）」で、次の報告が来るまで時間を進められます。×3 以上に上げてみましょう（※時間送りは試作版だけの便宜機能です。オンライン版では世界の時間は全員で共有され、早回しはありません）',
         hl: '[data-warp="3"]',
         autoAction: () => { setWarp(3); }
       },
@@ -2269,7 +2485,7 @@ function startPrologueSteps(){
     ]
   };
   S.target = hab;
-  showOfficerPopup(GUIDE, 'まず航海計画を立てます。「航海計画」ボタンを押してください。');
+  showOfficerPopup(GUIDE, 'まず航海計画を立てます。航法士官が案を用意しています。ご確認をお願いします。');
   renderTutorialUI();
   setTimeout(()=>{
     if(S && S.prologue && S.tutorial && S.tutorial.step === 0){
@@ -2292,7 +2508,7 @@ function initMission1Tutorial(){
     skipped: false,
     nextActionText: '教導士官のブリーフィングを確認して「航海計画」を開こう',
     onPlanOpened: () => {
-      showOfficerPopup(GUIDE, 'Δv（デルタブイ）は「あとどれだけ噴射できるか。燃料の残量みたいなもの」です。案を選んで「出航」を押しましょう。');
+      showOfficerPopup(GUIDE, 'Δv（デルタブイ）は「あとどれだけ噴射できるか。燃料の残量みたいなもの」です。案が決まれば、出航の号令をお願いします。');
     },
     onDeparted: () => {
       if(S.tutorial.step <= 1){
@@ -2314,7 +2530,7 @@ function initMission1Tutorial(){
       },
       {
         title: '1. 航海計画の承認',
-        desc: '航行AI『イオ』が計算し、航法士官が提示した計画を確認し、「出航用意よし — 出航」を押してください。復唱＝「命令を繰り返して、間違いがないか確認すること」です。',
+        desc: '航行AI『'+aiName()+'』が計算し、航法士官が提示した計画を確認し、「出航用意よし — 出航」を押してください。復唱＝「命令を繰り返して、間違いがないか確認すること」です。',
         hl: '#btn-depart',
         autoAction: () => {
           if(!document.getElementById('plan-panel').classList.contains('open')) openMissionPlanPanel();
@@ -2375,10 +2591,10 @@ function updateTutorialAndPrologue(simDt){
     const hab = S.planets[1] || S.planets[0];
     if(tut.step === 1 && camAzAccum >= 0.35){
       tut.step = 2; tut.stuckTime = 0; playSfx('click');
-      showOfficerPopup(GUIDE, '視界確認よし。次は時間倍率を 3x 以上に上げてみましょう。');
+      showOfficerPopup(GUIDE, '視界確認よし。この先は静かな航程です。艦長は当直に任せてお休みください。何かあれば当直がお呼びします。');
     } else if(tut.step === 2 && S.warp >= 3){
       tut.step = 3; tut.stuckTime = 0; playSfx('click');
-      showOfficerPopup(GUIDE, '時間倍率の確認よし。必要なら 1x に戻しても構いません。まもなく居住惑星に到着します。');
+      showOfficerPopup(GUIDE, 'その調子です。まもなく居住惑星に到着します。静かな航程ですから、どうぞお休みください。');
     } else if(tut.step === 3){
       const d = Math.hypot(S.ship.x - hab.x, S.ship.y - hab.y, S.ship.z - hab.z);
       if(d <= 70){
@@ -2407,7 +2623,7 @@ function updateTutorialAndPrologue(simDt){
         playSfx('success');
         triggerCelebration('処女航海 完了！');
         logEvent('🎖️ 処女航海完了！功績 +30 pt 獲得。');
-        showOfficerPopup(GUIDE, '処女航海、見事でした！功績+30。さて、次は実務です。');
+        showOfficerPopup(GUIDE, '処女航海、見事でした！功績が認められました。さて、次は実務です。');
         setTimeout(()=>{ startMission(0); }, 3000);
       }
     }
@@ -2421,7 +2637,7 @@ function updateTutorialAndPrologue(simDt){
       tut.step = 4; tut.stuckTime = 0; playSfx('click');
     } else if(tut.step === 4 && S.planExec && (S.planExec.phase === 'captain' || S.planExec.phase === 'join') && !S.activeBurn && r.closing <= 1.6){
       tut.step = 5; tut.stuckTime = 0;
-      showOfficerPopup(GUIDE, '減速完了！ランデブーとは「相手と同じ場所に、同じ速さで並ぶこと」。「速度同調」を押して速力を合わせましょう！');
+      showOfficerPopup(GUIDE, '減速完了！ランデブーとは「相手と同じ場所に、同じ速さで並ぶこと」。ここからは艦長の「速度同調」の指示で、速力を合わせます！');
     } else if(tut.step === 5 && r.rel <= 0.35 && S.lastOrder === 'match'){
       tut.step = 6; tut.stuckTime = 0;
       if(S.planExec) S.planExec.manualModified = false;
@@ -2622,7 +2838,14 @@ function buildWingMesh(){
 const container = document.getElementById('view3d');
 let renderer, scene, camera, sysGroup=null;
 let cam = { az:0.9, pol:1.02, dist:620, target:null, follow:false };
-let starMesh, planetMeshes=[], shipMesh, targetMesh, stationMesh=null, npcMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
+function frameCamOnShip(){
+  if(!S || !S.ship) return;
+  cam.follow = true;
+  if(cam.target) cam.target.set(S.ship.x, S.ship.y, S.ship.z);
+  else cam.target = new THREE.Vector3(S.ship.x, S.ship.y, S.ship.z);
+  setCamButtons();
+}
+let starMesh, planetMeshes=[], shipMesh, targetMesh, stationMesh=null, npcMeshes=[], portCraftMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
 let frameCount = 0;
 
 function buildStationMesh(){
@@ -2642,7 +2865,10 @@ function buildNpcMesh(color){
   const mat = new THREE.MeshStandardMaterial({ color, metalness:0.45, roughness:0.4, emissive:0x111827 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 6.2), mat);
   grp.add(body);
-  grp.add(glowSprite(color, 18, 0.45));
+  const flame = new THREE.Mesh(new THREE.ConeGeometry(0.85, 3.4, 10), new THREE.MeshBasicMaterial({ color:0xffc46b }));
+  flame.rotation.x = -Math.PI / 2; flame.position.set(0, 0, -4.9);
+  grp.add(flame);
+  grp.add(glowSprite(color, 30, 0.65));
   return grp;
 }
 function updatePlanLineMesh(){
@@ -2768,7 +2994,8 @@ function buildSystemMeshes(){
   corridorGroup.add(corridorMidRing);
   sysGroup.add(corridorGroup);
 
-  npcMeshes = (S.npcs || []).map(n => { const m = buildNpcMesh(n.color); sysGroup.add(m); return m; });
+  npcMeshes = (S.npcs || []).map(n => { const m = buildNpcMesh(n.color); m.scale.setScalar(1.35); sysGroup.add(m); return m; });
+  portCraftMeshes = (S.portCraft || []).map(c => { const m = buildNpcMesh(c.color); m.scale.setScalar(c.scale || 1.3); sysGroup.add(m); return m; });
 
   wingMeshes = S.wings.map(()=>{
     const m = buildWingMesh(); sysGroup.add(m); return m;
@@ -2858,12 +3085,13 @@ function setupCameraControls(){
       cam.az-=daz; camAzAccum += Math.abs(daz); cam.pol=Math.max(0.05, Math.min(Math.PI-0.05, cam.pol-dy*0.005));
     }
   });
-  el.addEventListener('wheel', e=>{ e.preventDefault(); cam.dist=Math.max(40, Math.min(2400, cam.dist*(1+e.deltaY*0.001))); }, { passive:false });
+  el.addEventListener('wheel', e=>{ e.preventDefault(); camDistTarget=null; cam.dist=Math.max(40, Math.min(2400, cam.dist*(1+e.deltaY*0.001))); }, { passive:false });
   el.addEventListener('touchstart', e=>{ if(e.touches.length===1){ dragging=true; panning=false; lx=e.touches[0].clientX; ly=e.touches[0].clientY; } }, { passive:true });
   el.addEventListener('touchmove', e=>{ if(dragging&&e.touches.length===1){ const dx=e.touches[0].clientX-lx, dy=e.touches[0].clientY-ly; lx=e.touches[0].clientX; ly=e.touches[0].clientY; const daz=dx*0.006; cam.az-=daz; camAzAccum+=Math.abs(daz); cam.pol=Math.max(0.05,Math.min(Math.PI-0.05,cam.pol-dy*0.006)); } }, { passive:true });
   el.addEventListener('touchend', ()=>{ dragging=false; });
 }
 function updateCamera(){
+  if(camDistTarget){ cam.dist += (camDistTarget - cam.dist) * 0.045; if(Math.abs(camDistTarget - cam.dist) < 3){ cam.dist = camDistTarget; camDistTarget = null; } }
   if(cam.follow && S){
     cam.target.lerp(new THREE.Vector3(S.ship.x,S.ship.y,S.ship.z), 0.12);
   }
@@ -2901,6 +3129,9 @@ function syncMeshes(){
     S.npcs.forEach((n,i)=>{
       if(npcMeshes[i]){ npcMeshes[i].position.set(n.x,n.y,n.z); orientShip(npcMeshes[i], n); }
     });
+    if(S.portCraft){
+      S.portCraft.forEach((c,i)=>{ if(portCraftMeshes[i]) portCraftMeshes[i].position.set(c.x, c.y, c.z); });
+    }
   }
 
   // 進入コース描画
@@ -3037,6 +3268,7 @@ function updatePlanStatusUI(){
   }
   const pe = S.planExec;
   el.classList.add('visible');
+  maybeCruiseIntro();
   if(pe.deviated){
     el.innerHTML = '<span>⚠️ 計画から逸脱（このままでは到達不可）— 「計画続行」または「計画変更・再計算」を選択</span>'+
       '<div class="ps-actions"><button id="btn-ps-resume" class="teal">計画続行</button><button id="btn-ps-replan">計画変更・再計算</button></div>';
@@ -3051,8 +3283,12 @@ function updatePlanStatusUI(){
     document.getElementById('btn-ps-replan').onclick = () => { playSfx('click'); openMissionPlanPanel(); };
     return;
   }
-  const nextStr = pe.legType === 'simple' ? '目標近傍へ巡航中' : (pe.phase === 'cruise' ? '次の噴射: 減速（距離48で実施）' : '現フェーズ: '+pePhaseName(pe.phase));
-  el.innerHTML = '<span>🤖 航行AIイオ 運航中 — 計画フェーズ: <b>'+pePhaseName(pe.phase)+'</b> — '+nextStr+' ／ 残り見込み Δv '+pe.remDv.toFixed(1)+'・約'+Math.round(pe.remTime)+'秒</span>';
+  let nextStr;
+  if(pe.phase === 'undock') nextStr = '係留を解除し、微速で離舷中';
+  else if(pe.phase === 'harbor') nextStr = '出域点へ港内航行中（制限速度 2.4）';
+  else nextStr = pe.legType === 'simple' ? '目標近傍へ巡航中' : (pe.phase === 'cruise' ? '次の噴射: 減速（距離48で実施）' : '現フェーズ: '+pePhaseName(pe.phase));
+  const ffSuffix = (pe.phase === 'undock' || pe.phase === 'harbor') ? '' : (S.warp > 1 ? '（×'+S.warp+' で早送り中）' : ' — 「待機」で時間を進められます');
+  el.innerHTML = '<span>🤖 航行AI '+aiName()+' 運航中 — 計画フェーズ: <b>'+pePhaseName(pe.phase)+'</b> — '+nextStr+' ／ 残り見込み Δv '+pe.remDv.toFixed(1)+'・約'+Math.round(pe.remTime)+'秒'+ffSuffix+'</span>';
 }
 
 function updateOrderBar(){
@@ -3083,18 +3319,30 @@ function updateManualUI(){
 }
 
 function triggerTrafficAdvisory(){
-  if(!S || !S.npcs || S.npcs.length === 0) return;
-  const npc = S.npcs[Math.floor(Math.random() * S.npcs.length)];
-  const templates = [
-    'あおば管制: 前方航路に'+npc.name+'。針路が交差します、見張り厳に。',
-    'あおば管制: '+npc.name+'が周辺空域を通過中。各艦、安全間隔を維持せよ。',
-    'あおば管制: 「'+SHIP_CALLSIGN+'」、付近を'+npc.name+'が航行中。現在の進入路は安全です。',
-    'あおば管制: 航路哨戒中の哨戒艇が付近を警戒中。最近は海賊の噂もある。見張り厳に。'
-  ];
-  if(S.captain && S.captain.track === 'patrol') templates.push('あおば管制: 「' + SHIP_CALLSIGN + '」、哨戒ご苦労。航路付近に不審な熱源の報告あり。海賊の噂の出所かもしれません。');
-  const msg = templates[Math.floor(Math.random() * templates.length)];
+  if(!S) return;
+  const moving = computeContacts().filter(c => c.cat === 'moving');
+  let msg = null;
+  if(moving.length){
+    moving.sort((a,b)=>a.dist-b.dist);
+    const npc = moving[0];
+    const templates = [
+      'あおば管制: 前方航路に'+npc.name+'（距離 '+Math.round(npc.dist)+'）。針路が交差します、見張り厳に。',
+      'あおば管制: '+npc.name+'が周辺空域を通過中。各艦、安全間隔を維持せよ。',
+      'あおば管制: 「'+SHIP_CALLSIGN+'」、付近を'+npc.name+'が航行中。現在の針路は安全です。'
+    ];
+    if(S.captain && S.captain.track === 'patrol') templates.push('あおば管制: 「'+SHIP_CALLSIGN+'」、哨戒ご苦労。航路付近に不審な熱源の報告あり。海賊の噂の出所かもしれません。');
+    msg = templates[Math.floor(Math.random() * templates.length)];
+  } else if(S.portCraft){
+    const hold = S.portCraft.find(c => c.cat === 'holding');
+    if(hold) msg = 'あおば管制: 沖待ちの'+hold.name+'、接舷順序を待機中。港内各艦、制限速度を維持せよ。';
+  }
+  if(!msg) return;
   logEvent('📡 ' + msg);
   setStatusMsg(msg);
+  if(!chartIntroShown && S.tutorial && !S.tutorial.skipped){
+    chartIntroShown = true;
+    setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '周りの交通は海図で確認できます。表示範囲は航行AIの'+aiName()+'が状況で切り替えますが、艦長から指定もできます。'); }, 1500);
+  }
 }
 
 let hudAuxTimer = 0;
@@ -3360,6 +3608,8 @@ function togglePause(){ if(!S) return; if(S.warp===0){ setWarp(prevWarp); } else
 function setWarp(w){
   if(S) S.warp=w;
   document.querySelectorAll('[data-warp]').forEach(b=>b.classList.toggle('active', Number(b.dataset.warp)===w));
+  const nowEl=document.getElementById('ff-now');
+  if(nowEl) nowEl.textContent = w===0 ? '停止中' : (w===1 ? '等速で見守り中' : '×'+w+' 早送り中');
 }
 document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', ()=>{
   playSfx('click');
@@ -3387,6 +3637,325 @@ document.getElementById('btn-rm-title').addEventListener('click', ()=>{
   gameStarted = false;
 });
 
+// ---------- 航行AI名・一度だけの案内フラグ ----------
+function aiName(){ return (S && S.captain && S.captain.aiName) || (typeof captainProfile !== 'undefined' && captainProfile && captainProfile.aiName) || 'イオ'; }
+let cruiseIntroShown = false, chartIntroShown = false, depExplainedShown = false;
+let camDistTarget = null;
+function maybeCruiseIntro(){
+  if(cruiseIntroShown || !S || !S.planExec) return;
+  if(!(S.prologue || currentMissionIdx === 0)) return;
+  if(S.planExec.phase !== 'cruise') return;
+  cruiseIntroShown = true;
+  showOfficerPopup(GUIDE, '航行中は、艦長が判断することは特にありません。ですが、艦内を回って乗組員と話す時間です。どうぞ、ゆっくり見て回ってください。');
+}
+
+// ---------- コンタクト（交通） ----------
+function computeContacts(){
+  if(!S || !S.ship) return [];
+  const out = [];
+  const push = (name, cat, catLabel, b, gate) => {
+    const dx = b.x - S.ship.x, dy = b.y - S.ship.y, dz = b.z - S.ship.z;
+    const dist = Math.hypot(dx, dy, dz);
+    const rvx = (b.vx || 0) - S.ship.vx, rvy = (b.vy || 0) - S.ship.vy, rvz = (b.vz || 0) - S.ship.vz;
+    const radial = dist > 0.01 ? (dx * rvx + dy * rvy + dz * rvz) / dist : 0;
+    out.push({ name, cat, catLabel, x: b.x, y: b.y, z: b.z, dist, course: radial < -0.4 ? '接近中' : (radial > 0.4 ? '離脱中' : '並行'), gate: gate || '' });
+  };
+  if(S.station && S.target !== S.station) push(S.station.name, 'station', 'ステーション', S.station);
+  if(S.target && S.target !== S.ship) push(S.target.name, 'target', S.prologue ? 'ステーション' : '目標艦', S.target);
+  (S.npcs || []).forEach(n => push(n.name, 'moving', n.kind === 'patrol' ? '軍艦（航路）' : '民間船（航路）', n));
+  (S.portCraft || []).forEach(c => push(c.name, c.cat, c.cat === 'docked' ? '接舷中' : (c.cat === 'holding' ? '沖待ち' : '作業艇'), c, c.gate));
+  out.sort((a, b) => a.dist - b.dist);
+  return out;
+}
+function renderTrafficList(){
+  const el = document.getElementById('traffic-list');
+  if(!el || !S) return;
+  const cs = computeContacts();
+  if(!cs.length){ el.innerHTML = '<div style="font-size:12px;color:var(--muted)">周辺にコンタクトはありません。</div>'; return; }
+  el.innerHTML = cs.map(c => '<div class="traffic-row"><span class="tn">' + c.name + '</span><span class="tm">' + c.catLabel + (c.gate ? '・' + c.gate : '') + ' ／ 距離 ' + c.dist.toFixed(0) + ' ／ ' + c.course + '</span></div>').join('')
+    + (S.portCraft ? '<div style="font-size:11px;color:var(--muted);margin-top:4px">あおば 現在の空きゲート：第3ゲート（到着艦用）</div>' : '');
+}
+
+// ---------- 港湾交通（あおば）: 接舷艦・沖待ち・作業艇（レール運動、重い物理なし） ----------
+function buildPortCraft(){
+  const list = [];
+  if(!S || !S.station){ if(S) S.portCraft = list; return list; }
+  const D = [
+    { name:'輸送船「しらぬい」', cat:'docked', gate:'第1ゲート', color:0xfda4af, off:{ x:16, y:6, z:4 }, scale:1.5 },
+    { name:'定期船「あかし」', cat:'docked', gate:'第2ゲート', color:0xfde68a, off:{ x:-13, y:12, z:-6 }, scale:1.4 },
+    { name:'貨物船「だいこく」', cat:'docked', gate:'第4ゲート', color:0x93c5fd, off:{ x:4, y:-17, z:7 }, scale:1.6 },
+    { name:'哨戒艦「ゆうぎり」', cat:'docked', gate:'第5ゲート', color:0xc4b5fd, off:{ x:-7, y:-11, z:-13 }, scale:1.3 },
+    { name:'輸送船「とよかぜ」', cat:'holding', color:0xfcd34d, off:{ x:58, y:22, z:10 }, scale:1.5, ph:0.0 },
+    { name:'貨物船「みかさ」', cat:'holding', color:0xa5b4fc, off:{ x:-48, y:40, z:-14 }, scale:1.5, ph:2.1 },
+    { name:'連絡艇 1号', cat:'craft', color:0x7dd3fc, offA:{ x:10, y:2, z:2 }, offB:{ x:52, y:20, z:9 }, period:46, ph:0.0, scale:0.8 },
+    { name:'作業艇 2号', cat:'craft', color:0x86efac, offA:{ x:-12, y:10, z:-5 }, offB:{ x:-44, y:36, z:-12 }, period:58, ph:0.4, scale:0.8 },
+    { name:'連絡艇 3号', cat:'craft', color:0xf9a8d4, offA:{ x:3, y:-15, z:6 }, offB:{ x:24, y:-46, z:16 }, period:52, ph:0.7, scale:0.8 }
+  ];
+  S.portCraft = D.map(d => Object.assign({ x:0, y:0, z:0, vx:0, vy:0, vz:0 }, d));
+  return S.portCraft;
+}
+function updatePortCraft(){
+  if(!S || !S.station || !S.portCraft) return;
+  const st = S.station;
+  const rp = Math.hypot(st.x, st.y, st.z) || 1;
+  const R = { x: st.x / rp, y: st.y / rp, z: st.z / rp };
+  const vp = Math.hypot(st.vx, st.vy, st.vz) || 1;
+  const T = { x: st.vx / vp, y: st.vy / vp, z: st.vz / vp };
+  const N = { x: R.y * T.z - R.z * T.y, y: R.z * T.x - R.x * T.z, z: R.x * T.y - R.y * T.x };
+  for(const c of S.portCraft){
+    let o = c.off;
+    if(c.cat === 'holding'){
+      const a = S.time * 0.01 + (c.ph || 0);
+      const ca = Math.cos(a), sa = Math.sin(a);
+      o = { x: c.off.x * ca - c.off.y * sa, y: c.off.x * sa + c.off.y * ca, z: c.off.z };
+    } else if(c.cat === 'craft'){
+      const u = 0.5 + 0.5 * Math.sin((S.time / c.period) * Math.PI * 2 + (c.ph || 0) * Math.PI * 2);
+      o = { x: c.offA.x + (c.offB.x - c.offA.x) * u, y: c.offA.y + (c.offB.y - c.offA.y) * u, z: c.offA.z + (c.offB.z - c.offA.z) * u };
+    }
+    c.x = st.x + R.x * o.x + T.x * o.y + N.x * o.z;
+    c.y = st.y + R.y * o.x + T.y * o.y + N.y * o.z;
+    c.z = st.z + R.z * o.x + T.z * o.y + N.z * o.z;
+    c.vx = st.vx; c.vy = st.vy; c.vz = st.vz;
+  }
+}
+
+// ---------- 3D 名前ラベル ----------
+const npcLabelPool = [];
+function updateNpcLabels(){
+  const wrap = document.getElementById('npc-labels');
+  if(!wrap) return;
+  if(!camera || !S || !gameStarted){ wrap.style.display = 'none'; return; }
+  wrap.style.display = 'block';
+  const cs = computeContacts().filter(c => (c.cat === 'station' || c.cat === 'target') ? c.dist < 340 : c.dist < 200);
+  const rect = container.getBoundingClientRect();
+  cs.forEach((c, i) => {
+    let el = npcLabelPool[i];
+    if(!el){ el = document.createElement('div'); el.className = 'npc-label'; wrap.appendChild(el); npcLabelPool.push(el); }
+    _proj.set(c.x, c.y, c.z).project(camera);
+    if(_proj.z > 1 || Math.abs(_proj.x) > 0.95 || Math.abs(_proj.y) > 0.95){ el.style.display = 'none'; return; }
+    el.style.display = 'block';
+    el.textContent = c.name;
+    el.style.left = (rect.left + (_proj.x * 0.5 + 0.5) * rect.width) + 'px';
+    el.style.top = (rect.top + (-_proj.y * 0.5 + 0.5) * rect.height) + 'px';
+  });
+  for(let i = cs.length; i < npcLabelPool.length; i++) npcLabelPool[i].style.display = 'none';
+}
+
+// ---------- 艦内生活（巡航時間） ----------
+const CHAT_LINES = {
+  '榊原 凛': [
+    '訓練は順調です。艦長の判断は的確だと、当直からも報告が上がっています。',
+    '慌てなくて大丈夫です。宇宙では、待てる艦長が一番強い。',
+    'この航程が終わったら、港で少し休みましょう。顔を出すだけで、人のつながりは育ちます。'
+  ],
+  '三浦 葵': [
+    '針路は安定しています。イオの計画どおり、誤差は許容範囲内です。',
+    '星図を見るのは好きなんです。この宙域は、民間船と軍艦が同じ航路を使うんですよ。',
+    '次の噴射まで、まだ余裕があります。コーヒーでも淹れましょうか。'
+  ],
+  '佐藤 澪': [
+    '戦術盤は静かです。今のところ、不審な動きはありません。',
+    '哨戒の噂話を聞きました。平和な航路ほど、用心が要ります。',
+    '艦長の采配、勉強になります。次は私にも現場判断を任せてください。'
+  ],
+  '高橋 蓮': [
+    '補給の台帳はぴったり合っています。積荷の固定も完璧です。',
+    '次の寄港で、新鮮な食料を積めるといいですね。',
+    '物資は命綱です。無駄遣いしない艦長で助かります。'
+  ],
+  'イリナ・コワルスカ': [
+    '港の知人から、面白い噂を聞きました。今度お話ししますね。',
+    '外交は人と人です。艦長のお顔を覚えてもらうのが第一歩ですよ。',
+    '次の港では、ぜひ私に交渉の場を作ってください。'
+  ],
+  '陳 大樹': [
+    '機関は快調です。音を聞けば、機嫌が分かります。',
+    '出力に余裕を持たせるのが、私のやり方です。',
+    'この艦は素直な子です。大事にしてやってください、艦長。'
+  ]
+};
+const CHAT_GENERIC = [
+  '当直は順調です。特に変わったことはありません。',
+  '長い航程ですね。こういう時間に、艦のことをよく知るんです。',
+  '次の寄港が楽しみです。港には港の仕事と、出会いがあります。'
+];
+function crewRoster(){
+  const list = [];
+  if(S.tutorial && !S.tutorial.skipped) list.push(GUIDE);
+  list.push(HELM);
+  (S.officers || []).forEach(o => list.push(o));
+  list.forEach(o => { if(!o.rel) o.rel = { aff:0, trust:0 }; if(o.chatIdx === undefined) o.chatIdx = 0; });
+  return list;
+}
+function talkToCrew(i){
+  const o = crewRoster()[i]; if(!o) return;
+  const pool = (CHAT_LINES[o.name] || []).concat(CHAT_GENERIC);
+  let line = pool[o.chatIdx % pool.length];
+  if(o.name === '陳 大樹' && S.planExec && S.planExec.active) line = '機関は計画どおり回っています。フェーズ「' + pePhaseName(S.planExec.phase) + '」、異常なし。';
+  if(o.name === '高橋 蓮' && S.res.sup < 25) line = '正直、補給が少し心もとないです。次の港で優先的に積み増しを。';
+  if(o.name === '佐藤 澪' && S.captain && S.captain.track === 'patrol') line = '哨戒任務は静かすぎます。静かな航路ほど、海賊は油断を突いてきます。';
+  line = line.split('イオ').join(aiName());
+  o.chatIdx++;
+  o.rel.trust = Math.min(10, o.rel.trust + 1);
+  let fx = '（' + o.name + ' への信頼 +1）';
+  if(o.chatIdx % 3 === 0){ o.rel.aff = Math.min(10, o.rel.aff + 1); fx += '（好感 +1）'; }
+  const el = document.getElementById('ship-dialogue');
+  if(el) el.innerHTML = '<span class="who">' + o.name + '（' + (o.post || o.role || '') + '）</span>「' + line + '」 <span style="color:var(--muted);font-size:10px">' + fx + '</span>';
+  renderShipCrew();
+}
+const SHIP_ROOMS = [
+  { id:'bridge', name:'艦橋', posts:['航法', '戦術', '教導'], line:'当直の士官が静かに計器を見守っている。判断が要る局面になれば、すぐ艦長へ報告が上がる。' },
+  { id:'engine', name:'機関室', posts:['機関'], line:'機関の低い唸りが床を伝う。出力は安定し、航行AIが微調整を続けている。' },
+  { id:'cargo', name:'貨物庫', posts:['補給'], line:'積荷は固定され、残量は補給士官の台帳どおり。揺れひとつない。' },
+  { id:'comms', name:'通信室', posts:['渉外'], line:'航路上の各局との定時連絡が記録されている。今のところ新しい呼びかけはない。' },
+  { id:'quarters', name:'居住区', posts:[], line:'非番の乗組員が休んでいる。長い航程では、休める時に休むのが規律だ。' },
+  { id:'obs', name:'観測窓', posts:[], line:'窓の外では星々がゆっくり流れていく。誰もいない、静かな場所だ。' }
+];
+function visitRoom(id){
+  const r = SHIP_ROOMS.find(x => x.id === id); if(!r) return;
+  const here = crewRoster().filter(o => r.posts.includes(o.post || o.role)).map(o => o.name);
+  const el = document.getElementById('ship-room-line');
+  if(el) el.innerHTML = '<span class="who">' + r.name + '</span>' + r.line + '<br><span style="color:var(--muted);font-size:10px">在室：' + (here.length ? here.join('、') : '今は誰もいない') + '</span>';
+}
+const SHIP_OPS = [
+  { id:'engine', name:'機関点検', cd:20, log:'🛠 機関点検を実施。異常なし。', lines:['機関点検完了。出力・温度とも正常です。', '点検完了。微細な振動も許容範囲内でした。'] },
+  { id:'rounds', name:'艦内見回り', cd:20, log:'🛠 艦内見回りを実施。各区画、異常なし。', lines:['見回り完了。各区画、異常ありません。', '見回り完了。非番の者もよく休んでいます。'] },
+  { id:'drill', name:'当直訓練', cd:30, log:'🛠 当直訓練を実施。緊急手順を確認した。', lines:['訓練完了。緊急時の対応手順を再確認しました。', '訓練完了。当直の連携が少し良くなった気がします。'] }
+];
+function doShipOp(id){
+  const op = SHIP_OPS.find(x => x.id === id); if(!op || !S) return;
+  const el = document.getElementById('ship-op-line');
+  const last = S.opLast[id] || -999;
+  if(S.time - last < op.cd){ if(el) el.textContent = '「' + op.name + '」はつい先ほど実施しました。少し間隔を置きましょう。'; return; }
+  S.opLast[id] = S.time;
+  S.opCount = S.opCount || {};
+  const n = S.opCount[id] || 0; S.opCount[id] = n + 1;
+  if(el) el.innerHTML = '<span class="who">' + op.name + '</span>' + op.lines[n % op.lines.length];
+  logEvent(op.log);
+  renderShipOps();
+}
+function renderShipCrew(){
+  const wrap = document.getElementById('ship-crew'); if(!wrap || !S) return;
+  wrap.innerHTML = '<div class="ship-btns">' + crewRoster().map((o, i) => '<button data-crew="' + i + '">' + o.name + '<small>' + (o.post || o.role || '') + ' ／ 信頼 ' + o.rel.trust + '・好感 ' + o.rel.aff + '</small></button>').join('') + '</div>';
+  wrap.querySelectorAll('[data-crew]').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); talkToCrew(Number(b.dataset.crew)); }));
+}
+function renderShipRooms(){
+  const wrap = document.getElementById('ship-rooms'); if(!wrap) return;
+  wrap.innerHTML = '<div class="ship-btns">' + SHIP_ROOMS.map(r => '<button data-room="' + r.id + '">' + r.name + '</button>').join('') + '</div>';
+  wrap.querySelectorAll('[data-room]').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); visitRoom(b.dataset.room); }));
+}
+function renderShipOps(){
+  const wrap = document.getElementById('ship-ops'); if(!wrap || !S) return;
+  wrap.innerHTML = '<div class="ship-btns">' + SHIP_OPS.map(op => { const left = Math.max(0, Math.ceil(op.cd - (S.time - (S.opLast[op.id] || -999)))); return '<button data-op="' + op.id + '"' + (left > 0 ? ' disabled' : '') + '>' + op.name + (left > 0 ? '<small>あと ' + left + ' 秒</small>' : '<small>実施できます</small>') + '</button>'; }).join('') + '</div>';
+  wrap.querySelectorAll('[data-op]').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); doShipOp(b.dataset.op); }));
+}
+function renderShipPanel(){ renderShipCrew(); renderShipRooms(); renderShipOps(); }
+
+// ---------- 海図（表示範囲は航行AIが自動管理／艦長指定で上書き） ----------
+const CHART_RANGES = { port:{ label:'港内', half:60 }, local:{ label:'近傍', half:230 }, system:{ label:'広域', half:780 } };
+let chartState = { mode:'auto', range:'system', lastAutoT:-99, open:false };
+function chartNote(txt, isAi){
+  const el = document.getElementById('chart-note');
+  if(el) el.textContent = isAi ? (aiName() + '：' + txt) : txt;
+}
+function renderChartHead(){
+  const rn = document.getElementById('chart-range-name'); if(rn) rn.textContent = CHART_RANGES[chartState.range].label;
+  const mn = document.getElementById('chart-mode-name'); if(mn) mn.textContent = chartState.mode === 'auto' ? (aiName() + '自動') : '艦長指定';
+  const an = document.getElementById('chart-ai-name'); if(an) an.textContent = aiName();
+  document.querySelectorAll('#chart-range-btns button').forEach(b => {
+    b.classList.toggle('active', b.dataset.range === chartState.mode);
+    if(b.dataset.range === 'auto') b.textContent = '🤖 自動（' + aiName() + 'に任せる）';
+  });
+}
+function setChartMode(m){
+  if(m === 'auto'){ chartState.mode = 'auto'; chartState.lastAutoT = -99; evalChartAuto(true); return; }
+  chartState.mode = m; chartState.range = m;
+  chartNote('艦長指定：' + CHART_RANGES[m].label + '表示に固定しました。自動に戻すには「自動（' + aiName() + 'に任せる）」。', false);
+  renderChartHead();
+}
+function evalChartAuto(force){
+  if(chartState.mode !== 'auto' || !S || !S.ship) return;
+  if(!force && S.time - chartState.lastAutoT < 6) return;
+  let want = 'system', reason = '広い宙域を航行中です。広域表示が見やすいです。';
+  const pe = S.planExec;
+  if(S.docked || (pe && (pe.phase === 'undock' || pe.phase === 'harbor'))){ want = 'port'; reason = '港内作業中です。ゲートと周辺の艦が見えるよう、港内表示にしました。'; }
+  else if(S.berthing){ want = 'local'; reason = '接舷作業中です。近傍表示にしました。'; }
+  else if(pe && (pe.phase === 'join' || pe.phase === 'final')){ want = 'local'; reason = '進入中です。進入コースと交通が見えるよう、近傍表示にしました。'; }
+  const near = computeContacts().filter(c => c.dist < 50).length;
+  if(near >= 3 && want === 'system'){ want = 'local'; reason = '接近する交通が増えたため、近傍表示に切り替えました。'; }
+  if(near >= 3 && want === 'local' && (S.docked || (pe && pe.phase === 'harbor'))){ want = 'port'; reason = '港内の交通が混んできたため、港内表示に切り替えました。'; }
+  if(want !== chartState.range){
+    chartState.range = want; chartState.lastAutoT = S.time;
+    chartNote(reason, true);
+    logEvent('🧭 ' + aiName() + ': 海図を' + CHART_RANGES[want].label + '表示に切り替えました。');
+    renderChartHead();
+    camDistTarget = want === 'port' ? 130 : (want === 'local' ? 300 : 620);
+  }
+}
+function renderChart(){
+  if(!chartState.open || !S || !S.ship) return;
+  evalChartAuto(false);
+  renderChartHead();
+  const cv = document.getElementById('chart-canvas'); if(!cv) return;
+  const ctx = cv.getContext('2d');
+  const W = cv.width, H = cv.height, half = CHART_RANGES[chartState.range].half;
+  const cen = chartState.range === 'system' ? { x:0, z:0 } : { x:S.ship.x, z:S.ship.z };
+  ctx.clearRect(0, 0, W, H);
+  ctx.strokeStyle = 'rgba(56,189,248,0.14)'; ctx.lineWidth = 1;
+  for(let i = 1; i <= 4; i++){ ctx.beginPath(); ctx.arc(W / 2, H / 2, (W / 2) * i / 4, 0, Math.PI * 2); ctx.stroke(); }
+  const px = (x, z) => [W / 2 + (x - cen.x) / half * (W / 2), H / 2 + (z - cen.z) / half * (H / 2)];
+  const dot = (x, z, color, r, label) => {
+    const a = px(x, z), X = a[0], Y = a[1];
+    if(X < -24 || X > W + 24 || Y < -24 || Y > H + 24) return;
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(X, Y, r, 0, Math.PI * 2); ctx.fill();
+    if(label){ ctx.fillStyle = '#e2e8f0'; ctx.font = '11px sans-serif'; ctx.fillText(label, X + 7, Y - 5); }
+  };
+  dot(0, 0, '#ffd166', chartState.range === 'system' ? 8 : 5, chartState.range === 'system' ? S.sys.name : '');
+  (S.planets || []).forEach(p => dot(p.x, p.z, '#7dd3fc', 4, chartState.range === 'system' ? p.name : ''));
+  if(S.target && chartState.range !== 'system'){
+    const f = approachFix(S.target);
+    const a1 = px(f.x, f.z), a2 = px(S.target.x, S.target.z);
+    ctx.strokeStyle = 'rgba(45,212,191,0.6)'; ctx.beginPath(); ctx.moveTo(a1[0], a1[1]); ctx.lineTo(a2[0], a2[1]); ctx.stroke();
+  }
+  const showLabels = chartState.range !== 'system';
+  computeContacts().forEach(c => {
+    const col = c.cat === 'docked' ? '#fda4af' : c.cat === 'holding' ? '#fcd34d' : c.cat === 'craft' ? '#7dd3fc' : (c.cat === 'station' || c.cat === 'target') ? '#2dd4bf' : (c.catLabel.indexOf('軍艦') >= 0 ? '#c4b5fd' : '#e2e8f0');
+    dot(c.x, c.z, col, c.cat === 'craft' ? 2.5 : 3.5, showLabels ? c.name : '');
+  });
+  const sp = px(S.ship.x, S.ship.z);
+  ctx.fillStyle = '#58b4ff'; ctx.beginPath(); ctx.arc(sp[0], sp[1], 5, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#bfdbfe'; ctx.font = 'bold 11px sans-serif'; ctx.fillText('自艦', sp[0] + 8, sp[1] + 3);
+  const list = computeContacts().slice(0, 6).map(c => '<div class="traffic-row"><span class="tn">' + c.name + '</span><span class="tm">' + c.catLabel + ' ／ 距離 ' + c.dist.toFixed(0) + '</span></div>').join('');
+  const cc = document.getElementById('chart-contacts'); if(cc) cc.innerHTML = list;
+}
+function updateTrafficAndChart(){
+  if(!S) return;
+  renderTrafficList();
+  if(chartState.open) renderChart();
+  else evalChartAuto(false);
+}
+
+// ---------- 艦内／海図ボタン ----------
+document.getElementById('btn-ship').addEventListener('click', ()=>{
+  playSfx('click');
+  const dr = document.getElementById('drawer'); if(dr) dr.classList.add('open');
+  const tab = document.querySelector('[data-tab="ship"]'); if(tab) tab.click();
+  renderShipPanel();
+});
+document.getElementById('btn-chart').addEventListener('click', ()=>{
+  playSfx('click');
+  chartState.open = true;
+  document.getElementById('chart-panel').classList.add('open');
+  evalChartAuto(true);
+  renderChart();
+});
+document.getElementById('btn-chart-close').addEventListener('click', ()=>{
+  playSfx('click');
+  chartState.open = false;
+  document.getElementById('chart-panel').classList.remove('open');
+});
+document.querySelectorAll('#chart-range-btns button').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); setChartMode(b.dataset.range); renderChart(); }));
+
 // ---------- メインループ ----------
 let lastT=performance.now(), panelTimer=0, galaxyTimer=0, uiTimer=0;
 function animate(now){
@@ -3401,9 +3970,9 @@ function animate(now){
       S.trafficTimer-=dt;
       if(S.trafficTimer<=0){ triggerTrafficAdvisory(); S.trafficTimer=45+Math.random()*30; }
     }
-    syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker();
+    updatePortCraft(); syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker(); updateNpcLabels();
     uiTimer+=dt; panelTimer+=dt; galaxyTimer+=dt;
-    if(uiTimer>0.2){ uiTimer=0; updateNextActionUI(); updatePlanStatusUI(); updateOrderBar(); }
+    if(uiTimer>0.2){ uiTimer=0; updateNextActionUI(); updatePlanStatusUI(); updateOrderBar(); updateTrafficAndChart(); }
     if(panelTimer>0.25){ panelTimer=0; updatePanels(); }
     if(galaxyTimer>1.2){ galaxyTimer=0; renderGalaxy(); }
   }
