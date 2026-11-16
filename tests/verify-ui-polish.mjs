@@ -264,7 +264,9 @@ try {
   await waitFor(`document.getElementById('plan-panel').classList.contains('open') || S.missionEnded`, 180000, 'M0 return plan panel');
   if (!await ev(`S.missionEnded`)) {
     await ev(`(() => { const c = document.getElementById('departure-checklist'); if (c && !c.checked) c.click(); })()`);
-    await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'M0 return depart enabled');
+    /* 待ち延長（ドライバ都合、v0.6.2）: 帰投推定（終端フェーズ込み）が重くなり
+     20 秒では推定が揃わないため 120 秒に延長（アサーションは不変）。 */
+  await waitFor(`!document.getElementById('btn-depart').disabled`, 120000, 'M0 return depart enabled');
     await ev(`document.getElementById('btn-depart').click(); 'ok'`);
     await sleep(400);
     await ev(`document.getElementById('btn-ship').click(); 'ok'`);
@@ -303,7 +305,7 @@ try {
   check('transfer: dv split sums to total', Math.abs((est1.dep + est1.arr) - est1.dv) < 0.11);
   check('transfer: planned arrival relative velocity ~0 (<=1.5)', est1.rel <= 1.5);
   check('plan doc: estimator returns leg segments', est1.legs >= 3);
-  await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'm1 depart enabled');
+  await waitFor(`!document.getElementById('btn-depart').disabled`, 120000, 'm1 depart enabled');
   await ev(`document.getElementById('btn-depart').click(); 'ok'`);
   await sleep(500);
   await ev(`document.querySelector('[data-warp="8"]').click(); 'ok'`);

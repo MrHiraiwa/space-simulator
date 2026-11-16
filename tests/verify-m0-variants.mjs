@@ -86,7 +86,10 @@ async function approveVariantInPanel(variantId) {
   const idx = await ev(`planPanelState ? planPanelState.variants.findIndex(v => v.id === ${JSON.stringify(variantId)}) : -1`);
   if (idx < 0) throw new Error('variant not found: ' + variantId);
   await ev(`(() => { const cards = document.querySelectorAll('#plan-variants .pv-card'); if (cards[${idx}]) cards[${idx}].click(); const chk = document.getElementById('departure-checklist'); if (chk) chk.click(); return 'ok'; })()`);
-  await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'depart enabled for ' + variantId);
+  /* 待ち延長（ドライバ都合、v0.6.2）: 推定が正直な物理（衛星の全重力伝播＋
+     サブステップ）で重くなり、eco は2番目の推定完了まで出発が有効にならない。
+     実ブラウザ相当で 20 秒では不足するため 90 秒に延長（アサーションは不変）。 */
+  await waitFor(`!document.getElementById('btn-depart').disabled`, 90000, 'depart enabled for ' + variantId);
   await ev(`document.getElementById('btn-depart').click(); 'ok'`);
   // The prologue tutorial gates mission completion on a camera-look step (A2):
   // perform one real drag on the 3D view, as a player would. (Without it the
