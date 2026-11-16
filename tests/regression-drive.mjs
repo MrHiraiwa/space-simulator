@@ -75,7 +75,7 @@ try {
     await sleep(250);
   }
   await ev(`document.getElementById('btn-briefing-start').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3`, 60000, 'prologue plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3 && planPanelState.variants.every(x => x.est)`, 60000, 'prologue plan panel');
   await sleep(300);
   const pv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok, dv: x.est.dvTotal })), finite: [S.ship.x, S.ship.y, S.ship.z, S.ship.vx, S.ship.vy, S.ship.vz].every(Number.isFinite), docked: S.docked, shipLine: document.getElementById('plan-ship').textContent })`);
   check('prologue: ship state finite at plan panel', pv.finite);
@@ -103,7 +103,7 @@ try {
   await ev(`document.getElementById('btn-skip-prologue').click(); 'ok'`);
   await sleep(1200);
   await ev(`document.getElementById('btn-plan').click(); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3`, 60000, 'mission 1 plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') && planPanelState && planPanelState.variants && planPanelState.variants.length >= 3 && planPanelState.variants.every(x => x.est)`, 60000, 'mission 1 plan panel');
   await sleep(300);
   const mv = await ev(`({ v: planPanelState.variants.map(x => ({ id: x.id, ok: x.est.ok })), finite: [S.ship.x, S.ship.y, S.ship.z].every(Number.isFinite) })`);
   check('mission1: ship state finite at plan panel', mv.finite);

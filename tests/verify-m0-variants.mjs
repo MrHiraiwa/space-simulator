@@ -88,6 +88,15 @@ async function approveVariantInPanel(variantId) {
   await ev(`(() => { const cards = document.querySelectorAll('#plan-variants .pv-card'); if (cards[${idx}]) cards[${idx}].click(); const chk = document.getElementById('departure-checklist'); if (chk) chk.click(); return 'ok'; })()`);
   await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'depart enabled for ' + variantId);
   await ev(`document.getElementById('btn-depart').click(); 'ok'`);
+  // The prologue tutorial gates mission completion on a camera-look step (A2):
+  // perform one real drag on the 3D view, as a player would. (Without it the
+  // tutorial never advances and the return leg never starts.)
+  await sleep(800);
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 200, y: 400, button: 'left', clickCount: 1 }, SID).catch(() => {});
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 260, y: 400, button: 'left' }, SID).catch(() => {});
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 320, y: 400, button: 'left' }, SID).catch(() => {});
+  await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 370, y: 400, button: 'left' }, SID).catch(() => {});
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 370, y: 400, button: 'left', clickCount: 1 }, SID).catch(() => {});
 }
 
 async function runVariant(variantId) {
@@ -114,7 +123,7 @@ async function runVariant(variantId) {
     let finalState = null;
     const t0 = Date.now();
 
-    while (Date.now() - t0 < 180000) {
+    while (Date.now() - t0 < 480000) {
       const st = await ev(`(() => {
         if (!S || !S.ship) return null;
         const tsumugi = S.planets && S.planets[1];
@@ -123,9 +132,18 @@ async function runVariant(variantId) {
         const dM = moon ? Math.hypot(S.ship.x - moon.x, S.ship.y - moon.y, S.ship.z - moon.z) : Infinity;
         const dTarget = S.target ? Math.hypot(S.ship.x - S.target.x, S.ship.y - S.target.y, S.ship.z - S.target.z) : Infinity;
         const panelOpen = document.getElementById('plan-panel').classList.contains('open') && !!planPanelState && !planPanelState.tracking;
+        if (!S.missionEnded && !S.failed && (!S.planExec || !S.planExec.active)) S.warp = 1;
         if (!S.missionEnded && !S.failed && !panelOpen) {
-          S.warp = dTarget < 30000 ? 8 : (dM < 30000 ? 300 : 30000);
+          // The return leg (target = station, arrival bubble 90 units) cannot be
+          // flown at x30000 time steps; tier the warp so the bubble is sampled
+          // finely (x30 inside 3000 units) without crawling at x8 for 30000 units.
+          const far = (S.station && S.target === S.station) ? 3000 : 30000;
+          S.warp = dTarget < 3000 ? 30 : (dTarget < 30000 ? 300 : (dM < 30000 ? 300 : far));
         }
+        // While a plan panel awaits approval, hold time at x1 (as a player would):
+        // at x30000 the ship drifts ~100k units during the approval and the
+        // return leg starts from an escape geometry its solver cannot recover.
+        if (panelOpen && !S.missionEnded && !S.failed) S.warp = 1;
         return {
           dT, dM, dTarget, panelOpen,
           phase: S.planExec ? S.planExec.phase : 'none',

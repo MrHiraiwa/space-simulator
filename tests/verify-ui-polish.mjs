@@ -80,7 +80,8 @@ try {
   }
   await ev(`document.getElementById('btn-briefing-start').click(); 'ok'`);
   await waitFor(`document.getElementById('plan-panel').classList.contains('open')`, 60000, 'plan panel');
-  await sleep(800);
+  // v0.6.1: estimates fill asynchronously; wait until the first card carries real numbers
+  await waitFor(`(() => { const m = document.querySelector('.pv-meta'); return !!m && m.textContent.includes('出発噴射'); })()`, 60000, 'first variant estimate rendered');
   const pv = await ev(`document.querySelector('.pv-meta') ? document.querySelector('.pv-meta').textContent : ''`);
   check('transfer: plan panel shows dv split （出発噴射/到着噴射）', pv.includes('出発噴射') && pv.includes('到着噴射'));
   check('transfer: plan panel shows arrival relative velocity', pv.includes('相対速度'));
@@ -114,6 +115,11 @@ try {
   await sleep(600);
   check('course 3D: after plan approval, 3D course line and waypoint markers are active', await ev(`!!(S.planSamples && S.planSamples.length > 0 && planLine && planLine.visible && planWpGroup && planWpGroup.visible && planWpGroup.children.length > 0)`));
   await ev(`document.querySelector('[data-warp="8"]').click(); 'ok'`);
+  // prologue tutorial step A2 asks for a camera drag; without it the tutorial
+  // never advances and the M0 return leg never starts (same drive as Part B).
+  await send('Input.dispatchMouseEvent', { type: 'mousePressed', x: 200, y: 300, button: 'left', clickCount: 1 }, SID);
+  for (let i = 1; i <= 8; i++) { await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: 200 + i * 18, y: 300, button: 'left' }, SID); await sleep(30); }
+  await send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: 344, y: 300, button: 'left', clickCount: 1 }, SID);
   // harbor: chart course lines at port range
   await ev(`document.getElementById('btn-chart').click(); 'ok'`);
   await sleep(900);
@@ -202,7 +208,10 @@ try {
   const fcInit = await ev(`document.querySelector('#frame-chip-chart .frame-chip-label')?.textContent || ''`);
   check('frame: frame indicator chip exists and shows a 基準 label', fcInit.includes('基準'));
   await ev(`document.querySelector('[data-range="system"]').click(); 'ok'`);
-  await sleep(300);
+  // v0.6.1: cruise AUTO no longer parks the camera at system range, so after the
+  // manual switch the ease toward the wide distance needs time to settle before
+  // the snapshot (the assertion itself is unchanged).
+  await waitFor(`camDistTarget === null`, 120000, 'camera ease settled at system range');
   const fcSys = await ev(`document.querySelector('#frame-chip-chart .frame-chip-label')?.textContent || ''`);
   check('frame: switching chart to wide range sets frame indicator to ソル基準', fcSys.includes('ソル基準'));
   const before = await ev(`({ mode: chartState.mode, range: chartState.range, camd: cam.dist, t: S.time })`);
@@ -252,7 +261,7 @@ try {
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 2, mobile: true }, SID);
   await sleep(300);
   await ev(`setWarp(1000); 'ok'`);
-  await waitFor(`document.getElementById('plan-panel').classList.contains('open') || S.missionEnded`, 60000, 'M0 return plan panel');
+  await waitFor(`document.getElementById('plan-panel').classList.contains('open') || S.missionEnded`, 180000, 'M0 return plan panel');
   if (!await ev(`S.missionEnded`)) {
     await ev(`(() => { const c = document.getElementById('departure-checklist'); if (c && !c.checked) c.click(); })()`);
     await waitFor(`!document.getElementById('btn-depart').disabled`, 20000, 'M0 return depart enabled');
@@ -261,7 +270,7 @@ try {
     await ev(`document.getElementById('btn-ship').click(); 'ok'`);
     await sleep(300);
     const tM0End = Date.now();
-    while (Date.now() - tM0End < 120000) {
+    while (Date.now() - tM0End < 300000) {
       const m0st = await ev(`({ ended: S.missionEnded, dist: S.target && S.ship ? Math.hypot(S.target.x - S.ship.x, S.target.y - S.ship.y, S.target.z - S.ship.z) : 0, warp: S.warp })`);
       if (m0st.ended) break;
       const want = m0st.dist > 50000 ? 1000 : (m0st.dist > 5000 ? 300 : 8);
@@ -269,7 +278,7 @@ try {
       await sleep(350);
     }
   }
-  await waitFor(`S.missionEnded === true`, 20000, 'M0 completion');
+  await waitFor(`S.missionEnded === true`, 60000, 'M0 completion');
   check('M0 completion: completing Mission 0 while interior view is open makes #result-modal visible', await ev(`document.getElementById('result-modal').classList.contains('open')`));
   await send('Target.closeTarget', { targetId: tid });
 
