@@ -78,6 +78,7 @@ await send('Runtime.enable', {}, SID);
 await send('Page.navigate', { url: URL }, SID);
 await waitFor(`!!document.getElementById('btn-sortie')`, 30000, 'start');
 await sleep(2500);
+await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
 await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
 await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation');
 await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
@@ -179,6 +180,7 @@ check('(ii) ship did not impact', guardState.failed === false && guardState.dMoo
 await send('Page.navigate', { url: URL }, SID);
 await waitFor(`!!document.getElementById('btn-sortie')`, 30000, 'start (session 2)');
 await sleep(2500);
+await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
 await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
 await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation 2');
 await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);

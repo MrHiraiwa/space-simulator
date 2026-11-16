@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>宇宙シミュレーター 試作 v0.6.2（3D）</title>
+<title>宇宙シミュレーター 試作 v0.6.3（3D）</title>
 <style>
   :root{
     --bg:#040711;
@@ -575,6 +575,9 @@
   .sc-cmd{font-size:13px;color:#dbeafe;margin-bottom:8px;font-weight:600}
   .sc-spec{font-size:12px;color:var(--muted);line-height:1.5}
   #btn-sortie{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em}
+  #btn-continue{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em;margin-top:10px}
+  #save-overwrite-confirm{margin-top:12px;padding:12px;border:1px solid var(--accent2);border-radius:12px;background:rgba(60,40,10,0.35)}
+  #save-overwrite-confirm button{margin:4px 6px 0;padding:10px 18px;border-radius:10px}
   .cr-kicker{font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em}
   .cr-sec{font-size:12px;font-weight:800;color:var(--accent);margin:14px 0 6px}
   .cr-opts{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
@@ -1033,7 +1036,7 @@
 <!-- スタート画面 (id="start-screen") -->
 <div id="start-screen">
   <div class="start-card-wrap">
-    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.2</div>
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.3</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
     <p class="start-pitch">艦長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
     <div class="scenario-grid" id="scenario-cards">
@@ -1061,6 +1064,13 @@
     </div>
     <p class="start-pitch" style="font-size:12px">キャリアの入口は初任ポストで選べます — 定期航路・輸送／補給艦／哨戒艇の3トラック。昇進後の転属・分岐や、有力者からの「誘い」も予定されています。</p>
     <button id="btn-sortie" class="primary">🚀 出航する</button>
+    <button id="btn-continue" class="primary" style="display:none">▶ つづきから</button>
+    <p id="continue-info" class="start-pitch" style="display:none;font-size:12px"></p>
+    <div id="save-overwrite-confirm" style="display:none">
+      <p class="start-pitch" style="font-size:12px;margin:0 0 6px">航海途中のセーブがあります。新しく始めると、このセーブは上書きされます。よろしいですか？</p>
+      <button id="btn-overwrite-yes" class="amber">セーブを消して新しく始める</button>
+      <button id="btn-overwrite-no">キャンセル</button>
+    </div>
   </div>
 </div>
 
@@ -1245,6 +1255,349 @@ function defaultCaptainProfile(){
 }
 function loadCaptainProfile(){ try { const raw = localStorage.getItem('ss_captain_v1'); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
 function saveCaptainProfile(p){ try { localStorage.setItem('ss_captain_v1', JSON.stringify(p)); } catch(e){} }
+
+// ---------- 航海途中セーブ／ロード（台帳#26、v0.6.3） ----------
+/* 設計: セーブ形式は将来のサーバ同期データモデルそのまま——世界状態＋命令（計画）
+   ＋共有時計。物理は決定的（惑星=恒星重力のみの積分／衛星・ステーション・船・NPC=
+   全重力）なので、保存した状態・計画・時刻があれば、どのクライアントでも同じ
+   未来を再計算できる（同期サーバは状態と命令を配るだけでよい）。
+   天体は ID（planet:0 / station / ship / target など）で保存し、目標・計画の対象
+   天体・ウェイポイントの錨といった参照は、復元時に ID から実オブジェクトへ
+   引き直して同一オブジェクト性を保つ。共有参照（計画文書とフィックス配列など）
+   はオブジェクト表で保持する。関数（チュートリアルの手順、噴射の完了コール
+   バック）は保存せず、復元時に定義側から再構築する。 */
+const SAVE_KEY = 'ss-save-v1';
+const SAVE_FORMAT = 1;
+
+function makeSaveEncoder(bodyKeyOf){
+  const ids = new Map(); const objs = [];
+  const enc = (v) => {
+    if(v === null || v === undefined) return null;
+    const t = typeof v;
+    if(t === 'number') return Number.isFinite(v) ? v : null;
+    if(t === 'string' || t === 'boolean') return v;
+    if(t !== 'object') return null; /* 関数などは保存しない */
+    const bk = bodyKeyOf.get(v);
+    if(bk) return { $b: bk };
+    if(ids.has(v)) return { $o: ids.get(v) };
+    const id = objs.length; ids.set(v, id); objs.push(null);
+    if(Array.isArray(v)) objs[id] = { $a: v.map(enc) };
+    else { const o = {}; for(const k of Object.keys(v)) o[k] = enc(v[k]); objs[id] = { $p: o }; }
+    return { $o: id };
+  };
+  return { enc, objs };
+}
+function decodeSaveGraph(objs, root, bodyByKey){
+  const out = new Array(objs.length);
+  for(let i = 0; i < objs.length; i++) out[i] = objs[i] && objs[i].$a ? [] : {};
+  const dec = (v) => {
+    if(v === null || typeof v !== 'object') return v;
+    if(typeof v.$b === 'string') return bodyByKey[v.$b] || null;
+    if(typeof v.$o === 'number') return out[v.$o];
+    return null;
+  };
+  objs.forEach((e, i) => {
+    if(!e) return;
+    if(e.$a) { for(const x of e.$a) out[i].push(dec(x)); }
+    else if(e.$p) { for(const k of Object.keys(e.$p)) out[i][k] = dec(e.$p[k]); }
+  });
+  return dec(root);
+}
+/* 天体は末端データ（数値・文字列・真偽と小さな plain object のみ。軌跡は表示用
+   なので保存しない）として複製する */
+function cloneBodyForSave(b){
+  const o = {};
+  for(const k of Object.keys(b)){
+    if(k === 'trail') continue;
+    const v = b[k];
+    if(v === null || typeof v === 'string' || typeof v === 'boolean') o[k] = v;
+    else if(typeof v === 'number') o[k] = Number.isFinite(v) ? v : null;
+    else if(Array.isArray(v)) o[k] = v.slice();
+    else if(typeof v === 'object'){
+      const c = {};
+      for(const k2 of Object.keys(v)){
+        const w = v[k2];
+        if(w === null || typeof w === 'string' || typeof w === 'boolean') c[k2] = w;
+        else if(typeof w === 'number') c[k2] = Number.isFinite(w) ? w : null;
+      }
+      o[k] = c;
+    }
+  }
+  return o;
+}
+function saveMissionLabel(){
+  if(!S) return '航海';
+  if(S.prologue) return '処女航海（Mission 0）';
+  const m = MISSIONS[currentMissionIdx];
+  return m ? ('Mission ' + m.id + '：' + m.title) : '航海';
+}
+function buildSaveData(){
+  const reg = new Map(); const bodies = {};
+  const addBody = (key, b) => { if(b && !reg.has(b)){ reg.set(b, key); bodies[key] = cloneBodyForSave(b); } };
+  (S.planets || []).forEach((p, i) => addBody('planet:' + i, p));
+  addBody('station', S.station);
+  addBody('ship', S.ship);
+  (S.wings || []).forEach((w, i) => addBody('wing:' + i, w));
+  (S.npcs || []).forEach((n, i) => addBody('npc:' + i, n));
+  addBody('target', S.target);
+  const shallow = Object.assign({}, S);
+  /* sys / cfg は静的データへの参照なので ID で引き直す。チュートリアルは手順
+     （関数）を含むため進行データだけを別枠で保存し、復元時に再構築する。
+     港内交通は時刻とステーション位置からの決定関数なので再構築する。
+     catchingUp 等の一時フラグは保存しない。 */
+  delete shallow.sys; delete shallow.cfg; delete shallow.tutorial;
+  delete shallow.portCraft; delete shallow.laneDir; delete shallow.laneBeacons;
+  delete shallow.catchingUp; delete shallow.avoidAutoReport;
+  const encPack = makeSaveEncoder(reg);
+  const root = encPack.enc(shallow);
+  const tut = S.tutorial ? {
+    mode: S.tutorial.mode, step: S.tutorial.step, skipped: !!S.tutorial.skipped,
+    delegated: !!S.tutorial.delegated,
+    delegateDoneStep: (S.tutorial.delegateDoneStep != null ? S.tutorial.delegateDoneStep : null),
+    warned20: !!S.tutorial.warned20
+  } : null;
+  const rmEl = document.getElementById('result-modal');
+  const rmOpen = !!(rmEl && rmEl.classList.contains('open'));
+  return {
+    format: SAVE_FORMAT, version: 'v0.6.3', savedAt: Date.now(), shipTime: S.time,
+    scenario: selectedScenario, missionIdx: currentMissionIdx, meritTotal,
+    sysId: S.sys ? S.sys.id : null, prologue: !!S.prologue,
+    camAzAccum: (typeof camAzAccum === 'number') ? camAzAccum : 0,
+    introFlags: { cruise: !!cruiseIntroShown, chart: !!chartIntroShown, dep: !!depExplainedShown },
+    targetKey: S.target ? (reg.get(S.target) || null) : null,
+    bodies, graph: { objs: encPack.objs, root },
+    tutorial: tut,
+    log: logEl ? [...logEl.children].map(d => d.textContent) : [],
+    rm: rmOpen ? { title: document.getElementById('rm-title').textContent, desc: document.getElementById('rm-desc').textContent } : null,
+    label: saveMissionLabel()
+  };
+}
+let _saveBusy = false;
+function saveGame(reason){
+  if(!S || !gameStarted || _saveBusy) return false;
+  _saveBusy = true;
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify(buildSaveData()));
+    return true;
+  } catch(e){ return false; }
+  finally { _saveBusy = false; }
+}
+function readSave(){
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if(!raw) return null;
+    const d = JSON.parse(raw);
+    if(!d || d.format !== SAVE_FORMAT || !d.graph || !d.bodies || !d.bodies.ship) return null;
+    return d;
+  } catch(e){ return null; }
+}
+function clearSave(){ try { localStorage.removeItem(SAVE_KEY); } catch(e){} }
+
+function rebuildTutorialFromSave(tutSave){
+  if(!tutSave){ S.tutorial = null; return; }
+  let tut = null;
+  if(tutSave.mode === 'prologue'){
+    const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0];
+    tut = buildPrologueTutorial(hab);
+  } else if(tutSave.mode === 'm1'){
+    tut = buildM1Tutorial();
+  }
+  if(!tut){ S.tutorial = null; return; }
+  tut.step = Math.max(0, Math.min(tutSave.step || 0, tut.steps.length - 1));
+  tut.skipped = !!tutSave.skipped;
+  tut.stuckTime = 0;
+  tut.delegated = !!tutSave.delegated;
+  tut.delegateDoneStep = (tutSave.delegateDoneStep != null ? tutSave.delegateDoneStep : null);
+  tut.delegatePendingStep = null;
+  tut.warned20 = !!tutSave.warned20;
+  S.tutorial = tut;
+}
+function restoreResultModal(rm){
+  const ri = getRankInfo(meritTotal);
+  document.getElementById('rm-title').textContent = rm.title;
+  document.getElementById('rm-desc').textContent = rm.desc;
+  document.getElementById('rm-merit').textContent = meritTotal + ' pt';
+  document.getElementById('rm-rank').textContent = ri.cur.name;
+  document.getElementById('rm-next-rank').textContent = ri.next ? ('次の昇進まで ' + (ri.next.min - meritTotal) + ' pt') : '最高階級に到達！';
+  document.getElementById('rm-promo-bar').style.width = ri.pct + '%';
+  const isFinal = S.succeeded && !S.prologue && currentMissionIdx >= MISSIONS.length - 1;
+  document.getElementById('btn-rm-next').style.display = (S.succeeded && !isFinal) ? 'inline-block' : 'none';
+  document.getElementById('btn-rm-retry').style.display = S.succeeded ? 'none' : 'inline-block';
+  document.getElementById('result-modal').classList.add('open');
+  if(S) S._resultShown = true;
+}
+function loadGame(){
+  const save = readSave();
+  if(!save){ refreshSaveUI(); return false; }
+  try {
+    selectedScenario = save.scenario || 'captain';
+    currentMissionIdx = save.missionIdx || 0;
+    meritTotal = save.meritTotal || 0;
+    const cfg = SCENARIOS[selectedScenario] || SCENARIOS.captain;
+    S = createBaseState(cfg, !!save.prologue);
+    dvEmptyTimer = 0;
+    /* 天体の復元（ID → 実オブジェクト）。軌跡は空から再生成する */
+    const bodyByKey = {};
+    for(const k of Object.keys(save.bodies)){
+      const b = Object.assign({}, save.bodies[k]);
+      b.trail = [];
+      bodyByKey[k] = b;
+    }
+    /* S 本体の復元。参照（目標・計画対象・錨・接舷先）は ID 経由で同一
+       オブジェクトに引き直される */
+    const restored = decodeSaveGraph(save.graph.objs, save.graph.root, bodyByKey);
+    if(!restored || !restored.ship) throw new Error('save graph broken');
+    for(const k of Object.keys(restored)) S[k] = restored[k];
+    S.sys = SYSTEMS.find(s => s.id === save.sysId) || SYSTEMS[0];
+    S.cfg = cfg;
+    if(save.targetKey && bodyByKey[save.targetKey]) S.target = bodyByKey[save.targetKey];
+    S.catchingUp = false; S.avoidAutoReport = false;
+    delete S._resultShown;
+    /* 港内交通・レーンは時刻とステーション位置からの決定関数なので再構築する */
+    if(S.prologue && S.station) buildPortCraft();
+    /* チュートリアルは定義側から再構築し、進行データだけを重ねる */
+    rebuildTutorialFromSave(save.tutorial);
+    /* 噴射の完了コールバックは保存していない。計画の噴射については計画側の
+       状態機械が完了を受け持つ（brake フェーズの受け直しがある）ため null でよい */
+    if(S.activeBurn) S.activeBurn.onDone = null;
+    if(S.planExec){ S.planExec.onDone = null; S.planExec.lastEstMs = 0; }
+    camAzAccum = save.camAzAccum || 0;
+    if(save.introFlags){
+      cruiseIntroShown = !!save.introFlags.cruise;
+      chartIntroShown = !!save.introFlags.chart;
+      depExplainedShown = !!save.introFlags.dep;
+    }
+    /* 航海日誌の復元 */
+    if(logEl){
+      logEl.innerHTML = '';
+      for(const line of (save.log || [])){
+        const d = document.createElement('div');
+        d.textContent = line;
+        logEl.appendChild(d);
+      }
+      _lastLogText = null;
+    }
+    logUnread = 0;
+    /* 画面の立ち上げ（startPrologue / startMission の後処理と同じ並び） */
+    document.getElementById('start-screen').classList.add('hidden');
+    gameStarted = true;
+    document.body.classList.add('in-game');
+    if(!scene) initThree();
+    buildSystemMeshes();
+    if(typeof evalChartAuto === 'function') evalChartAuto(true);
+    if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; if(S.docked) frameState.ref = 'station'; }
+    if(typeof chartState !== 'undefined'){ chartState.mode = 'auto'; if(S.docked) chartState.range = 'port'; }
+    frameCamOnShip();
+    setWarp(S.warp || 1);
+    updateManualUI();
+    updateMissionBanner();
+    document.getElementById('creation-modal').classList.remove('open');
+    document.getElementById('briefing-modal').classList.remove('open');
+    document.getElementById('assist-left').textContent = S.assistUses;
+    document.getElementById('btn-assist').disabled = false;
+    renderOfficers(); renderGalaxy(); updatePanels();
+    renderTutorialUI();
+    updatePlanStatusUI();
+    updatePlanLineMesh();
+    if(typeof updateFrameChips === 'function') updateFrameChips();
+    hideSaveConfirm();
+    /* 処女航海の導入だけは一時状態（ブリーフィング）を含むため、チュートリアル
+       未構築のセーブでは導入から再導出する（安全側の再導出） */
+    if(S.prologue && !S.tutorial) initPrologueFlow();
+    if(save.rm && S.missionEnded) restoreResultModal(save.rm);
+    logEvent('📂 セーブデータから航海を再開しました（' + (save.label || '航海') + '／船内時刻 ' + formatShipTime(S.time) + '）。');
+    /* 離席ぶんの追いつきは既存機構をそのまま使う（接舷中・接舷作業中は保存した
+       状態そのものから再開する。位置も状態の一部として保存してあるため、
+       時刻だけを進めると不整合になる） */
+    const elapsed = (Date.now() - (save.savedAt || Date.now())) / 1000;
+    if(!S.missionEnded && !S.failed && !S.docked && !S.berthing && S.warp > 0 && elapsed > 2.5){
+      runCatchUp(elapsed);
+    }
+    return true;
+  } catch(e){
+    /* 壊れたセーブは消して、最初から始められる状態に戻す */
+    clearSave();
+    refreshSaveUI();
+    return false;
+  }
+}
+/* ---- スタート画面のセーブ UI ---- */
+function hideSaveConfirm(){
+  const box = document.getElementById('save-overwrite-confirm');
+  if(box) box.style.display = 'none';
+}
+function refreshSaveUI(){
+  const btn = document.getElementById('btn-continue');
+  const info = document.getElementById('continue-info');
+  if(!btn) return;
+  const save = readSave();
+  if(save){
+    btn.style.display = '';
+    if(info){
+      const d = new Date(save.savedAt || Date.now());
+      info.textContent = '前回の航海： ' + (save.label || '航海') + ' ／ 船内時刻 ' + formatShipTime(save.shipTime || 0) + ' ／ 保存 ' + d.toLocaleString('ja-JP');
+      info.style.display = '';
+    }
+  } else {
+    btn.style.display = 'none';
+    if(info) info.style.display = 'none';
+    hideSaveConfirm();
+  }
+}
+let _sortieConfirmed = false;
+document.getElementById('btn-sortie').addEventListener('click', (e) => {
+  if(_sortieConfirmed) return;
+  if(!readSave()) return;
+  /* セーブがある状態で「出航する」を押したら、上書き確認を出す
+     （このリスナは元の出航ハンドラより先に登録されている） */
+  e.stopImmediatePropagation();
+  e.preventDefault();
+  const box = document.getElementById('save-overwrite-confirm');
+  if(box) box.style.display = '';
+});
+document.getElementById('btn-overwrite-yes').addEventListener('click', () => {
+  playSfx('click');
+  clearSave();
+  hideSaveConfirm();
+  refreshSaveUI();
+  _sortieConfirmed = true;
+  document.getElementById('btn-sortie').click();
+  _sortieConfirmed = false;
+});
+document.getElementById('btn-overwrite-no').addEventListener('click', () => { playSfx('click'); hideSaveConfirm(); });
+document.getElementById('btn-continue').addEventListener('click', () => { playSfx('warp'); loadGame(); });
+document.getElementById('btn-rm-title').addEventListener('click', () => { refreshSaveUI(); });
+refreshSaveUI();
+/* ---- 自動セーブ ----
+   契機: 出発（計画承認）・作戦終了は各関数の末尾から直接呼ぶ。ここでは
+   状態遷移（到着＝フェーズ done／計画の消滅／接舷／星系移動）の監視と
+   定期保存（60秒）、非表示化・終了時の保存を担う。 */
+let _saveTickSec = 0;
+let _saveWatchSnap = null;
+setInterval(() => {
+  if(!S || !gameStarted) return;
+  const snap = {
+    docked: !!S.docked, ended: !!S.missionEnded,
+    phase: S.planExec ? S.planExec.phase : null,
+    hasPlan: !!S.planExec,
+    sys: S.sys ? S.sys.id : null
+  };
+  if(_saveWatchSnap){
+    const p = _saveWatchSnap;
+    if(snap.docked !== p.docked || snap.ended !== p.ended || snap.sys !== p.sys ||
+       (snap.phase === 'done' && p.phase !== 'done') || (p.hasPlan && !snap.hasPlan)){
+      saveGame('transition');
+    }
+  }
+  _saveWatchSnap = snap;
+  _saveTickSec++;
+  if(_saveTickSec >= 60){
+    _saveTickSec = 0;
+    if(!catchUpState) saveGame('periodic');
+  }
+}, 1000);
+document.addEventListener('visibilitychange', () => { if(document.hidden) saveGame('hidden'); });
+window.addEventListener('beforeunload', () => { saveGame('unload'); });
 function buildCaptainRecord(draft){
   const pt = PORTRAITS.find(p => p.id === draft.portrait) || PORTRAITS[0];
   const org = ORIGINS.find(o => o.id === draft.origin) || ORIGINS[0];
@@ -2813,6 +3166,7 @@ function startPrologue(){
   setStatusMsg(SHIP_NAME + ' 着任式。教導士官の案内を確認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
   initPrologueFlow();
+  saveGame('start');
 }
 
 function startMission(idx){
@@ -2847,6 +3201,7 @@ function startMission(idx){
     showOfficerPopup(GUIDE, m.startQuote);
     setTimeout(()=>{ if(S && !S.prologue && !S.planExec) openMissionPlanPanel(); }, 450);
   }
+  saveGame('start');
 }
 
 function updateMissionBanner(){
@@ -3923,6 +4278,7 @@ function confirmDeparture(){
   updatePlanStatusUI();
   /* 航路ラインは出発の瞬間から海図・3Dに明示する（初回再計算まで待たない） */
   updatePlanLineMesh();
+  saveGame('depart');
 }
 
 function setPlanPhase(pe, nextPhase){
@@ -4451,9 +4807,8 @@ function initPrologueFlow(){
   };
 }
 
-function startPrologueSteps(){
-  const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0]; // ソル系 つむぎ周回 衛星「こよみ」
-  S.tutorial = {
+function buildPrologueTutorial(hab){
+  return {
     mode: 'prologue',
     step: 0,
     stuckTime: 0,
@@ -4525,6 +4880,11 @@ function startPrologueSteps(){
       }
     ]
   };
+}
+
+function startPrologueSteps(){
+  const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0]; // ソル系 つむぎ周回 衛星「こよみ」
+  S.tutorial = buildPrologueTutorial(hab);
   S.target = hab;
   showOfficerPopup(GUIDE, 'まず航海計画を立てます。航法士官が案を用意しています。ご確認をお願いします。');
   renderTutorialUI();
@@ -4540,9 +4900,8 @@ function startPrologueSteps(){
   }, 500);
 }
 
-function initMission1Tutorial(){
-  camAzAccum = 0;
-  S.tutorial = {
+function buildM1Tutorial(){
+  return {
     mode: 'm1',
     step: 0,
     stuckTime: 0,
@@ -4626,6 +4985,11 @@ function initMission1Tutorial(){
       }
     ]
   };
+}
+
+function initMission1Tutorial(){
+  camAzAccum = 0;
+  S.tutorial = buildM1Tutorial();
   showOfficerPopup(GUIDE, MISSIONS[0].startQuote);
   renderTutorialUI();
 }
@@ -6075,6 +6439,7 @@ function openResultModal(isSuccess, title, desc, prevMerit=meritTotal){
   document.getElementById('btn-rm-next').style.display = (isSuccess && !isFinal) ? 'inline-block' : 'none';
   document.getElementById('btn-rm-retry').style.display = isSuccess ? 'none' : 'inline-block';
   document.getElementById('result-modal').classList.add('open');
+  saveGame('end');
 }
 
 // ---------- 銀河/ワープ ----------

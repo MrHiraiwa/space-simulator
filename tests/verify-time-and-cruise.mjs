@@ -48,6 +48,7 @@ try {
   // ---------- Part A: prologue (port start) ----------
   let tid = await newPage();
   // retry the sortie click: under headless load the listener may attach after the first click
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   for (let i = 0; i < 5; i++) { await ev(`document.getElementById('btn-sortie').click(); 'ok'`); try { await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 5000, 'creation modal'); break; } catch { if (i === 4) throw new Error('waitFor timeout: creation modal'); } }
   await ev(`{ const a = document.getElementById('cr-ainame'); a.value = 'ミラ'; a.dispatchEvent(new Event('input', { bubbles: true })); 'ok' }`);
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
@@ -179,6 +180,7 @@ try {
 
   // ---------- Part B: mission 1 berthing ----------
   tid = await newPage();
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   for (let i = 0; i < 5; i++) { await ev(`document.getElementById('btn-sortie').click(); 'ok'`); try { await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 5000, 'creation modal (m1)'); break; } catch { if (i === 4) throw new Error('waitFor timeout: creation modal (m1)'); } }
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
   await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 20000, 'port scene (m1)');

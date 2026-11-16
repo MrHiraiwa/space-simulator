@@ -40,6 +40,7 @@ try {
   await send('Page.navigate', { url: URL }, SID);
   await waitFor(`!!document.getElementById('btn-sortie')`, 30000, 'start screen');
   await sleep(1200);
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   for (let i = 0; i < 5; i++) { await ev(`document.getElementById('btn-sortie').click()`); try { await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 5000, 'creation'); break; } catch { if (i === 4) throw new Error('creation never opened'); } }
   await ev(`document.getElementById('btn-creation-done').click()`);
   await waitFor(`document.getElementById('briefing-modal').classList.contains('open')`, 30000, 'briefing');

@@ -62,6 +62,7 @@ try {
 
   // ---------- Part A: port scene -> plan -> cruise (Mission 0) ----------
   let tid = await newPage();
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
   await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal');
   await ev(`{ const a = document.getElementById('cr-ainame'); a.value = 'ミラ'; a.dispatchEvent(new Event('input', { bubbles: true })); 'ok' }`);
@@ -286,6 +287,7 @@ try {
 
   // ---------- Part B: mission 1 — measured arrival relative velocity ----------
   tid = await newPage();
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
   await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal (m1)');
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);
@@ -339,6 +341,7 @@ try {
 
   // ---------- Part C: deliberately unmatched approach -> warning / collision ----------
   tid = await newPage();
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   await ev(`document.getElementById('btn-sortie').click(); 'ok'`);
   await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 20000, 'creation modal (mc)');
   await ev(`document.getElementById('btn-creation-done').click(); 'ok'`);

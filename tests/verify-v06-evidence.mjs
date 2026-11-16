@@ -47,6 +47,7 @@ try {
 
   // Start the game with defaults (captain creation defaults -> port scene -> skip prologue into Mission 0 free state is complex;
   // instead use the start flow: click 出撃 and complete creation with defaults if shown)
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   await ev(`document.getElementById('btn-sortie').click()`);
   await sleep(1500);
   // Captain creation modal may be open: accept defaults

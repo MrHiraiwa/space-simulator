@@ -39,6 +39,7 @@ try {
   await send('Page.navigate', { url: URL }, SID);
   await waitFor(`!!document.getElementById('btn-sortie')`, 30000, 'start screen');
   await sleep(800);
+  await ev(`localStorage.removeItem('ss-save-v1'); 'save-cleared'`); /* v0.6.3: 既存セーブの上書き確認で止まらないよう、出航前にセーブを消す */
   await ev(`document.getElementById('btn-sortie').click()`);
   await waitFor(`document.getElementById('creation-modal').classList.contains('open')`, 30000, 'creation modal');
   await ev(`document.getElementById('btn-creation-done').click()`);
