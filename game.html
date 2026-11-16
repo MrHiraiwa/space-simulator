@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>宇宙シミュレーター 試作 v0.6.1（3D）</title>
+<title>宇宙シミュレーター 試作 v0.6.1.1（3D）</title>
 <style>
   :root{
     --bg:#040711;
@@ -759,6 +759,7 @@
             <button data-warp="1" class="active">等速</button>
             <button data-warp="3">×3</button>
             <button data-warp="8">×8</button>
+            <button id="btn-debug-skip" title="デバッグ用：次の判断・到着まで一気に進める">⏩ 次の判断まで</button>
             <button data-warp="0">⏸</button>
             <span class="ff-now" id="ff-now">等速で見守り中</span>
             <span style="color:var(--muted);margin:0 3px"><b id="clock">1日目 00:00</b></span>
@@ -1031,7 +1032,7 @@
 <!-- スタート画面 (id="start-screen") -->
 <div id="start-screen">
   <div class="start-card-wrap">
-    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.1</div>
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.1.1</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
     <p class="start-pitch">艦長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
     <div class="scenario-grid" id="scenario-cards">
@@ -3929,10 +3930,11 @@ function updateTutorialAndPrologue(simDt){
           logEvent('🤝 副官代行： ' + curStep.title);
           curStep.autoAction();
         }
-      } else if(tut.stuckTime >= 40){
-        /* 代行しても前進条件が満たされなかった場合の再試行（40船内秒間隔） */
-        tut.delegateDoneStep = null; tut.stuckTime = 0; tut.warned20 = false;
       }
+      /* v0.6.1.1 #33: 代行は一度きりでラッチする。再試行のためのラッチ解除は置かない。
+         旧仕様は「代行しても前進しない」場合に40船内秒でラッチを外して再実行・再記録
+         していたため、到着を見守るだけのステップ（A4: setWarp のみ）で同じ代行ログが
+         約47船内秒間隔で繰り返し記録された。前進しない場合は20秒ヒントが艦長を呼ぶ。 */
     } else {
       tut.delegatePendingStep = null;
     }
@@ -5466,6 +5468,14 @@ document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', 
   prevWarp=Number(b.dataset.warp)||1;
   setWarp(Number(b.dataset.warp));
 }));
+/* デバッグ用ワンショットスキップ（v0.6.1.1 / 台帳 #32）: 追いつき機構（runCatchUp）を
+   流用し、次の判断イベント・接舷・事故まで一気に進める。停止条件は追いつき側が持つ。 */
+document.getElementById('btn-debug-skip').addEventListener('click', ()=>{
+  playSfx('click');
+  if(!S || !gameStarted || S.failed || S.missionEnded || catchUpState) return;
+  if(S.warp <= 0) setWarp(1);
+  runCatchUp(CATCHUP_CAP);
+});
 document.getElementById('btn-assist').addEventListener('click', assistBurn);
 document.getElementById('btn-resupply').addEventListener('click', resupply);
 document.getElementById('btn-build').addEventListener('click', buildShip);
