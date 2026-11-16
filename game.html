@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>宇宙シミュレーター 試作 v0.6.1.1（3D）</title>
+<title>宇宙シミュレーター 試作 v0.6.1.2（3D）</title>
 <style>
   :root{
     --bg:#040711;
@@ -760,6 +760,7 @@
             <button data-warp="3">×3</button>
             <button data-warp="8">×8</button>
             <button id="btn-debug-skip" title="デバッグ用：次の判断・到着まで一気に進める">⏩ 次の判断まで</button>
+            <button id="btn-debug-log" title="デバッグ用：状態と航海日誌をファイルに書き出す">🐛 ログ出力</button>
             <button data-warp="0">⏸</button>
             <span class="ff-now" id="ff-now">等速で見守り中</span>
             <span style="color:var(--muted);margin:0 3px"><b id="clock">1日目 00:00</b></span>
@@ -1032,7 +1033,7 @@
 <!-- スタート画面 (id="start-screen") -->
 <div id="start-screen">
   <div class="start-card-wrap">
-    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.1.1</div>
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.1.2</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
     <p class="start-pitch">艦長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
     <div class="scenario-grid" id="scenario-cards">
@@ -5475,6 +5476,48 @@ document.getElementById('btn-debug-skip').addEventListener('click', ()=>{
   if(!S || !gameStarted || S.failed || S.missionEnded || catchUpState) return;
   if(S.warp <= 0) setWarp(1);
   runCatchUp(CATCHUP_CAP);
+});
+/* デバッグログ出力（v0.6.1.2 / 台帳 #37）: 自艦状態・計画・日誌をテキストに書き出す */
+function buildDebugLog(){
+  const L = [];
+  const num = (v, d)=> (typeof v === "number" ? v.toFixed(d==null?2:d) : String(v));
+  const vec = (v)=> v ? "(" + num(v.x,0) + ", " + num(v.y,0) + ", " + num(v.z,0) + ")" : "-";
+  const scalars = (o)=>{ if(!o) return "-"; const parts = []; for(const k of Object.keys(o)){ const v = o[k]; if(v==null || typeof v === "number" || typeof v === "string" || typeof v === "boolean") parts.push(k + "=" + (typeof v === "number" ? num(v) : v)); } return parts.join(" / "); };
+  L.push("=== space-simulator debug log ===");
+  L.push("version: v0.6.1.2");
+  L.push("exported: " + new Date().toISOString());
+  try{
+    if(!S){ L.push("state: no voyage"); }
+    else{
+      L.push("shipTime: " + formatShipTime(S.time) + " (raw " + Math.floor(S.time) + "s)");
+      L.push("missionIdx: " + currentMissionIdx + " / warp: " + S.warp + " / failed: " + !!S.failed + " / missionEnded: " + !!S.missionEnded + " / docked: " + !!S.docked + " / berthing: " + !!S.berthing + " / catchingUp: " + !!S.catchingUp);
+      L.push("dvRemaining: " + num(S.dv));
+      L.push("res: " + JSON.stringify(S.res || {}));
+      if(S.ship) L.push("shipPos: " + vec(S.ship.pos) + " shipVel: " + vec(S.ship.vel));
+      L.push("planExec: " + scalars(S.planExec));
+      L.push("approach: " + scalars(S.approach));
+      const tut = S.tutorial;
+      if(tut) L.push("tutorial: step=" + tut.step + " title=" + (tut.steps && tut.steps[tut.step] ? tut.steps[tut.step].title : "-") + " / delegated: " + !!tut.delegated + " / skipped: " + !!tut.skipped);
+      const obj = document.getElementById("mb-obj"); if(obj) L.push("objective: " + obj.textContent);
+    }
+  }catch(e){ L.push("state dump error: " + e.message); }
+  L.push("--- voyage log ---");
+  try{ if(logEl) for(const d of logEl.children) L.push(d.textContent); }catch(e){}
+  return L.join("\n");
+}
+document.getElementById("btn-debug-log").addEventListener("click", ()=>{
+  playSfx("click");
+  const text = buildDebugLog();
+  try{
+    const blob = new Blob([text], {type:"text/plain"});
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "ss-debug-log.txt";
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 4000);
+  }catch(e){}
+  if(navigator.clipboard) navigator.clipboard.writeText(text).catch(()=>{});
+  setStatusMsg("🐛 デバッグログを書き出しました（ダウンロード＋クリップボード）");
 });
 document.getElementById('btn-assist').addEventListener('click', assistBurn);
 document.getElementById('btn-resupply').addEventListener('click', resupply);
