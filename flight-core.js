@@ -979,7 +979,7 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw){
   }
   return { state: s, dvHarbor, time: t };
 }
-function computePlanEstimate(ship, target, starGM, closingScale, opts){
+function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   // The estimate flies the SAME phase policy as the real plan execution
   // (depart/cruise -> brake -> captain match -> join -> final), with
   // instantaneous burns, so the numbers it quotes are the numbers the
@@ -1142,7 +1142,10 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
      ステップが極小のまま maxT（5.8億秒）まで回り続け、実測で135秒の同期ブロックになった。
      反復回数と実時間に上限を設け、超過したら「情報なし（timeout）」として打ち切る。
      通常の推定（桁違いに少ない反復で完走する）は影響を受けない。 */
-  const estStartMs = performance.now();
+  /* 暴走ガードは反復回数のみに依存させる（第2段b、検証高速化5）: 旧実装は壁時計
+     （60秒／5秒+3万回）でも打ち切ったため、同じ入力でも実行環境の負荷で成立判定が
+     反転する境界があった（v0.6.5 残件4）。反復上限 400,000 が歯止めであることは
+     旧コメントの整理どおり。刻み実行（job.step）は壁時計を結果に使わない。 */
   let iterCount = 0, lastRel = 0;
   const recordBody = (b, ax0, ay0, az0) => {
     const sr = surfaceRadius(b), mg = impactMargin(sr);
@@ -1205,22 +1208,25 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
     if(!hit && lRisk && lAlt < bestAlt){ bestAlt = lAlt; bestRisk = lRisk; }
     return hit;
   };
-  while(timeTotal < maxT){
-    /* ガードの内訳（v0.6.2）: 実時間 5 秒の単独条件は「長いが有限な推定」を機械依存で
-       打ち切ってしまい、バリアントが選択不能になる事象があった。M1 eco は約190日の
-       長距離飛行で、低速環境では推定に数十秒かかる（実測: 共有VMで約31秒。反復単価は
-       v0.6.2 の弦クリアランス判定で上がっている）。5 秒ルールは反復ストーム
-       （v0.6.1 の暴走形態）への適用に限定し、絶対上限は 60 秒に置く。暴走の歯止めは
-       反復上限（400,000）が担う。成立する計画を「時間切れ」で不成立にしないこと。 */
+  const job = { done: false, result: null, iterCount: 0, timeTotal: 0, maxT };
+  job.step = function(maxIter, maxMs){
+    if(job.done) return true;
+    const sliceStart = performance.now();
+    let n = 0;
+    while(timeTotal < maxT){
+    /* ガードは反復上限（400,000）のみ（第2段bで壁時計条件を撤去し決定論化）。
+       刻み予算（maxIter／maxMs）は「どこで中断するか」だけを決め、結果には影響しない。 */
     iterCount++;
-    const wallMs = (iterCount & 1023) === 0 ? performance.now() - estStartMs : 0;
-    if(iterCount > 400000 || wallMs > 60000 || (wallMs > 5000 && iterCount > 30000)){
-      return Object.assign({ ok: false, timeout: true, planetCross, dvTotal, timeTotal, samples }, fin(lastRel));
+    if(iterCount > 400000){
+      job.result = Object.assign({ ok: false, timeout: true, planetCross, dvTotal, timeTotal, samples }, fin(lastRel));
+      job.done = true;
+      break;
     }
+    if(n++ >= maxIter || ((n & 15) === 0 && maxMs != null && performance.now() - sliceStart > maxMs)) break;
     const infoDistApprox = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
     const phaseCap = phase === 'cruise' ? (needDock && infoDistApprox < 300 ? Math.min(1.5, Math.max(0.25, checkTimer)) : Math.max(1, checkTimer)) : ((phase === 'final' || phase === 'join') ? 8 : BIG);
     h = Math.min(dynStep(s.x, s.y, s.z, starGM, pls, BIG), encounterCap(s, t), phaseCap, maxT - timeTotal);
-    if(h <= 0) break;
+    if(h <= 0){ job.result = Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(0)); job.done = true; break; }
     const prevRel = pls.map(p => [s.x - p.x, s.y - p.y, s.z - p.z]);
     const prevStar = [s.x, s.y, s.z];
     propStar();
@@ -1250,7 +1256,7 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
            到着を「不成立」と誤判定し、位相によって計画が点滅した）。 */
         const orbitOk = !!(orbC && orbC.energy < 0 && orbC.periapsis >= surfaceRadius(t) + impactMargin(surfaceRadius(t)) + 800);
         const okCap = info.dist <= arrivalDist * 3 && hitCount === capHitBase && crossCount === capCrossBase && orbitOk;
-        return Object.assign({ ok: okCap, planetCross, dvTotal, timeTotal, samples }, fin(info.rel));
+        job.result = Object.assign({ ok: okCap, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true;
       }
     } else if(!needDock && (info.dist <= arrivalDist || (info.dist <= Math.max(arrivalDist * 3, 300) && info.rel <= 4))){
       /* 終端の捕捉エンベロープ（v0.6.2）: 到着半径が小さい目標（ステーション 90 等）では、
@@ -1283,7 +1289,7 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
           /* 捕捉は近点通過の瞬間に撃つ: 動径成分がほぼ消え、接線速度の帯調整
              だけで済むため最も安い（圏突入直後の捕捉は動径落下の殺しが高くつく）。 */
           const cap = computeCapture(s, t, pls);
-          if(!cap) return Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(info.rel));
+          if(!cap){ job.result = Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true; }
           /* 実飛行と同じ規則（v0.6.4 課題3）: 捕捉後の軌道が安全帯に収まり
              120 時間伝播でも安定な幾何でだけ撃ち、収まらない幾何（近点通過
              など）を待つ。安定確認は高コストなので試行（成功・失敗を問わず）
@@ -1303,10 +1309,11 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
            到着する（実飛行側の到着安全確認と同じ規則）。この噴射も推定消費に含む。 */
         if(timeTotal - lastZoneFixT >= 20){ lastZoneFixT = timeTotal; applyDv(computeApproach(s, t, starGM, scale, pls)); }
       } else {
-        return Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel));
+        job.result = Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true;
       }
     }
-    if(dvTotal > 120) return Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(info.rel));
+    if(job.done) break;
+    if(dvTotal > 120){ job.result = Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true; }
     const fix = approachFix(t);
     const dFix = Math.hypot(s.x - fix.x, s.y - fix.y, s.z - fix.z);
     if(needDock){
@@ -1318,8 +1325,9 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
         const px = fix.x + abx * tt, py = fix.y + aby * tt, pz = fix.z + abz * tt;
         if(Math.hypot(s.x - px, s.y - py, s.z - pz) > 16) established = false;
       }
-      if(established && info.dist < arrivalDist && info.rel <= V_CONTACT) return Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel));
+      if(established && info.dist < arrivalDist && info.rel <= V_CONTACT){ job.result = Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true; }
     }
+    if(job.done) break;
     if(phaseT0[phase] === undefined) phaseT0[phase] = timeTotal;
     if(actCd > 0) actCd -= h;
     if(phase === 'cruise'){
@@ -1373,8 +1381,22 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
       }
       nextSampleT += sampleStride;
     }
+    if(job.done) break;
   }
-  return Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(0));
+    if(!job.done && timeTotal >= maxT){
+      job.result = Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(0));
+      job.done = true;
+    }
+    job.iterCount = iterCount; job.timeTotal = timeTotal;
+    return job.done;
+  };
+  return job;
+}
+
+function computePlanEstimate(ship, target, starGM, closingScale, opts){
+  const job = createPlanEstimateJob(ship, target, starGM, closingScale, opts);
+  job.step(Infinity);
+  return job.result;
 }
 
 
@@ -1426,9 +1448,7 @@ function computeDepSep(anchor, target){
   return { x: sx / sm, y: sy / sm, z: sz / sm };
 }
 
-function computePlanEstimateEnsemble(ship, target, starGM, closingScale, opts){
-  const a = computePlanEstimate(ship, target, starGM, closingScale, opts);
-  const b = computePlanEstimate(ship, target, starGM, closingScale, Object.assign({}, opts, { integrator: 'euler' }));
+function combineEstimateEnsemble(a, b){
   const risk = (a.impactRisk && b.impactRisk) ? (a.impactRisk.minDist <= b.impactRisk.minDist ? a.impactRisk : b.impactRisk) : (a.impactRisk || b.impactRisk || null);
   return Object.assign({}, b, {
     ok: !!(a.ok && b.ok),
@@ -1437,7 +1457,28 @@ function computePlanEstimateEnsemble(ship, target, starGM, closingScale, opts){
     ensemble: { rk4: { dvTotal: a.dvTotal, ok: a.ok }, euler: { dvTotal: b.dvTotal, ok: b.ok } }
   });
 }
+function computePlanEstimateEnsemble(ship, target, starGM, closingScale, opts){
+  const a = computePlanEstimate(ship, target, starGM, closingScale, opts);
+  const b = computePlanEstimate(ship, target, starGM, closingScale, Object.assign({}, opts, { integrator: 'euler' }));
+  return combineEstimateEnsemble(a, b);
+}
+/* 刻み実行版アンサンブル（第2段b、#51）: RK4 本体→双子の順に進め、終われば結合する。
+   同期版と計算の順序・内容は同一で、結果は一致する（テストで機械確認する） */
+function createPlanEstimateEnsembleJob(ship, target, starGM, closingScale, opts){
+  const ja = createPlanEstimateJob(ship, target, starGM, closingScale, opts);
+  const jb = createPlanEstimateJob(ship, target, starGM, closingScale, Object.assign({}, opts, { integrator: 'euler' }));
+  const job = { done: false, result: null, a: ja, b: jb, iterCount: 0,
+    step(maxIter, maxMs){
+      if(this.done) return true;
+      if(!ja.done) ja.step(maxIter, maxMs);
+      else if(!jb.done) jb.step(maxIter, maxMs);
+      this.iterCount = ja.iterCount + jb.iterCount;
+      if(ja.done && jb.done){ this.result = combineEstimateEnsemble(ja.result, jb.result); this.done = true; }
+      return this.done;
+    } };
+  return job;
+}
 
 /* ==== /ORDER LOGIC ==== */
-return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
+return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, createPlanEstimateJob, createPlanEstimateEnsembleJob, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
 }));
