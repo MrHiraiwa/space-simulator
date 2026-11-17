@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>宇宙シミュレーター 試作 v0.6.4（3D）</title>
+<title>宇宙シミュレーター 試作 v0.6.5（3D）</title>
 <style>
   :root{
     --bg:#040711;
@@ -1036,7 +1036,7 @@
 <!-- スタート画面 (id="start-screen") -->
 <div id="start-screen">
   <div class="start-card-wrap">
-    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.4</div>
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.5</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
     <p class="start-pitch">艦長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
     <div class="scenario-grid" id="scenario-cards">
@@ -1363,7 +1363,7 @@ function buildSaveData(){
   const rmEl = document.getElementById('result-modal');
   const rmOpen = !!(rmEl && rmEl.classList.contains('open'));
   return {
-    format: SAVE_FORMAT, version: 'v0.6.4', savedAt: Date.now(), shipTime: S.time,
+    format: SAVE_FORMAT, version: 'v0.6.5', savedAt: Date.now(), shipTime: S.time,
     scenario: selectedScenario, missionIdx: currentMissionIdx, meritTotal,
     sysId: S.sys ? S.sys.id : null, prologue: !!S.prologue,
     camAzAccum: (typeof camAzAccum === 'number') ? camAzAccum : 0,
@@ -1588,8 +1588,11 @@ setInterval(() => {
   };
   if(_saveWatchSnap){
     const p = _saveWatchSnap;
+    /* v0.6.5（課題4）: フェーズ変化は done への遷移だけでなく全て保存契機にする。
+       従来は undock→harbor のような変化が対象外で、終了直前の状態（港内 t=61）が
+       保存されず復元が出発時（t=2）まで巻き戻った。 */
     if(snap.docked !== p.docked || snap.ended !== p.ended || snap.sys !== p.sys ||
-       (snap.phase === 'done' && p.phase !== 'done') || (p.hasPlan && !snap.hasPlan)){
+       snap.phase !== p.phase || (p.hasPlan && !snap.hasPlan)){
       saveGame('transition');
     }
   }
@@ -1602,6 +1605,9 @@ setInterval(() => {
 }, 1000);
 document.addEventListener('visibilitychange', () => { if(document.hidden) saveGame('hidden'); });
 window.addEventListener('beforeunload', () => { saveGame('unload'); });
+/* v0.6.5（課題4）: pagehide はタブ／ブラウザ終了時に beforeunload が
+   呼ばれない経路でも発火する終了時保存の本命。保存形式は不変、契機のみ追加。 */
+window.addEventListener('pagehide', () => { saveGame('pagehide'); });
 function buildCaptainRecord(draft){
   const pt = PORTRAITS.find(p => p.id === draft.portrait) || PORTRAITS[0];
   const org = ORIGINS.find(o => o.id === draft.origin) || ORIGINS[0];
@@ -2223,16 +2229,27 @@ function currentThrust(){
 }
 let isThrusting = false;
 function physics(simDt){
-  /* 港内フェーズは呼び出し自体を 2 秒以下に割る（v0.6.4）: 操船
-     （updateDepartureOps）は physics() の呼び出し毎に 1 回だけ走るため、
-     追いつき等の大きな simDt では内部の積分刻みを細かくしても操船の
-     呼び出し間隔が粗いままになり、出域状態が推定器の前提（2 秒刻みの
-     simulateHarborExit）とずれる（実測: 出域位置差 5,260・操船 Δv 3 vs
-     9.44）。呼び出しを割ることで操船・判定の間隔ごと前提に一致させる。 */
-  if(simDt > 2 && !S.docked && S.planExec && S.planExec.active && (S.planExec.phase === 'undock' || S.planExec.phase === 'harbor')){
-    const nSlice = Math.ceil(simDt / 2);
-    for(let i = 0; i < nSlice; i++) physics(simDt / nSlice);
-    return;
+  /* 計画飛行中は呼び出し自体を積分刻み以下に割る（v0.6.4 港内→v0.6.5 一般化）:
+     誘導・判定（updatePlanExecution 等）は physics() の呼び出し毎に 1 回だけ
+     走るため、内部の積分刻みを細かくしても呼び出し間隔が粗いと誘導の
+     ケイデンスが推定器の前提からずれる。港内では実測で出域位置差 5,260・
+     操船 Δv 3 vs 9.44 になった（v0.6.4）。巡航でも同じ乖離があり、高ワープ
+     （1 フレーム最大 0.1 秒×ワープ = warp 3000 で 300 秒）で誘導評価が
+     300 秒間隔まで落ち、推定（≤120 秒刻みで評価）と実飛行が系統的にずれて
+     往路実績が大きく超過する事象を v0.6.5 の復元シナリオで実測した
+     （到着時残 Δv 13.9、新鮮な飛行では約 35）。割る幅は下の積分刻みの
+     上限に一致させる: 港内 2 秒／目標近傍 20 秒／巡航 120 秒。 */
+  if(!S.docked && S.planExec && S.planExec.active){
+    let sliceCap = (S.planExec.phase === 'undock' || S.planExec.phase === 'harbor') ? 2 : 120;
+    if(sliceCap === 120 && S.planExec.targetBody){
+      const dSlice = Math.hypot(S.ship.x - S.planExec.targetBody.x, S.ship.y - S.planExec.targetBody.y, S.ship.z - S.planExec.targetBody.z);
+      if(dSlice < 300000) sliceCap = 20;
+    }
+    if(simDt > sliceCap){
+      const nSlice = Math.ceil(simDt / sliceCap);
+      for(let i = 0; i < nSlice; i++) physics(simDt / nSlice);
+      return;
+    }
   }
   let maxStep = dynStep(S.ship.x, S.ship.y, S.ship.z, S.sys.starGM, S.planets, 0.75 * SCALE_K);
   if(S.target && ((S.planExec && S.planExec.active) || relInfo(S.ship, S.target).dist < 1e6)){
@@ -2647,6 +2664,7 @@ function issueOrder(kind, opts){
   const o = opts || {};
   let dv, orderName;
   if(kind === 'approach'){ dv = computeApproach(S.ship, S.target, S.sys.starGM, o.closingScale || 1, S.planets, undefined, o.ctx); orderName = o.orderName || '接近噴射'; }
+  else if(kind === 'vector'){ /* 計画にコミット済みの噴射ベクトルをそのまま実行する（v0.6.5） */ dv = o.dv; orderName = o.orderName || '出発噴射'; if(!dv) return false; }
   else if(kind === 'brake'){ dv = computeBrake(S.ship, S.target); orderName = '減速噴射'; }
   else if(kind === 'match'){ dv = computeMatch(S.ship, S.target); orderName = '速度同調'; }
   else if(kind === 'capture'){ dv = computeCapture(S.ship, o.targetBody || S.target, S.planets); orderName = '捕捉噴射'; if(!dv) return false; }
@@ -2987,7 +3005,7 @@ function openPlanPanel(cfg){
   const isVarFeasible = vv => isVarSafe(vv) && varRemain(vv) >= S.dv * ((planPanelState && planPanelState.reserve) || 10) / 100;
 
   planPanelState = { cfg, variants, selIdx: 0, checklistDone: false, checkIdx: 0, estimating: true, userPicked: false,
-    windowSearching: false, windowPick: null, windowSelected: false, windowNone: false, windowSearched: false, windowProgress: 0, windowCycle: 0 };
+    windowSearching: false, windowPick: null, windowSelected: false, windowNone: false, windowSearched: false, windowProgress: 0, windowCycle: 0, windowStepsTotal: 24 };
   planPanelState.priority = 'balance'; planPanelState.reserve = 10;
   document.getElementById('plan-levers').style.display = '';
   document.getElementById('btn-depart').style.display = '';
@@ -3062,12 +3080,12 @@ function openPlanPanel(cfg){
       const wcard = document.createElement('div');
       if(planPanelState.windowSearching){
         wcard.className = 'pv-card estimating';
-        wcard.innerHTML = '<div class="pv-title">🕐 出発窓の探索</div><div class="pv-meta">⏳ 即時出発では成立する案がありません。出発時刻をずらして探索しています…（' + (planPanelState.windowProgress || 0) + '/24）</div>';
+        wcard.innerHTML = '<div class="pv-title">🕐 出発窓の探索</div><div class="pv-meta">⏳ 即時出発では成立する案がありません。出発時刻をずらして探索しています…（' + (planPanelState.windowProgress || 0) + '/' + (planPanelState.windowStepsTotal || 24) + '）</div>';
       } else if(planPanelState.windowPick){
         const wp = planPanelState.windowPick;
         wcard.className = 'pv-card' + (planPanelState.windowSelected ? ' selected' : '');
         wcard.innerHTML = '<div class="pv-title">🕐 出発窓： 約' + fmtDuration(wp.waitSec) + ' 後に自動出発（' + wp.label + '案）</div>' +
-          '<div class="pv-meta">推定Δv: <b>' + (wp.est.dvTotal + (S.docked ? harborDvFor(wp.est) : 0)).toFixed(1) + '</b>／推定時間: 約' + fmtDuration(wp.est.timeTotal) + '<br>承認すると現在位置で待機し、窓の時刻に自動で出発します。出発時に現在の状態で再検証し、安全でなければ出発を見送ります。</div>';
+          '<div class="pv-meta">推定Δv: <b>' + (wp.est.dvTotal + (S.docked ? harborDvFor(wp.est) : 0)).toFixed(1) + '</b>／推定時間: 約' + fmtDuration(wp.est.timeTotal) + '<br>承認すると現在位置で待機し、窓の時刻に自動で出発します。出発時に現在の状態で再検証し、安全でなければ出発を見送ります。' + (wp.fine ? '<br>この窓は捕捉軌道の位相（1周期 約' + fmtDuration(wp.finePeriod) + '）を細かく走査して特定しました。待機中は現在の捕捉軌道を維持します。' : '') + '</div>';
         wcard.onclick = () => {
           playSfx('click');
           planPanelState.userPicked = true;
@@ -3215,7 +3233,31 @@ function openPlanPanel(cfg){
     if(!(cycle > 0) || !isFinite(cycle)) cycle = 86400;
     cycle = Math.min(Math.max(cycle, 43200), 40 * 86400);
     planPanelState.windowCycle = cycle;
-    const STEPS = 24, chunk = cycle / STEPS;
+    /* 細密走査（v0.6.5、課題2／台帳#62）: 非接舷で天体の近傍（捕捉軌道上）に
+       いる場合、出発コストを支配するのは自船の周回位相（月の捕捉軌道では
+       周期 約2.6時間）で、会合周期（約3.7日）を 24 刻みで見る従来走査は
+       その位相を取りこぼす。実測では探索の入口状態が 25 秒ずれるだけで
+       提示が step7→8 に変わり、180 秒では step16 になった——提示される窓が
+       「計算された窓」になっていなかった。捕捉軌道 1 周期を細かく走査し、
+       見つからなければ後続の周期へ続ける（幾何は周期ごとに少しずつ変わる）。 */
+    let finePeriod = 0;
+    if(!wasDocked && vic && vic.body.gm > 0){
+      finePeriod = 2 * Math.PI * Math.sqrt(Math.pow(Math.max(vic.dist, 1), 3) / vic.body.gm);
+    }
+    /* 2 段走査（v0.6.5 追加検証で改定）: 第 1 段は捕捉軌道の位相を細かく
+       （20 分割×2 周期）、見つからなければ第 2 段で会合周期を粗く 24 刻みで
+       数日先まで見る。細密だけでは、月の公転位置そのものが不利な幾何で
+       「数時間以内には窓が無いが数日後にはある」ケースを取りこぼすことを
+       実測した（復元シナリオの帰投: 即時推定 44〜51 に対し残量 34.8、
+       細密 40 刻みでは窓なし）。粗走査だけの v0.6.4 は逆に位相を取りこぼした。
+       両方を順に見るのが #62 の「計算された窓」の完全な形。 */
+    const FINE_STEPS = 20, FINE_PERIODS = 2, COARSE_STEPS = 24;
+    const fineSteps = finePeriod > 0 ? FINE_STEPS * FINE_PERIODS : 0;
+    const STEPS = fineSteps + COARSE_STEPS;
+    const fineChunk = finePeriod > 0 ? finePeriod / FINE_STEPS : 0;
+    const coarseChunk = cycle / COARSE_STEPS;
+    planPanelState.windowStepsTotal = STEPS;
+    planPanelState.windowCycle = (finePeriod > 0 ? finePeriod * FINE_PERIODS : 0) + cycle;
     const accFull = fullAccFn(starGM, snapPlanets);
     const propSnap = (dt) => {
       /* スナップショットの伝播は「実際に待機する世界」と同じ積分規律にする
@@ -3265,7 +3307,7 @@ function openPlanPanel(cfg){
       const remain = S.dv - est.dvTotal - (wasDocked ? harborDvFor(est) : 0);
       return remain >= S.dv * ((planPanelState && planPanelState.reserve) || 10) / 100;
     };
-    let step = 0;
+    let step = 0, waitSoFar = 0;
     const probeStep = () => {
       if(!planPanelState || planPanelState.cfg !== cfg) return; /* パネルを閉じた／別計画に切替 */
       if(step >= STEPS){
@@ -3274,9 +3316,12 @@ function openPlanPanel(cfg){
         renderVars(); renderPlanDetail(); renderChecklist(false);
         return;
       }
+      const inFine = step < fineSteps;
+      const thisChunk = inFine ? fineChunk : coarseChunk;
       step++;
       planPanelState.windowProgress = step;
-      propSnap(chunk);
+      propSnap(thisChunk);
+      waitSoFar += thisChunk;
       const shipState = (wasDocked && anchorSnap) ? { x: anchorSnap.x, y: anchorSnap.y, z: anchorSnap.z, vx: anchorSnap.vx, vy: anchorSnap.vy, vz: anchorSnap.vz } : shipSnap;
       const snapDepSep = wasDocked ? computeDepSep(anchorSnap, targetSnap) : null;
       const estStd = computePlanEstimate(shipState, targetSnap, starGM, 1.0, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: snapDepSep });
@@ -3297,9 +3342,9 @@ function openPlanPanel(cfg){
         }
         if(best){
           planPanelState.windowSearching = false;
-          planPanelState.windowPick = { waitSec: step * chunk, variantIdx: best.idx, variantId: best.id, label: best.label, scale: best.scale, est: best.est };
+          planPanelState.windowPick = { waitSec: waitSoFar, variantIdx: best.idx, variantId: best.id, label: best.label, scale: best.scale, est: best.est, fine: inFine, finePeriod: finePeriod || 0 };
           planPanelState.windowSelected = true;
-          logEvent('🕐 ' + aiName() + ': 出発窓を特定。約 ' + fmtDuration(step * chunk) + ' 後の出発で ' + best.label + '案が成立します（推定Δv ' + best.est.dvTotal.toFixed(1) + '）。');
+          logEvent('🕐 ' + aiName() + ': 出発窓を特定。約 ' + fmtDuration(waitSoFar) + ' 後の出発で ' + best.label + '案が成立します（推定Δv ' + best.est.dvTotal.toFixed(1) + '）。');
           renderVars(); renderPlanDetail(); renderChecklist(false);
           return;
         }
@@ -3356,10 +3401,31 @@ function confirmDeparture(){
      「窓まで待機して自動出発」する計画として確定する。離舷・出域は窓の時刻に
      startWindowDeparture が再検証のうえ実施する。 */
   const wp = (planPanelState.windowPick && planPanelState.windowSelected) ? planPanelState.windowPick : null;
-  const v = wp ? { id: wp.variantId, label: wp.label, scale: wp.scale, est: wp.est } : planPanelState.variants[planPanelState.selIdx];
+  let v = wp ? { id: wp.variantId, label: wp.label, scale: wp.scale, est: wp.est } : planPanelState.variants[planPanelState.selIdx];
   const cfg = planPanelState.cfg;
-  const wps = planPanelState.waypoints;
+  let wps = planPanelState.waypoints;
   const winCycle = wp ? (planPanelState.windowCycle || 0) : 0; // closePlanPanel で planPanelState が消える前に確保する
+  const reservePct = planPanelState.reserve || 10;
+  /* 非接舷の即時出発（捕捉軌道上など）では、承認の瞬間の状態で推定を取り直し、
+     その初回噴射を計画にコミットする（v0.6.5、課題1）。パネル表示時点の推定は
+     承認までの間に位相が進んで前提が崩れていることがある（捕捉軌道上では
+     誘導判定が位相で激しく振れる）。取り直した推定が成立しない場合は、
+     古い約束のまま出発せず、パネルを開いたまま艦長の再判断を仰ぐ。 */
+  let departBurn = null;
+  if(!wp && !S.docked){
+    const fresh = computePlanEstimateEnsemble(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: null });
+    const fRisk = fresh.impactRisk;
+    const fSafe = !(fRisk && fRisk.minDist < fRisk.surfaceR + fRisk.margin);
+    const fFeasible = !!(fresh.ok && fSafe && (S.dv - fresh.dvTotal) >= S.dv * reservePct / 100);
+    if(!fFeasible){
+      logEvent('⚠️ ' + aiName() + ': 承認時点の状態では ' + v.label + '案が成立しません（再推定 Δv ' + fresh.dvTotal.toFixed(1) + '／残量 ' + S.dv.toFixed(1) + '）。出発を見送ります。再計画してください。');
+      showOfficerPopup(HELM, '承認時点の再推定で計画が成立しませんでした。出発を見送ります。計画の組み直しをお願いします。');
+      return;
+    }
+    v = { id: v.id, label: v.label, scale: v.scale, est: fresh };
+    wps = null; /* 航路点は取り直した推定で組み直す */
+    if(fresh.firstBurnVec && fresh.firstBurnT != null && fresh.firstBurnT <= 1800) departBurn = { dvx: fresh.firstBurnVec.dvx, dvy: fresh.firstBurnVec.dvy, dvz: fresh.firstBurnVec.dvz, cost: fresh.firstBurnVec.cost, atT: fresh.firstBurnT };
+  }
   closePlanPanel();
   playSfx('click');
   const wasDocked = !!S.docked;
@@ -3400,6 +3466,8 @@ function confirmDeparture(){
     arrivalDist: cfg.arrivalDist,
     needDock: cfg.needDock,
     phase: wp ? 'waitwin' : (wasDocked ? 'undock' : 'depart'),
+    departBurn: departBurn,
+    reserve: reservePct,
     waitUntil: wp ? S.time + wp.waitSec : 0,
     waitVariantId: wp ? wp.variantId : null,
     waitPromisedDv: wp ? wp.est.dvTotal : 0,
@@ -3462,10 +3530,32 @@ function confirmDeparture(){
 function startWindowDeparture(){
   const pe = S && S.planExec;
   if(!pe || pe.phase !== 'waitwin') return;
-  const est = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, pe.closingScale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, pe.targetBody) : null });
-  const ir = est.impactRisk;
-  const irUnsafe = !!(ir && ir.minDist < ir.surfaceR + (ir.body === (pe.targetBody && pe.targetBody.name) ? 0 : ir.margin));
-  if(!est.ok || irUnsafe){
+  /* 出発時の再検証（v0.6.5、課題1/2）: 約束したバリアントだけでなく全案を
+     現在の状態で推定し直し、成立する最安の案で出発する。捕捉軌道上では
+     推定コストが軌道位相で棘状に振れ（実測: eco の推定が 240 秒で
+     52.3 → 16.6 に落ちる）、窓の提示時点と出発時点では案ごとの成立が
+     入れ替わる。約束の案だけを見ると、成立する案があるのに出発できない。
+     承認の対象は「成立する窓で出発する」ことであり、案を切り替えた場合は
+     日誌に明記する。成立の規則はパネルと同一（安全＋予備込みの予算）で、
+     旧規則（ok と安全のみ）は必要量が残量を超える推定でも出発していた。 */
+  const depSepNow = S.docked ? computeDepSep(S.dockedTo || S.station, pe.targetBody) : null;
+  const varDefs = [
+    { id: 'std', label: '標準', scale: 1.0 },
+    { id: 'eco', label: '省燃料', scale: 0.8 },
+    { id: 'fast', label: '最速', scale: 1.3 }
+  ];
+  const promisedId = pe.waitVariantId || 'std';
+  const promisedLabel = (varDefs.find(d => d.id === promisedId) || varDefs[0]).label;
+  let chosen = null;
+  for(const vd of varDefs){
+    const e = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, vd.scale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depSep: depSepNow });
+    const irE = e.impactRisk;
+    const irUnsafeE = !!(irE && irE.minDist < irE.surfaceR + (irE.body === (pe.targetBody && pe.targetBody.name) ? 0 : irE.margin));
+    const hdE = S.docked ? harborDvFor(e) : 0;
+    const feasibleE = !!(e.ok && !irUnsafeE && (S.dv - e.dvTotal - hdE) >= S.dv * ((pe.reserve || 10) / 100));
+    if(feasibleE && (!chosen || e.dvTotal < chosen.est.dvTotal - 0.5 || (vd.id === promisedId && e.dvTotal <= chosen.est.dvTotal + 0.5))) chosen = { vd, est: e };
+  }
+  if(!chosen){
     /* 窓の再検証が外れた場合は、まず窓を組み直して待機を続ける（v0.6.4 課題1）:
        検証したスナップショットと実勢の分岐差で 1 回の再検証が外れても、
        幾何は刻みごとに変わる。艦長が承認したのは「成立する窓で出発する」
@@ -3490,6 +3580,10 @@ function startWindowDeparture(){
     saveGame('window-abort');
     return;
   }
+  const est = chosen.est;
+  pe.closingScale = chosen.vd.scale;
+  pe.variantLabel = chosen.vd.label;
+  pe.waitVariantId = chosen.vd.id;
   const wasDocked = !!S.docked;
   const depAnchor = pe.depAnchor || S.dockedTo || S.station || null;
   if(S.docked){
@@ -3516,9 +3610,14 @@ function startWindowDeparture(){
   pe.planDoc = { routeName: cfgLite.routeName, course: courseLabel(pe.waitVariantId || 'std'), legs: est.legs || [], rows: docRows, waypoints: finalWps, fixes: fixes, plannedTotal: est.dvTotal + harborDv, plannedTime: est.timeTotal, dvAtStart: S.dv, finalRel: est.finalRel };
   pe.remDv = est.dvTotal + harborDv;
   pe.remTime = est.timeTotal;
+  /* 出発噴射のコミット（v0.6.5）: 再検証した推定の初回噴射を、その時刻
+     （atT）まで滑空してからそのまま実行する（非接舷の場合）。窓の時刻の
+     状態で計算した噴射が計画の前提であり、実飛行の初回評価の遅れで
+     位相ナッジに化けさせない。 */
+  pe.departBurn = (!wasDocked && est.firstBurnVec && est.firstBurnT != null && est.firstBurnT <= 1800) ? { dvx: est.firstBurnVec.dvx, dvy: est.firstBurnVec.dvy, dvz: est.firstBurnVec.dvz, cost: est.firstBurnVec.cost, atT: est.firstBurnT } : null;
   S.planSamples = est.samples;
   S.planFullSamples = est.samples;
-  logEvent('🕐 出発窓に到達 — ' + pe.variantLabel + ' で自動出発します（再検証推定 Δv ' + (est.dvTotal + harborDv).toFixed(1) + (pe.waitPromisedDv ? '／窓提示時の推定 ' + (pe.waitPromisedDv + harborDv).toFixed(1) : '') + '）。');
+  logEvent('🕐 出発窓に到達 — ' + pe.variantLabel + ' で自動出発します（再検証推定 Δv ' + (est.dvTotal + harborDv).toFixed(1) + (pe.waitPromisedDv ? '／窓提示時の推定 ' + (pe.waitPromisedDv + harborDv).toFixed(1) : '') + (chosen.vd.id !== promisedId ? '／窓提示時の ' + promisedLabel + '案は現在の状態では成立しないため、成立する最安の案へ切替' : '') + '）。');
   pe.startT = S.time;
   pe.lastEstMs = 0;
   setPlanPhase(pe, wasDocked ? 'undock' : 'depart');
@@ -3701,15 +3800,22 @@ function updatePlanExecution(simDt){
     const irUnsafe = !!(ir && ir.minDist < ir.surfaceR + (ir.body === (pe.targetBody && pe.targetBody.name) ? 0 : ir.margin));
     const estSafe = !!(est.ensemble && est.ensemble.euler.ok) && !irUnsafe;
     const bothBad = !!(est.ensemble && !est.ensemble.rk4.ok && !est.ensemble.euler.ok);
+    /* 予算の逸脱（v0.6.5、課題1）: 双子が「完走できる」と言っても、必要量が
+       残量を有意に超える推定は完走できない計画である。旧規則は ok と安全だけを
+       見ていたため、再推定が残量超過を示し続けても誰も止めず、推進剤を
+       使い切って置き去りになった（実測: 残量 32.8 に対し再推定 78.5→44 が
+       続いても badEst 0 のまま全量消費）。残量超過も逸脱として数え、
+       2 回続けば判断ポイントで止める（枯渇させない）。 */
+    const budgetBad = !!(est.ensemble && est.ensemble.euler.ok) && !irUnsafe && est.dvTotal > S.dv + Math.max(2, S.dv * 0.1);
     if(est.timeout){
       /* 推定時間切れは「情報なし」: 逸脱とも進展とも数えない（次回ケイデンスで再試行する） */
-    } else if(estSafe){
+    } else if(estSafe && !budgetBad){
       pe.badEst = 0;
       pe.progressT = S.time; /* 健全な再推定＝計画が完走見込みのまま進んでいる証跡 */
       pe.remDv = est.dvTotal; pe.remTime = est.timeTotal;
       S.planSamples = est.samples;
       updatePlanLineMesh();
-    } else if(!pe.paused && (pe.phase === 'cruise' || pe.phase === 'depart') && (bothBad || irUnsafe)){
+    } else if(!pe.paused && (pe.phase === 'cruise' || pe.phase === 'depart') && (bothBad || irUnsafe || budgetBad)){
       pe.progressT = S.time; /* 完走した再推定（不良判定でも）＝誘導系が生きている証跡。逸脱の扱いは badEst 側が担う */
       pe.badEst = (pe.badEst || 0) + 1;
       if(pe.badEst >= 2){
@@ -3798,7 +3904,7 @@ function updatePlanExecution(simDt){
 
   const info = relInfo(S.ship, pe.targetBody);
   if(pe.legType === 'simple'){
-    if(info.dist <= pe.arrivalDist || (pe.captureDone && info.dist <= pe.arrivalDist * 1.5) || (!pe.captureDone && pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && info.dist <= pe.arrivalDist * 1.5)){
+    if(info.dist <= pe.arrivalDist || (pe.phase === 'final' && info.dist <= Math.max(pe.arrivalDist * 3, 300) && info.rel <= 4) || (pe.captureDone && info.dist <= pe.arrivalDist * 1.5) || (!pe.captureDone && pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && info.dist <= pe.arrivalDist * 1.5)){
       /* 捕捉待ちの間は到着判定の入口を 1.5 倍に広げる（v0.6.2）: 高ワープ等で
          physics の刻みが粗いと、到着圏 [捕捉フロア, arrivalDist] の通過を
          サンプルが取りこぼし、捕捉が発火しないまま通り過ぎる（実測: warp
@@ -3884,9 +3990,24 @@ function updatePlanExecution(simDt){
       return;
     }
     if(pe.phase === 'depart'){
+      /* 出発噴射のコミット（v0.6.5、課題1）: 非接舷の出発では、推定が前提にした
+         初回噴射を計画が保持し、その時刻（atT）まで滑空してからそのまま実行する。
+         捕捉軌道上では誘導判定が軌道位相で激しく振れ（実測: 同一軌道で 1.0〜51）、
+         実飛行の初回評価が物理チャンク分（最大120秒）遅れるだけで離脱噴射が
+         位相ナッジに化けて計画の前提が崩れた（推定 23.8 に対し実飛行は全量
+         消費・置き去り）。推定と実飛行を一致させるため、出発の初回噴射は
+         再判定せずコミット分を撃つ。 */
+      if(pe.departBurn && (S.time - pe.startT) < (pe.departBurn.atT || 0)) return; /* コミット噴射の時刻まで無噴射で滑空する */
       setPlanPhase(pe, 'cruise');
       pe.checkTimer = planCadenceFor(S.ship, info.dist, S.planets);
-      issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+      if(pe.departBurn){
+        const db = pe.departBurn; pe.departBurn = null;
+        if(!issueOrder('vector', { isAuto: true, silent: true, orderName: '出発噴射', dv: db })){
+          issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+        }
+      } else {
+        issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+      }
     } else if(pe.phase === 'cruise'){
       pe.checkTimer -= simDt;
       if(pe.checkTimer <= 0){
@@ -3894,15 +4015,39 @@ function updatePlanExecution(simDt){
         pe.progressT = S.time; /* 誘導系が命令を評価した＝生きている証跡（停滞判定用） */
         issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
       }
+      /* 終端フェーズへの移行（v0.6.5、課題1）: 推定器は質量なし目標への単純レグで
+         25,000 以内を final（速度一致プロファイル）として見積もり、到着も
+         「300 以内＋相対速度 4 以下＋滑空安全」のエンベロープで受理する。
+         実飛行側にこの終端が無く、巡航誘導のまま到着球（90）を突いて振動し、
+         終端だけで残量全てを消費した（実測: 42,000 から 19.6 を消費し枯渇）。
+         推定と実飛行で終端の計算を一致させる。 */
+      if(!pe.needDock && !(pe.targetBody.gm > 0) && info.dist < 25000) setPlanPhase(pe, 'final');
+    } else if(pe.phase === 'final'){
+      /* 推定器の final と同じ制御則: 閉速度が 0.5 未満なら目標速度＋0.9 の
+         接近プロファイルへ同調し、速すぎれば減速する。判断は物理コールごと
+         （推定器の 0.8 秒ケイデンスに相当する細かさは、実飛行では目標近傍で
+         物理刻みが細切れになることで担保される）。 */
+      if(!S.activeBurn){
+        if(info.closing < 0.5) issueOrder('final', { isAuto: true, silent: true });
+        else if(info.closing > 1.3 || info.rel > V_CONTACT) issueOrder('brake', { isAuto: true, silent: true });
+      }
     }
     return;
   }
 
   // rendezvous leg: depart -> cruise -> brake -> (captain in M1) -> join -> final -> done
   if(pe.phase === 'depart'){
+    if(pe.departBurn && (S.time - pe.startT) < (pe.departBurn.atT || 0)) return; /* コミット噴射の時刻まで無噴射で滑空する（v0.6.5） */
     setPlanPhase(pe, 'cruise');
     pe.checkTimer = planCadenceFor(S.ship, info.dist, S.planets);
-    issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+    if(pe.departBurn){
+      const db = pe.departBurn; pe.departBurn = null;
+      if(!issueOrder('vector', { isAuto: true, silent: true, orderName: '出発噴射', dv: db })){
+        issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+      }
+    } else {
+      issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, orderName: '出発噴射', ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+    }
   } else if(pe.phase === 'cruise'){
     // 巡航中はAIが5秒ごとに軌道を再評価し、必要な時だけ修正噴射する
     // （遷移軌道に乗っている間は噴射せず滑空する）。

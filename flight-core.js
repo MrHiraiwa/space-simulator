@@ -1124,18 +1124,18 @@ function computePlanEstimate(ship, target, starGM, closingScale, opts){
     dvTotal += d.cost;
     if(phase === 'cruise') dvCruise += d.cost;
     if(d.cost > 0 && inVicinityOf(s, pls)) dvGravityComp += d.cost;
-    if(firstBurn === null && d.cost > 0.001) firstBurn = d.cost;
+    if(firstBurn === null && d.cost > 0.001){ firstBurn = d.cost; firstBurnVec = { dvx: d.dvx, dvy: d.dvy, dvz: d.dvz, cost: d.cost }; firstBurnT = timeTotal; }
     phaseDv[phase] = (phaseDv[phase] || 0) + d.cost;
   };
   const split = rel => ({ dvDepart: dvCruise, dvArrival: dvTotal - dvCruise, dvGravityComp, finalRel: rel });
-  let firstBurn = null;
+  let firstBurn = null, firstBurnVec = null, firstBurnT = null;
   const phaseDv = {}, phaseT0 = {};
   const mkLegs = () => {
     const order = ['cruise', 'brake', 'captain', 'join', 'final'];
     const seen = order.filter(p => phaseT0[p] !== undefined);
     return seen.map((p, i) => ({ phase: p, t0: phaseT0[p], t1: (i + 1 < seen.length ? phaseT0[seen[i + 1]] : timeTotal), dv: phaseDv[p] || 0 }));
   };
-  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, impactRisk: bestRisk, dvHarbor, harborTime });
+  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime });
   let planetCross = false, surfaceHit = false, bestRisk = null, bestAlt = Infinity;
   let hitCount = 0, crossCount = 0, capHitBase = 0, capCrossBase = 0;
   /* 推定の暴走ガード（v0.6.1 #5）: シミュレーション上の艦が天体に捕捉される軌道に入ると、
