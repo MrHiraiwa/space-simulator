@@ -533,12 +533,12 @@
   }
 
   /* ===== 航宙計画パネル (#plan-panel) & モーダル共通 ===== */
-  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal,#log-panel,#traffic-panel{
+  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal,#log-panel,#traffic-panel,#overwrite-modal{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
     display:none;align-items:center;justify-content:center;padding:12px;
   }
-  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open,#log-panel.open,#traffic-panel.open{display:flex}
+  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open,#log-panel.open,#traffic-panel.open,#overwrite-modal.open{display:flex}
   /* 名簿は開始画面（z-index:50）の上に出す。開始画面を隠すのは席決定後（enterGameWorld） */
   #roster-modal{z-index:60}
   .roster-note{font-size:12px;line-height:1.6;color:#cbd5e1;background:rgba(6,11,24,0.6);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:0 0 12px}
@@ -565,6 +565,7 @@
   /* 資料コーデックス（B10）: 固定枠＋中身スクロール＋展開式の項目 */
   #codex-modal{z-index:65}
   #log-panel,#traffic-panel{z-index:65}
+  #overwrite-modal{z-index:65}
   #codex-modal .modal-box{display:flex;flex-direction:column;height:min(82vh,680px)}
   #codex-scroll{flex:1;overflow-y:auto;min-height:0}
   #codex-modal .modal-actions{margin-top:auto;padding-top:10px;flex:none}
@@ -699,8 +700,6 @@
   .sc-spec{font-size:12px;color:var(--muted);line-height:1.5}
   #btn-sortie{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em}
   #btn-continue{font-size:17px;padding:14px 44px;border-radius:12px;letter-spacing:.08em;margin-top:10px}
-  #save-overwrite-confirm{margin-top:12px;padding:12px;border:1px solid var(--accent2);border-radius:12px;background:rgba(60,40,10,0.35)}
-  #save-overwrite-confirm button{margin:4px 6px 0;padding:10px 18px;border-radius:10px}
   .cr-kicker{font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em}
   .cr-sec{font-size:12px;font-weight:800;color:var(--accent);margin:14px 0 6px}
   .cr-opts{display:grid;grid-template-columns:repeat(2,1fr);gap:7px}
@@ -1109,10 +1108,22 @@
     <button id="btn-continue" class="primary" style="display:none">▶ つづきから</button>
     <p id="start-load-status" style="font-size:12px;color:var(--muted);min-height:16px;margin:8px 0 0"></p>
     <p id="continue-info" class="start-pitch" style="display:none;font-size:12px"></p>
-    <div id="save-overwrite-confirm" style="display:none">
-      <p class="start-pitch" style="font-size:12px;margin:0 0 6px">航宙途中のセーブがあります。新しく始めると、このセーブは上書きされます。よろしいですか？</p>
+  </div>
+</div>
+
+<!-- セーブ上書き確認モーダル: 「はじめる」で画面が切り替わらず下に箱が増える形はやめ、
+     ちゃんとモーダルとして切り替える。選択肢は実質の2つ（消して始める／つづきから）。
+     何もしないで戻るのは右上の✕と背景タップ（大きなキャンセルボタンは置かない） -->
+<div id="overwrite-modal">
+  <div class="modal-box" style="text-align:left;position:relative">
+    <button id="btn-overwrite-close" title="閉じる" style="position:absolute;top:8px;right:8px;padding:4px 9px">✕</button>
+    <div style="font-size:11px;color:#fbbf24;font-weight:800;letter-spacing:.08em">⚠ セーブがあります</div>
+    <h2 style="margin:4px 0 8px;font-size:19px">新しく始めますか？</h2>
+    <p style="font-size:13px;line-height:1.7;margin:0 0 6px">航宙途中のセーブがあります。新しく始めると、このセーブは上書きされます。</p>
+    <p id="overwrite-save-info" style="font-size:12px;color:var(--muted);margin:0 0 6px"></p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       <button id="btn-overwrite-yes" class="amber">セーブを消して新しく始める</button>
-      <button id="btn-overwrite-no">キャンセル</button>
+      <button id="btn-overwrite-continue" class="primary">▶ つづきから</button>
     </div>
   </div>
 </div>
@@ -1575,8 +1586,17 @@ function loadGame(){
 }
 /* ---- スタート画面のセーブ UI ---- */
 function hideSaveConfirm(){
-  const box = document.getElementById('save-overwrite-confirm');
-  if(box) box.style.display = 'none';
+  const m = document.getElementById('overwrite-modal');
+  if(m) m.classList.remove('open');
+}
+function showSaveConfirm(){
+  const save = readSave();
+  const info = document.getElementById('overwrite-save-info');
+  if(info && save){
+    const d = new Date(save.savedAt || Date.now());
+    info.textContent = '前回の航宙： ' + (save.label || '航宙') + ' ／ 船内時刻 ' + formatShipTime(save.shipTime || 0) + ' ／ 保存 ' + d.toLocaleString('ja-JP');
+  }
+  document.getElementById('overwrite-modal').classList.add('open');
 }
 function refreshSaveUI(){
   const btn = document.getElementById('btn-continue');
@@ -1604,8 +1624,7 @@ document.getElementById('btn-sortie').addEventListener('click', (e) => {
      （このリスナは元の出航ハンドラより先に登録されている） */
   e.stopImmediatePropagation();
   e.preventDefault();
-  const box = document.getElementById('save-overwrite-confirm');
-  if(box) box.style.display = '';
+  showSaveConfirm();
 });
 document.getElementById('btn-overwrite-yes').addEventListener('click', () => {
   playSfx('click');
@@ -1616,7 +1635,9 @@ document.getElementById('btn-overwrite-yes').addEventListener('click', () => {
   document.getElementById('btn-sortie').click();
   _sortieConfirmed = false;
 });
-document.getElementById('btn-overwrite-no').addEventListener('click', () => { playSfx('click'); hideSaveConfirm(); });
+document.getElementById('btn-overwrite-close').addEventListener('click', () => { playSfx('click'); hideSaveConfirm(); });
+document.getElementById('overwrite-modal').addEventListener('click', (e) => { if(e.target === e.currentTarget) hideSaveConfirm(); });
+document.getElementById('btn-overwrite-continue').addEventListener('click', () => { playSfx('warp'); hideSaveConfirm(); loadGame(); });
 document.getElementById('btn-continue').addEventListener('click', () => { playSfx('warp'); loadGame(); });
 document.getElementById('btn-rm-title').addEventListener('click', () => { refreshSaveUI(); });
 refreshSaveUI();
