@@ -974,7 +974,7 @@
       <span class="lever-group">予備 <button data-res="5">5%</button><button data-res="10">10%</button><button data-res="20">20%</button></span>
     </div>
     <div id="plan-detail"></div>
-    <div id="departure-checklist" title="タップで早送り"></div>
+    <div id="departure-checklist"></div>
     <div class="plan-note" id="plan-note">※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AIイオとクルーが計画に沿って運航し、船長は承認・監視・例外判断を行います。</div>
     <div class="modal-actions">
       <button id="btn-depart" class="primary" disabled>出航用意よし — 出航</button>
@@ -2975,10 +2975,10 @@ function buildWaypoints(cfg, est, opts){
   if(wasDocked && depAnchor){ laneWp.id = 'departLane'; laneWp.kind = 'port'; laneWp.fix = true; laneWp.anchor = depAnchor; }
   wps.push(laneWp);
   if(wasDocked && depAnchor && depSep){
-    const depEta = 110;
-    const off = { x: depSep.x * 210, y: depSep.y * 210, z: depSep.z * 210 };
+    const depEta = 30;
+    const off = { x: depSep.x * 80, y: depSep.y * 80, z: depSep.z * 80 };
     wps.push({
-      id: 'departFix', name: '出域フィックス', kind: 'depart', fix: true, eta: depEta, t: depEta,
+      id: 'departFix', name: '出域点', kind: 'depart', fix: true, eta: depEta, t: depEta,
       anchor: depAnchor, offset: off,
       pos: [depAnchor.x + off.x, depAnchor.y + off.y, depAnchor.z + off.z],
       note: '港内制限解除・本航行開始'
@@ -3313,6 +3313,55 @@ function stepJobBudget(job, budgetMs){
   while(!done && performance.now() - t0 < budgetMs) done = job.step(6000, 50);
   return done;
 }
+/* 世界のスナップショットを dt 秒先まで伝播する（出発時刻を固定した計画用、
+   2026-11-19）。窓走査の propSnap と同じ積分規律——惑星は恒星重力のみ RK4、
+   月・ステーション・自船は実飛行の stepBody と同じ半陰的オイラー＋同じ刻み
+   上限——で「その時刻に実際に起きる配置」を作る。計画はこの配置から積む
+   ため、承認した数値と航路が、出発の瞬間にそのまま前提になる。 */
+function propagateWorldSnapshots(dt, targetBody){
+  const starGM = S.sys.starGM;
+  const planets = S.planets.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, dispR: p.dispR || 0, name: p.name || '', isMoon: !!p.isMoon, moonOf: p.moonOf || null }));
+  const station = S.station ? { x: S.station.x, y: S.station.y, z: S.station.z, vx: S.station.vx, vy: S.station.vy, vz: S.station.vz, gm: 0, radius: S.station.radius || 11, dispR: S.station.dispR || 0, name: S.station.name || '', isMoon: false } : null;
+  const target = (targetBody === S.station && station) ? station : (planets.find(p => p.name === (targetBody && targetBody.name)) || planets[0]);
+  const anchorLive = S.docked ? (S.dockedTo || S.station) : null;
+  const anchor = anchorLive ? (anchorLive === S.station ? station : planets.find(p => p.name === anchorLive.name)) : null;
+  const ship = { x: S.ship.x, y: S.ship.y, z: S.ship.z, vx: S.ship.vx, vy: S.ship.vy, vz: S.ship.vz };
+  const accFull = fullAccFn(starGM, planets);
+  const accs = planets.map((_, i) => accExcluding(starGM, planets, i));
+  const sAcc = starAccFn(starGM);
+  let capP = dt;
+  const capBodies = station ? planets.concat([station]) : planets.slice();
+  if(!S.docked) capBodies.push(ship);
+  for(const b of capBodies){
+    let bGm = starGM, bD = Math.hypot(b.x, b.y, b.z);
+    for(const q of planets){ if(q.gm > 0 && q.name !== b.name){ const d = Math.hypot(b.x - q.x, b.y - q.y, b.z - q.z); if(d > 1 && q.gm / (d * d) > bGm / Math.max(1, bD * bD)){ bGm = q.gm; bD = d; } } }
+    if(bGm > 0 && bD > 0) capP = Math.min(capP, Math.max(20, 2 * Math.PI * Math.sqrt(Math.pow(bD, 3) / bGm) * 0.01));
+  }
+  const nSub = Math.min(400, Math.max(1, Math.ceil(dt / Math.max(1, capP))));
+  const hs = dt / nSub;
+  const eulerSnap = (b, accFn, cap) => {
+    const nE = Math.min(4000, Math.max(1, Math.ceil(hs / cap)));
+    const he = hs / nE;
+    for(let k = 0; k < nE; k++){
+      const a = accFn(b.x, b.y, b.z);
+      b.vx += a[0] * he; b.vy += a[1] * he; b.vz += a[2] * he;
+      b.x += b.vx * he; b.y += b.vy * he; b.z += b.vz * he;
+    }
+  };
+  const shipRef = S.docked ? (anchor || ship) : ship;
+  for(let k = 0; k < nSub; k++){
+    const dTgt = Math.hypot(shipRef.x - target.x, shipRef.y - target.y, shipRef.z - target.z);
+    const capShip = dTgt < 300000 ? 20 : 120;
+    for(let i = 0; i < planets.length; i++){
+      if(planets[i].isMoon) eulerSnap(planets[i], accs[i], capShip);
+      else rk4StepState(planets[i], hs, sAcc);
+    }
+    if(station) eulerSnap(station, accFull, capShip);
+    if(!S.docked) eulerSnap(ship, accFull, capShip);
+  }
+  return { planets, station, target, anchor, ship };
+}
+
 function openPlanPanel(cfg){
   if(!S) return;
   if(S.docked && !S.depBriefed){
@@ -3338,6 +3387,18 @@ function openPlanPanel(cfg){
   planPanelState = { cfg, variants, selIdx: 0, checklistDone: false, checkIdx: 0, estimating: true, userPicked: false,
     windowSearching: false, windowPick: null, windowSelected: false, windowNone: false, windowSearched: false, windowProgress: 0, windowCycle: 0, windowStepsTotal: 24 };
   planPanelState.priority = 'balance'; planPanelState.reserve = 10;
+  /* 出発時刻の固定（2026-11-19、船長の指摘）: 接舷出発の計画は「会議の瞬間」
+     の配置ではなく、出発便の時刻の配置で計算する。策定時に出発時刻（出発
+     準備として 30 分後）を置き、世界をその時刻まで伝播したスナップショット
+     から推定する。承認されれば接舷したまま待機し、その時刻に承認した計画
+     のまま自動で出発する——出発直後の積み直しで航路が描き替わることは
+     しない。伝播に失敗した場合は従来どおり現在配置の推定に倒す。 */
+  if(S.docked){
+    planPanelState.depEpoch = S.time + 1800;
+    try { planPanelState.depSnap = propagateWorldSnapshots(1800, cfg.targetBody); }
+    catch(e){ planPanelState.depSnap = null; planPanelState.depEpoch = null; }
+    if(!planPanelState.depSnap) planPanelState.depEpoch = null;
+  }
   document.getElementById('plan-levers').style.display = '';
   document.getElementById('btn-depart').style.display = '';
   /* 界面憲法: M0 の計画パネルは証拠表示に降格する。優先・予備レバーと出発ボタンは
@@ -3782,7 +3843,11 @@ function openPlanPanel(cfg){
       return;
     }
     const v = variants[estIdx++];
-    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null });
+    /* 出発時刻を固定した計画では、出発便の時刻まで伝播した配置から推定する
+       （自船は錨の状態＝接舷したままその時刻を迎える前提） */
+    const ds = planPanelState.depSnap;
+    const job = ds ? createPlanEstimateEnsembleJob(ds.anchor, ds.target, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: ds.planets, depSep: computeDepSep(ds.anchor, ds.target), depAnchor: snapBodyState(ds.anchor) })
+      : createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null });
     const pumpEst = () => {
       if(!planPanelState || planPanelState.cfg !== cfg) return;
       if(stepJobBudget(job, 120)){
@@ -3827,8 +3892,16 @@ function confirmDeparture(){
   /* 出発窓の承認（v0.6.4、台帳#49）: 窓が選択されていれば、その計画で
      「窓まで待機して自動出発」する計画として確定する。離舷・出域は窓の時刻に
      startWindowDeparture が再検証のうえ実施する。 */
-  const wp = (planPanelState.windowPick && planPanelState.windowSelected) ? planPanelState.windowPick : null;
+  let wp = (planPanelState.windowPick && planPanelState.windowSelected) ? planPanelState.windowPick : null;
   let v = wp ? { id: wp.variantId, label: wp.label, scale: wp.scale, est: wp.est } : planPanelState.variants[planPanelState.selIdx];
+  /* 出発時刻を固定した計画（接舷、2026-11-19）: 推定は出発便の時刻の配置で
+     計算されている。承認は「その時刻にこの計画で出発する」こととして確定
+     し、接舷したまま待機（waitwin）へ入る。会議が長引いて便の時刻を過ぎて
+     いた場合は、過ぎた便の計画は使わず、下の再推定（承認時点の配置）で
+     計算し直してから出発する。 */
+  const depEpoch = (!wp && S.docked && planPanelState.depEpoch) ? planPanelState.depEpoch : null;
+  const epochMissed = !!(depEpoch && S.time > depEpoch - 300);
+  if(depEpoch && !epochMissed) wp = { waitSec: depEpoch - S.time, variantId: v.id, label: v.label, scale: v.scale, est: v.est, epochPlan: true };
   const cfg = planPanelState.cfg;
   let wps = planPanelState.waypoints;
   const winCycle = wp ? (planPanelState.windowCycle || 0) : 0; // closePlanPanel で planPanelState が消える前に確保する
@@ -3839,7 +3912,7 @@ function confirmDeparture(){
      誘導判定が位相で激しく振れる）。取り直した推定が成立しない場合は、
      古い約束のまま出発せず、パネルを開いたまま船長の再判断を仰ぐ。 */
   let departBurn = null;
-  if(!wp && !S.docked){
+  if(!wp && (!S.docked || epochMissed)){
     /* 再推定はジョブで刻む（第2段b・スコープD）: 承認の瞬間に数秒〜数十秒
        固まる同期推定をなくす。検証の規則・不成立時の扱いは従来どおり。
        パネルが開いている間は判断ホールド（#67）で実効倍速が ×1 になるため、
@@ -3849,7 +3922,7 @@ function confirmDeparture(){
     const btn = document.getElementById('btn-depart');
     const btnLabel = btn ? btn.textContent : '';
     if(btn){ btn.disabled = true; btn.textContent = '⏳ 承認時点の状態で再推定しています…'; }
-    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: null });
+    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null });
     let lastPaint = 0;
     const tick = () => {
       if(!S || !planPanelState || planPanelState.cfg !== cfg) return; /* パネルが閉じた／別計画 */
@@ -3865,6 +3938,7 @@ function confirmDeparture(){
           showOfficerPopup(HELM, '承認時点の再推定で計画が成立しませんでした。出発を見送ります。計画の組み直しをお願いします。');
           return;
         }
+        if(epochMissed) logEvent('🕐 ' + aiName() + ': 出発便の時刻を過ぎていたため、現在の配置で計算し直しました（再推定 Δv ' + fresh.dvTotal.toFixed(1) + '）。この計画で出発します。');
         v = { id: v.id, label: v.label, scale: v.scale, est: fresh };
         wps = null; /* 航路点は取り直した推定で組み直す */
         if(fresh.firstBurnVec && fresh.firstBurnT != null && fresh.firstBurnT <= 1800) departBurn = { dvx: fresh.firstBurnVec.dvx, dvy: fresh.firstBurnVec.dvy, dvz: fresh.firstBurnVec.dvz, cost: fresh.firstBurnVec.cost, atT: fresh.firstBurnT };
@@ -3891,7 +3965,7 @@ function confirmDepartureRest(ctx){
      （実測: 計画 11.64 に対し 13.73）。接舷出発の推定（v.est）は港内航行の
      シミュレーション込みで初回噴射を持っているので、それをコミットする。
      窓ありの場合は departAtWindow が再検証時点の噴射で上書きする。 */
-  if(!departBurn && S.docked && v.est && v.est.firstBurnVec && v.est.firstBurnT != null && v.est.firstBurnT <= 1800){
+  if(!departBurn && (S.docked || wp) && v.est && v.est.firstBurnVec && v.est.firstBurnT != null && v.est.firstBurnT <= 1800){
     departBurn = { dvx: v.est.firstBurnVec.dvx, dvy: v.est.firstBurnVec.dvy, dvz: v.est.firstBurnVec.dvz, cost: v.est.firstBurnVec.cost, atT: v.est.firstBurnT };
   }
   closePlanPanel();
@@ -3920,7 +3994,7 @@ function confirmDepartureRest(ctx){
      港内操船の見込みを含め、計画対実績の乖離計測が港内分で誤報しないようにする */
   const harborDv = wasDocked ? harborDvFor(v.est) : 0;
   const docRows = planLegRows(v.est);
-  if(harborDv) docRows.unshift({ name: '港内操船（離舷・出域）', t0: 0, t1: 110, dv: harborDv, phase: 'harbor' });
+  if(harborDv) docRows.unshift({ name: '港内操船（離舷・分離）', t0: 0, t1: 30, dv: harborDv, phase: 'harbor' });
   const fixes = finalWps.filter(w => w.fix);
   const departFix = fixes.find(f => f.kind === 'depart') || null;
   const iaf = fixes.find(f => f.kind === 'iaf') || null;
@@ -3937,6 +4011,12 @@ function confirmDepartureRest(ctx){
     departBurn: departBurn,
     reserve: reservePct,
     waitUntil: wp ? S.time + wp.waitSec : 0,
+    /* 承認した計画そのもので出発する（2026-11-19）: 窓・出発便の計画は
+       出発時刻の配置で計算済みなので、出発時に再推定して差し替えない。
+       planHarborTime は推定の港内所要で、追従時計の原点を出発時刻＋港内
+       所要に置くために保持する */
+    committedPlan: !!wp,
+    planHarborTime: (v.est && v.est.harborTime) || 0,
     waitVariantId: wp ? wp.variantId : null,
     waitPromisedDv: wp ? wp.est.dvTotal : 0,
     waitCycle: winCycle,
@@ -3945,7 +4025,7 @@ function confirmDepartureRest(ctx){
     depT: 0,
     depSep: depSep,
     depFix: null,
-    depFixDist0: 210,
+    depFixDist0: 80,
     fixes: fixes,
     departFix: departFix,
     iaf: iaf,
@@ -3972,6 +4052,11 @@ function confirmDepartureRest(ctx){
     trackT0: null,
     trackDur: (v.est.sampleTimes && v.est.sampleTimes.length > 1) ? Math.max(1, v.est.sampleTimes[v.est.sampleTimes.length - 1] - (v.est.harborTime || 0)) : Math.max(1, v.est.timeTotal - (v.est.harborTime || 0)),
     trackTimes: (v.est.sampleTimes && v.est.sampleTimes.length > 1) ? v.est.sampleTimes.map(t => t - (v.est.harborTime || 0)) : null,
+    /* 計画の噴射予定表（2026-11-19）: 推定器が記録した噴射列。出発噴射は
+       departBurn が担うため除く。追従はこの時刻どおりに噴射を実行する */
+    planBurns: (v.est.burns && v.est.burns.length) ? v.est.burns.filter(b => !(v.est.firstBurnVec && v.est.firstBurnT != null && v.est.firstBurnT <= 1800 && b.t <= v.est.firstBurnT + 1)).map(b => ({ t: b.t - (v.est.harborTime || 0), dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost })) : null,
+    burnIdx: 0,
+    trackBurns: 0,
     trackIdx: 0,
     trackErr: null,
     trackVelErr: null,
@@ -3991,8 +4076,13 @@ function confirmDepartureRest(ctx){
     onDone: cfg.onDone || null
   };
   if(wp){
-    logEvent('🕐 出発窓の計画を承認。約 ' + fmtDuration(wp.waitSec) + '（' + fmtDayClock(S.time + wp.waitSec) + '）まで現在位置で待機し、自動で出発します（' + v.label + '案・推定Δv ' + (v.est.dvTotal + harborDv).toFixed(1) + '）。');
-    showOfficerPopup(HELM, '出発窓の計画を承認しました。窓の時刻まで待機し、自動で出発します。');
+    if(wp.epochPlan){
+      logEvent('🕐 出発便の計画を承認。' + fmtDayClock(S.time + wp.waitSec) + ' の出発まで接舷したまま待機し、承認した計画のまま自動で出発します（' + v.label + '案・推定Δv ' + (v.est.dvTotal + harborDv).toFixed(1) + '）。');
+      showOfficerPopup(HELM, '出発便の計画を承認しました。出発時刻まで接舷待機し、当直がそのまま離舷させます。');
+    } else {
+      logEvent('🕐 出発窓の計画を承認。約 ' + fmtDuration(wp.waitSec) + '（' + fmtDayClock(S.time + wp.waitSec) + '）まで現在位置で待機し、自動で出発します（' + v.label + '案・推定Δv ' + (v.est.dvTotal + harborDv).toFixed(1) + '）。');
+      showOfficerPopup(HELM, '出発窓の計画を承認しました。窓の時刻まで待機し、自動で出発します。');
+    }
   }
   if(S.tutorial && S.tutorial.onDeparted) S.tutorial.onDeparted();
   updatePlanStatusUI();
@@ -4010,6 +4100,40 @@ function confirmDepartureRest(ctx){
 function startWindowDeparture(){
   const pe = S && S.planExec;
   if(!pe || pe.phase !== 'waitwin') return;
+  /* 承認した計画のまま出発する（2026-11-19、船長の指摘）: 出発便・出発窓の
+     計画は、策定時に出発時刻の配置で計算されている（接舷: 出発時刻まで
+     伝播したスナップショット／窓: 走査の伝播スナップショット）。出発時に
+     推定し直して別案へ差し替えることはしない——承認の対象は「この計画で、
+     この時刻に出発する」こと。実配置との差は追従の修正が吸収し、吸収
+     できない乖離は逸脱の流れで船長に上げる。下の再検証パスは、承認した
+     計画を持たない旧セーブ用の互換として残す。 */
+  if(pe.committedPlan && S.planFullSamples && S.planFullSamples.length > 1){
+    const wasDockedC = !!S.docked;
+    const depAnchorC = pe.depAnchor || S.dockedTo || S.station || null;
+    if(S.docked){
+      S.docked = false; S.dockedTo = null;
+      logEvent('⚓ 離舷作業開始 — 係留を解除し、内部電源へ切り替えます。');
+      showOfficerPopup(HELM, '出発時刻になりました。承認した計画のまま離舷します。');
+      if(S.prologue && !depExplainedShown){
+        depExplainedShown = true;
+        setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '出発は一連の作業です。離舷、港内航行、出域、それから本航行に入ります。港の中は混んでいるので、ゆっくり進みます。'); }, 2600);
+      }
+    }
+    if(wasDockedC) logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。離舷後は港内コースを制限速度で進み、出域点で本航行へ移行せよ。');
+    pe.depSep = wasDockedC && depAnchorC ? computeDepSep(depAnchorC, pe.targetBody) : pe.depSep;
+    pe.startT = S.time;
+    /* 接舷の追従原点は分離完了の瞬間に置く（updateDepartureOps 側）。
+       非接舷（捕捉軌道からの窓出発）は港内が無いので出発時刻が原点 */
+    pe.trackT0 = wasDockedC ? null : S.time;
+    pe.lastEstMs = 0;
+    logEvent('🕐 出発時刻に到達 — 承認した ' + pe.variantLabel + '案のまま自動出発します（推定Δv ' + (pe.planDoc ? pe.planDoc.plannedTotal : 0).toFixed(1) + '）。');
+    setPlanPhase(pe, wasDockedC ? 'undock' : 'depart');
+    updatePlanStatusUI();
+    updatePlanLineMesh();
+    saveGame('depart');
+    bgmDepart();
+    return;
+  }
   /* 出発時の再検証（v0.6.5、課題1/2）: 約束したバリアントだけでなく全案を
      現在の状態で推定し直し、成立する最安の案で出発する。捕捉軌道上では
      推定コストが軌道位相で棘状に振れ（実測: eco の推定が 240 秒で
@@ -4086,7 +4210,7 @@ function startWindowDeparture(){
   pe.iaf = fixes.find(f => f.kind === 'iaf') || null;
   pe.gate = fixes.find(f => f.kind === 'gate') || null;
   const docRows = planLegRows(est);
-  if(harborDv) docRows.unshift({ name: '港内操船（離舷・出域）', t0: 0, t1: 110, dv: harborDv, phase: 'harbor' });
+  if(harborDv) docRows.unshift({ name: '港内操船（離舷・分離）', t0: 0, t1: 30, dv: harborDv, phase: 'harbor' });
   pe.planDoc = { routeName: cfgLite.routeName, course: courseLabel(pe.waitVariantId || 'std'), legs: est.legs || [], rows: docRows, waypoints: finalWps, fixes: fixes, plannedTotal: est.dvTotal + harborDv, plannedTime: est.timeTotal, dvAtStart: S.dv, finalRel: est.finalRel };
   pe.remDv = est.dvTotal + harborDv;
   pe.remTime = est.timeTotal;
@@ -4108,7 +4232,8 @@ function startWindowDeparture(){
   logEvent('🕐 出発窓に到達 — ' + pe.variantLabel + ' で自動出発します（再検証推定 Δv ' + (est.dvTotal + harborDv).toFixed(1) + (pe.waitPromisedDv ? '／窓提示時の推定 ' + (pe.waitPromisedDv + harborDv).toFixed(1) : '') + (chosen.vd.id !== promisedId ? '／窓提示時の ' + promisedLabel + '案は現在の状態では成立しないため、成立する最安の案へ切替' : '') + '）。');
   pe.startT = S.time;
   pe.lastEstMs = 0;
-  pe.trackT0 = null; pe.trackIdx = 0; pe.trackCorr = 0;
+  pe.trackT0 = null; pe.trackIdx = 0; pe.trackCorr = 0; pe.trackBurns = 0; pe.burnIdx = 0;
+  pe.planBurns = (est.burns && est.burns.length) ? est.burns.filter(b => !(est.firstBurnVec && est.firstBurnT != null && est.firstBurnT <= 1800 && b.t <= est.firstBurnT + 1)).map(b => ({ t: b.t - (est.harborTime || 0), dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost })) : null;
   pe.trackTimes = (est.sampleTimes && est.sampleTimes.length > 1) ? est.sampleTimes.map(t => t - (est.harborTime || 0)) : null;
   pe.trackDur = (est.sampleTimes && est.sampleTimes.length > 1) ? Math.max(1, est.sampleTimes[est.sampleTimes.length - 1] - (est.harborTime || 0)) : Math.max(1, est.timeTotal - (est.harborTime || 0));
   setPlanPhase(pe, wasDocked ? 'undock' : 'depart');
@@ -4188,35 +4313,42 @@ function updateDepartureOps(simDt){
   }
   const distA = Math.hypot(S.ship.x - anchor.x, S.ship.y - anchor.y, S.ship.z - anchor.z);
   /* 港内プロファイル（2026-11-19 出発モデル組み直し、推定器 simulateHarborExit
-     と同一則）: バース（錨から depSep 方向に約60）から同じ方向へ直線で離れ、
-     錨から 210 の出域フィックスで港内航行を終える。速度は残距離で緩み、
-     出域時の相対速度は約0.5。本航行の計画はこの状態を引き継ぐため、
-     横向きの速度をためたまま本航行へ入ることはない。 */
-  const remain = Math.max(0, 210 - distA);
+     と同一則）: バース（錨から depSep 方向に約60＝ステーションの縁）から
+     同じ方向へ直線で離れ、錨から 80（バースの構造を離れる最小の分離）で
+     分離完了、そのまま本航行の噴射に入る。速度は残距離で緩み、出域時の
+     相対速度は約0.5。本航行の計画はこの状態を引き継ぐため、横向きの
+     速度をためたまま本航行へ入ることはない。 */
+  const remain = Math.max(0, 80 - distA);
   const spd = Math.min(0.4 + pe.depT * 0.25, Math.max(0.5, Math.min(2.2, 0.5 + remain / 90)));
   steerShipTo(anchor.vx + pe.depSep.x * spd, anchor.vy + pe.depSep.y * spd, anchor.vz + pe.depSep.z * spd, 3.0, simDt);
-  if(pe.phase === 'undock'){
-    if(distA >= 130){
-      setPlanPhase(pe, 'harbor');
-      logEvent('⚓ 三浦: 離舷完了。港内航行へ移行します。');
-      showOfficerPopup(HELM, '離舷完了。港内航行に入ります。');
-      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、港内航行を許可。出域点へ進め。');
+  /* 分離（undock）: バースの構造を離れる最小距離（80）まで depSep 方向へ
+     進んだら分離完了、そのまま本航行の噴射（depart）に入る。「出域点まで
+     移動してから出発」の二段構えは廃止（2026-11-19 夜・本人指摘）。
+     旧ビルドのセーブで 'harbor' フェーズが残っている場合も同じ扱いで
+     噴射へ進める（移行先のない宙吊りを避ける）。 */
+  if(pe.phase === 'undock' || pe.phase === 'harbor'){
+    if(!pe.depTrafficNoted && distA >= 70){
+      pe.depTrafficNoted = true;
+      const hold = (S.portCraft || []).find(c => c.cat === 'holding');
+      logEvent('📡 あおば管制: 港内は混雑しています。' + (hold ? '沖待ちの' + hold.name + 'と接舷船に注意。' : '接舷船と沖待ち船に注意。') + '制限速度を維持せよ。');
+      if(S.prologue && !chartIntroShown){
+        chartIntroShown = true;
+        setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。宙図を見れば、周りの船と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
+      }
+    }
+    if(distA >= 80){
+      /* 追従時計の原点は「実際の分離完了の瞬間」に置く（2026-11-19）:
+         推定の港内所要で原点を予測すると、実港内時間との差がそのまま
+         参照との位相ずれになり、序盤の追従がずれを買い続けた（実測:
+         分離直後の位置誤差 2,069）。承認した計画のサンプル列は港内分を
+         差し引いた時刻系なので、分離完了＝原点で一致する */
+      if(pe.committedPlan && pe.trackT0 == null) pe.trackT0 = S.time;
+      setPlanPhase(pe, 'depart');
+      logEvent('⚓ 三浦: 離舷・分離完了。本航行の噴射に入ります。');
+      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、離舷を確認。航路管制へ移管する。良い航行を。');
+      showOfficerPopup(HELM, '分離完了。ここから本航行に入ります。');
     }
     return;
-  }
-  if(!pe.depTrafficNoted && distA >= 100){
-    pe.depTrafficNoted = true;
-    const hold = (S.portCraft || []).find(c => c.cat === 'holding');
-    logEvent('📡 あおば管制: 港内は混雑しています。' + (hold ? '沖待ちの' + hold.name + 'と接舷船に注意。' : '接舷船と沖待ち船に注意。') + '制限速度を維持せよ。');
-    if(S.prologue && !chartIntroShown){
-      chartIntroShown = true;
-      setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。宙図を見れば、周りの船と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
-    }
-  }
-  if(distA >= 210){
-    setPlanPhase(pe, 'depart');
-    logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出域を確認。航路管制へ移管する。良い航行を。');
-    showOfficerPopup(HELM, '出域点に到達。ここから本航行に入ります。');
   }
 }
 /* 接近スーパーフェーズ（join/final）の収束追跡（v0.6.2 で再設計）:
@@ -4297,7 +4429,35 @@ function planTrackStep(pe, info){
     uVel = dV / 2;
   }
   pe.trackU = uPos;
-  if(posErr < Math.max(200, uPos) && velErr < Math.max(0.15, uVel)) return; /* 計画どおり（参照の粗さの範囲内）: 滑空する */
+  /* 計画の噴射の実行（2026-11-19）: 推定器が計画の中で撃った噴射は、時刻と
+     ベクトルが推定結果（burns）に記録されている。追従はその予定表どおりに
+     噴射し、噴射と噴射の間は滑空する。サンプルの弦を小さな修正で追う方式は、
+     誘導噴射が連続する区間で計画の Δv を何倍も払い直して枯渇した（実測:
+     誘導区間だけで約30、修正の累計 26.8）。終端（trackDur − 2700 以降）の
+     噴射は実飛行側の到着処理が担うため実行しない。計画から大きく外れて
+     いる時は噴射せず、復帰・逸脱の流れに任せる。出発噴射は departBurn が
+     担うため、予定表からは取り除いてある。 */
+  if(pe.planBurns && !S.activeBurn){
+    while((pe.burnIdx || 0) < pe.planBurns.length){
+      const b = pe.planBurns[pe.burnIdx || 0];
+      if(b.t > el + 30) break;
+      pe.burnIdx = (pe.burnIdx || 0) + 1;
+      if(b.t > (pe.trackDur || Infinity) - 2700) continue;
+      if(posErr > 15000) continue;
+      const okB = issueOrder('vector', { isAuto: true, silent: true, orderName: '計画噴射', dv: { dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost } });
+      if(okB){ pe.trackBurns = (pe.trackBurns || 0) + 1; pe.lastBurnEl = el; break; }
+    }
+  }
+  if(posErr < Math.max(600, uPos) && velErr < Math.max(0.5, uVel)) return; /* 計画どおり（参照の粗さの範囲内）: 滑空する */
+  /* 計画噴射の前後では弦参照と実速度が構造的にずれる（噴射はサンプル区間の
+     内側で起きる）ため、近傍では修正を撃たず予定表の噴射に任せる。また修正は
+     最短でも 300 秒あける: 強い重力域では積分差による見かけのずれ（実測で
+     位置 250 前後・速度 0.5〜3）が毎分再生され、60 秒ごとの修正が同じずれを
+     買い直して枯渇した（実測: 修正の累計 36.1、計画の総消費 45.2）。 */
+  const nb = (pe.planBurns && pe.planBurns.length && (pe.burnIdx || 0) < pe.planBurns.length) ? pe.planBurns[pe.burnIdx || 0] : null;
+  if(nb && nb.t - el < 300 && nb.t - el > -300) return;
+  if(pe.lastBurnEl != null && el - pe.lastBurnEl < 300) return;
+  if(pe.lastCorrEl != null && el - pe.lastCorrEl < 300 && posErr < 3000) return;
   if(posErr > Math.max(15000, 4 * uPos)){
     /* 大きく外れたら追従修正では戻れない: 従来の接近誘導で復帰を試み、
        健全性は監視側の逸脱判定（判断ポイント）が担保する */
@@ -4320,7 +4480,7 @@ function planTrackStep(pe, info){
   const cap = 2.5, sc = mag > cap ? cap / mag : 1;
   dvx *= sc; dvy *= sc; dvz *= sc;
   const ok = issueOrder('vector', { isAuto: true, silent: true, orderName: '計画追従修正', dv: { dvx, dvy, dvz, cost: Math.hypot(dvx, dvy, dvz) } });
-  if(ok) pe.trackCorr = (pe.trackCorr || 0) + 1;
+  if(ok){ pe.trackCorr = (pe.trackCorr || 0) + 1; pe.lastCorrEl = el; }
 }
 
 function updatePlanExecution(simDt){
@@ -4498,6 +4658,8 @@ function updatePlanExecution(simDt){
         S.planFullSamples = est2.samples;
         S.planSamples = est2.samples;
         pe.trackTimes = (est2.sampleTimes && est2.sampleTimes.length > 1) ? est2.sampleTimes.map(t => t - (est2.harborTime || 0)) : null;
+        pe.planBurns = (est2.burns && est2.burns.length) ? est2.burns.filter(b => !(est2.firstBurnVec && est2.firstBurnT != null && est2.firstBurnT <= 1800 && b.t <= est2.firstBurnT + 1)).map(b => ({ t: b.t - (est2.harborTime || 0), dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost })) : null;
+        pe.burnIdx = 0;
         pe.trackDur = (est2.sampleTimes && est2.sampleTimes.length > 1) ? Math.max(1, est2.sampleTimes[est2.sampleTimes.length - 1] - (est2.harborTime || 0)) : Math.max(1, est2.timeTotal - (est2.harborTime || 0));
         if(est2.firstBurnVec && est2.firstBurnT != null && est2.firstBurnT <= 1800){
           pe.departBurn = { dvx: est2.firstBurnVec.dvx, dvy: est2.firstBurnVec.dvy, dvz: est2.firstBurnVec.dvz, cost: est2.firstBurnVec.cost, atT: est2.firstBurnT };
@@ -4514,7 +4676,21 @@ function updatePlanExecution(simDt){
     }
   }
   if(pe.legType === 'simple'){
-    if(info.dist <= pe.arrivalDist || (pe.phase === 'final' && info.dist <= Math.max(pe.arrivalDist * 3, 300) && info.rel <= 4) || (pe.captureDone && info.dist <= pe.arrivalDist * 1.5) || (!pe.captureDone && pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && info.dist <= pe.arrivalDist * 1.5)){
+    /* 計画途中の近傍通過では到着処理を起動しない（2026-11-19）: 追従中の計画が
+       目標の近くを「通過」する区間（スイングバイ等）でも、距離だけを見て到着
+       判定に入ると、滑空予測の衝突判定が接近誘導を発火させて計画と喧嘩し、
+       船が計画から引き剥がされる（実測: 計画の27%地点の通過で割り込み、
+       そのまま素通りして計画全体が崩れた）。到着処理は計画の末尾（残り
+       5400秒を切ってから）に限る。計画から大きく外れている場合（追従誤差
+       15000超）は救済として従来どおり距離で拾う。 */
+    const elTrack = pe.trackT0 != null ? S.time - pe.trackT0 : Infinity;
+    /* 計画の予定噴射が残っている間も到着判定は開かない（2026-11-19 追加）:
+       終端の接近噴射列が計画に残っているのに到着ブロックが先に開くと、
+       捕捉ゲート待ちの return が計画追従を止めてしまい、参照だけが
+       接近を進めて船が置き去りになる（実測: 誤差 41→7,532、無噴射の
+       まま 2,780 秒）。噴射列を飛ばし切ってから到着処理に渡す */
+    const midPlanPass = !!(pe.trackTimes && pe.trackT0 != null && !pe.captureDone && (pe.trackErr == null || pe.trackErr <= 15000) && (elTrack < (pe.trackDur || Infinity) - 5400 || (pe.planBurns && (pe.burnIdx || 0) < pe.planBurns.length)));
+    if(!midPlanPass && (info.dist <= pe.arrivalDist || (pe.phase === 'final' && info.dist <= Math.max(pe.arrivalDist * 3, 300) && info.rel <= 4) || (pe.captureDone && info.dist <= pe.arrivalDist * 1.5) || (!pe.captureDone && pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && info.dist <= pe.arrivalDist * 1.5))){
       /* 捕捉待ちの間は到着判定の入口を 1.5 倍に広げる（v0.6.2）: 高ワープ等で
          physics の刻みが粗いと、到着圏 [捕捉フロア, arrivalDist] の通過を
          サンプルが取りこぼし、捕捉が発火しないまま通り過ぎる（実測: warp
@@ -4797,8 +4973,8 @@ function deriveNextAction(){
       t += ' — 出域後に本航行へ入ります。当直の報告を待とう';
     } else if(pe.remTime && isFinite(pe.remTime) && pe.remTime > 0){
       t += ' — 到着まで約'+fmtDuration(pe.remTime);
-      if(pe.phase === 'cruise') t += '。乗組員に話しかけられます（「話しかける」）' + (S.warp > 1 ? '（×'+S.warp+' で早送り中）' : '');
-      else t += (S.warp > 1) ? '（×'+S.warp+' で早送り中）' : '。当直に任せて「待機」で時間を進められます';
+      if(pe.phase === 'cruise') t += '。乗組員に話しかけられます（「話しかける」）';
+      else t += '。当直が運航を見ています';
     }
     return { text: t, cls:'good' };
   }
@@ -4874,9 +5050,9 @@ function buildPrologueTutorial(hab){
         autoAction: () => { camAzAccum += 0.4; cam.az += 0.4; }
       },
       {
-        title: 'A3: 待機（時間を進める）',
-        short: '「次の判断まで」で時間を進めてみよう',
-        desc: '榊原「この航程は到着まで、船長に判断いただくことは何もありません。何かあれば当直がお呼びしますから、船長はお休みください」【システム】「次の判断まで」を押すと、次の報告の時点まで時間を進められます',
+        title: 'A3: 待機（当直に任せる）',
+        short: '当直に任せて待機してみよう',
+        desc: '榊原「この航程は到着まで、船長に判断いただくことは何もありません。何かあれば当直がお呼びしますから、船長はお休みください」',
         hl: '#btn-debug-skip',
         autoAction: () => { setWarp(3); }
       },
@@ -7872,7 +8048,7 @@ function convVarFacts(v){
   const reserve = S.dv * ((planPanelState && planPanelState.reserve) || 10) / 100;
   const remain = S.dv - v.est.dvTotal - (S.docked ? harborDvFor(v.est) : 0);
   return {
-    dv: v.est.dvTotal.toFixed(1), time: fmtDuration(v.est.timeTotal), arr: fmtDayClock(S.time + v.est.timeTotal),
+    dv: v.est.dvTotal.toFixed(1), time: fmtDuration(v.est.timeTotal), arr: fmtDayClock(((planPanelState && planPanelState.depEpoch) || S.time) + v.est.timeTotal),
     margin: (remain - reserve).toFixed(1), need: v.est.dvTotal.toFixed(1),
     lack: Math.max(0, v.est.dvTotal + (S.docked ? harborDvFor(v.est) : 0) + reserve - S.dv).toFixed(1)
   };
@@ -7888,6 +8064,8 @@ function convBind(name){
   const cs = convState; if(!cs) return '—';
   if(cs.bindings && cs.bindings[name] !== undefined) return cs.bindings[name];
   let m;
+  if(name === 'dep.clock') return planPanelState && planPanelState.depEpoch ? fmtDayClock(planPanelState.depEpoch) : '—';
+  if(name === 'dep.wait') return planPanelState && planPanelState.depEpoch ? fmtDuration(Math.max(0, planPanelState.depEpoch - S.time)) : '—';
   if(name === 'dv.remaining') return S.dv.toFixed(1);
   if(name === 'dv.max') return S.maxDv.toFixed(1);
   if(name === 'est.ret.scan.span'){ const sp = planPanelState && (planPanelState.windowScanSpan || planPanelState.windowCycle); return sp ? '約 ' + fmtDuration(sp) : '—'; }
@@ -8522,7 +8700,7 @@ function talkToGuide(){
    when（state:plan.next_window_feasible）が常に不成立＝出さない。 */
 const CONVERSATIONS = {
 plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
-  n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、航法の三浦です。あおば発、こよみ行きの計画を計算します。少しお待ちください。' },
+  n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、航法の三浦です。あおば発、こよみ行きの計画を計算します。出発は {dep.clock} の便に置いて、その時刻の配置で計算します。少しお待ちください。' },
   n02: { type: 'calc', title: '航宙計画を計算中', sub: '当直が推定を行っています。ステータス表示はそのまま見られます。', next: 'n03', stages: [
     { name: '標準案の推定', task: 'estimate:std' }, { name: '省燃料案の推定', task: 'estimate:eco' }, { name: '最速案の推定', task: 'estimate:fast' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
   n03: { type: 'branch', cases: [ { when: 'state:plan.any_feasible == true', goto: 'n10' } ], default: 'n90' },
@@ -8551,15 +8729,15 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
     { label: 'やはりおすすめの案にする', goto: 'n30', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } } ] },
     { label: '他の案も見る', goto: 'n20' } ] },
   n30: { type: 'effect', effects: [ { plan_diff: { kind: 'set_variant', variant: '{choice.variant}' } } ], next: 'n31' },
-  n31: { type: 'say', who: 'miura_aoi', next: 'n32', text: 'では{choice.variant_name}で確定します。所要 {choice.time}、Δv {choice.dv}、到着 {choice.arr}。最終確認をお願いします。' },
+  n31: { type: 'say', who: 'miura_aoi', next: 'n32', text: 'では{choice.variant_name}で確定します。出発は {dep.clock}、所要 {choice.time}、Δv {choice.dv}、到着 {choice.arr}。最終確認をお願いします。' },
   n32: { type: 'choice', options: [
-    { label: 'その計画で出発する', primary: true, goto: 'n33', effects: [ { commit: true } ] },
+    { label: 'その計画で確定する', primary: true, goto: 'n33', effects: [ { commit: true } ] },
     { label: 'もう少し考える', goto: 'n34' } ] },
   n33: { type: 'effect', effects: [ { schedule: { action: 'publish', ref: 'self_plan' } }, { log: '航宙計画を承認' } ], next: 'n35' },
-  n35: { type: 'say', who: 'miura_aoi', next: 'n36', text: '了解です。{choice.variant_name}で出発準備に入ります。チェックリストは当直が進め、離舷の最終確認だけ改めてお伺いします。' },
-  n36: { type: 'log', next: 'end', text: '航宙計画を承認 —— {choice.variant_name}（Δv {choice.dv}／所要 {choice.time}／到着 {choice.arr}）。あおば第6バースより出発準備に入る。' },
+  n35: { type: 'say', who: 'miura_aoi', next: 'n36', text: '了解です。{choice.variant_name}で確定しました。出発は {dep.clock} です。それまでは接舷したまま待機し、時刻が来たら当直が承認した計画のまま離舷させます。' },
+  n36: { type: 'log', next: 'end', text: '航宙計画を承認 —— {choice.variant_name}（Δv {choice.dv}／所要 {choice.time}／到着 {choice.arr}）。出発予定 {dep.clock}、あおば第6バースに接舷待機。' },
   n34: { type: 'say', who: 'miura_aoi', next: 'n20', text: '承知しました。計画はこのまま保持しておきます。お決まりになったら声をかけてください。' },
-  n90: { type: 'say', who: 'miura_aoi', next: 'n91', text: '計算が終わりました。正直にお伝えします——今の位相では、3案とも成立しません。理由を順に説明します。' },
+  n90: { type: 'say', who: 'miura_aoi', next: 'n91', text: '計算が終わりました。正直にお伝えします——出発便の配置では、3案とも成立しません。理由を順に説明します。' },
   n91: { type: 'grounds', title: '全案不成立 — 不足の内訳（根拠）', bars: 'variants', next: 'n92', rows: [
     [ '標準案の必要量', '{est.std.need}（{est.std.lack} 不足）' ], [ '省燃料案の必要量', '{est.eco.need}（{est.eco.lack} 不足）' ], [ '最速案の必要量', '{est.fast.need}（{est.fast.lack} 不足）' ], [ '現在の残量', '{dv.remaining}' ] ],
     note: '不足する案は、責任を持って出せません。出発を遅らせれば位相が変わります。' },
@@ -8584,45 +8762,39 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
 } },
 plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。「あけぼの」からの受け取りは完了、積荷は固定まで済んでいます。点検も完了しています。それより前には、どのみち出られません。' },
-  n02: { type: 'say_variants', who: 'miura_aoi', next: 'n03', variants: [
-    { when: 'state:plan.any_feasible == true', text: '航法の三浦です。帰投の計画を計算します。' },
-    { when: 'default', text: '航法の三浦です。帰投の計画を計算します。……先に言っておくと、今すぐ出るのは高いです。理由ごと出します。' } ] },
-  n03: { type: 'calc', title: '帰投計画を計算中', sub: '即時出発の案と、出発窓を走査しています。窓がなければ、会合周期の次の周期へ走査を延ばします。', next: 'n03b', stages: [
-    { name: '即時出発の推定', task: 'estimate:immediate' }, { name: '帰投窓の走査', task: 'scan:return_window_one_period' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
+  n02: { type: 'say', who: 'miura_aoi', next: 'n03', text: '航法の三浦です。帰投便の出発時刻を計算します。定期便ですから、出発は窓の時刻に合わせるのが本筋です。候補を根拠つきで出します。' },
+  n03: { type: 'calc', title: '帰投計画を計算中', sub: '出発時刻の候補を走査しています。窓がなければ、会合周期の次の周期へ走査を延ばします。', next: 'n03b', stages: [
+    { name: '最速出発の推定', task: 'estimate:immediate' }, { name: '帰投窓の走査', task: 'scan:return_window_one_period' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
   n03b: { type: 'branch', cases: [ { when: 'state:plan.window_found == true', goto: 'n04' }, { when: 'state:plan.any_feasible == true', goto: 'n05i' }, { when: 'state:plan.resupply_possible == true', goto: 'n04s' } ], default: 'n04n' },
-  n05i: { type: 'say', who: 'miura_aoi', next: 'n06i', text: '今すぐ出ても成立する案があります。必要量は {est.ret.now.need}、最良の案で出発できます。窓を待てば安くなる可能性はありますが、探索は計画パネル側でも続けられます。' },
+  n05i: { type: 'say', who: 'miura_aoi', next: 'n06i', text: '計算時点すぐに出発できる案があります。必要量は {est.ret.now.need}、最良の案で出発できます。窓の時刻まで待てば安くなる可能性はあります。時刻は船長のお決めで。' },
   n06i: { type: 'choice', options: [
-    { label: '最良の案で今すぐ出発する', primary: true, goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] },
+    { label: '最良の案でこの時刻に出発する', primary: true, goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] },
     { label: '計画パネルで窓も確認する', goto: 'n07i' } ] },
   n10i: { type: 'say', who: 'miura_aoi', next: 'n13i', text: '承知しました。{choice.variant_name}で帰投します。所要 {choice.time}、Δv {choice.dv}、到着 {choice.arr}。' },
-  n13i: { type: 'log', next: 'end', text: '帰投計画を承認 —— 即時出発（{choice.variant_name}／必要Δv {choice.dv}／残量 {dv.remaining}）。' },
-  n07i: { type: 'log', next: 'end', text: '帰投計画は計画パネルで継続確認 —— 即時出発の成立案あり（必要Δv {est.ret.now.need}）。' },
+  n13i: { type: 'log', next: 'end', text: '帰投計画を承認 —— 計算時点出発（{choice.variant_name}／必要Δv {choice.dv}／残量 {dv.remaining}）。' },
+  n07i: { type: 'log', next: 'end', text: '帰投計画は計画パネルで継続確認 —— 計算時点出発の成立案あり（必要Δv {est.ret.now.need}）。' },
   n04: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', bars: 'variants', next: 'n05', rows: [
-    [ '今すぐ出発', '{est.ret.now.need}' ], [ '{est.ret.window.wait} 待って出発（最良窓）', '{est.ret.window.need}' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
+    [ '計算時点の出発', '{est.ret.now.need}' ], [ '最良窓の出発（{est.ret.window.wait} 後）', '{est.ret.window.need}' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
     note: '走査は捕捉軌道の位相（細密）と会合周期（粗）で、{est.ret.scan.span} 先まで行いました。価格を決めるのは月の公転運動の向きと、抜ける方向とあおばの位相の組み合わせで、窓の位置は計算でしか分かりません。' },
-  n05: { type: 'say', who: 'miura_aoi', next: 'n06', text: '帰りは、月の公転に乗るのが一番安くなります。今の位置から力任せに出ると {est.ret.now.need} かかって、残量では足りません。捕捉軌道で {est.ret.window.wait} 待てば、月が運んでくれる側に出られます。必要量は {est.ret.window.need}、余裕が {est.ret.window.margin} 残ります。' },
+  n05: { type: 'say', who: 'miura_aoi', next: 'n06', text: '帰投便は、月の公転に乗れる窓の時刻で出すのが定石です。最良の窓は {est.ret.window.wait} 後、必要量は {est.ret.window.need} で、余裕が {est.ret.window.margin} 残ります。参考までに、計算時点すぐに出る案は {est.ret.now.need} と割高で、残量でも足りません。時刻を決めていただければ、あとは当直がその時刻に出発させます。' },
   n06: { type: 'choice', options: [
-    { label: '窓まで捕捉軌道で待機して帰投する', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
+    { label: '最良窓の時刻で出発する（それまで捕捉軌道で待機）', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
     { label: '次の周期の窓まで待つ', when: 'state:plan.next_window_feasible == true', goto: 'n11' },
-    { label: '今すぐ出発できないか、もう一度見て', goto: 'n07' } ] },
-  n07: { type: 'say', who: 'miura_aoi', next: 'n08', text: '見直しましたが、変わりません。今すぐは必要 {est.ret.now.need} に対し残量 {dv.remaining}、予備を除けば {est.ret.now.lack} 足りません。この案は出せません。出られるのは窓だけです。' },
-  n08: { type: 'choice', options: [
-    { label: '最良窓で帰投する', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
-    { label: '次の周期の窓まで待つ', when: 'state:plan.next_window_feasible == true', goto: 'n11' } ] },
+    { label: '計算時点の案で出発する', when: 'state:plan.any_feasible == true', goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] } ] },
   n04n: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', next: 'n05n', rows: [
-    [ '今すぐ出発', '{est.ret.now.need}' ], [ '走査範囲内の成立する窓', 'なし' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
+    [ '計算時点の出発', '{est.ret.now.need}' ], [ '走査範囲内の成立する窓', 'なし' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
     note: '走査は {est.ret.scan.span} 先まで行いましたが、予備を確保して成立する出発窓はありませんでした。即時出発も残量では足りません。実在しない窓は提示しません。' },
-  n05n: { type: 'say', who: 'miura_aoi', next: 'n06n', text: '正直に言います。今すぐ出るには {est.ret.now.need} かかって、残量 {dv.remaining} では足りません。{est.ret.scan.span} 先まで窓を探しましたが、成立する窓はありませんでした。嘘の窓は出せません。' },
+  n05n: { type: 'say', who: 'miura_aoi', next: 'n06n', text: '正直に言います。{est.ret.scan.span} 先まで出発時刻を探しましたが、成立する窓はありませんでした。計算時点の出発も {est.ret.now.need} かかって、残量 {dv.remaining} では足りません。嘘の窓は出せません。' },
   n06n: { type: 'choice', options: [
     { label: '捕捉軌道で待機し、改めて計算させる', primary: true, goto: 'n10n' },
     { label: '計画パネルで根拠を確認する', goto: 'n07n' } ] },
   n10n: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } } ], next: 'n13n' },
-  n13n: { type: 'log', next: 'end', text: '帰投計画は保留 —— {est.ret.scan.span} 先まで走査して成立する窓なし（即時 {est.ret.now.need}／残量 {dv.remaining}）。捕捉軌道で待機し、幾何が変われば再計算する（計画パネルからいつでも再計算できる）。' },
+  n13n: { type: 'log', next: 'end', text: '帰投計画は保留 —— {est.ret.scan.span} 先まで走査して成立する窓なし（計算時点 {est.ret.now.need}／残量 {dv.remaining}）。捕捉軌道で待機し、幾何が変われば再計算する（計画パネルからいつでも再計算できる）。' },
   n07n: { type: 'log', next: 'end', text: '帰投計画は計画パネルで継続確認 —— 走査範囲内に成立する窓なし（即時 {est.ret.now.need}／残量 {dv.remaining}）。' },
   n04s: { type: 'grounds', title: '帰投 — 補給した場合の必要量（根拠）', next: 'n05s', rows: [
-    [ '今すぐ出発（補給なし）', '{est.ret.now.need}' ], [ '現在の残量', '{dv.remaining}' ], [ '補給の費用', '推進剤ストック 15・補給物資 10・資金 20' ], [ '補給後のタンク Δv', '{dv.max}' ], [ '補給後に必要な量', '{est.ret.now.need}（成立します）' ] ],
+    [ '計算時点の出発（補給なし）', '{est.ret.now.need}' ], [ '現在の残量', '{dv.remaining}' ], [ '補給の費用', '推進剤ストック 15・補給物資 10・資金 20' ], [ '補給後のタンク Δv', '{dv.max}' ], [ '補給後に必要な量', '{est.ret.now.need}（成立します）' ] ],
     note: '補給は接舷中に給油して実施します。補給すれば即時出発が成立する場合だけ、この案を出しています。' },
-  n05s: { type: 'say', who: 'takahashi_ren', next: 'n06s', text: '補給の高橋です。接舷中の給油で、タンクを {dv.max} まで戻せます。費用は推進剤ストック 15、補給物資 10、資金 20 です。戻せば、今すぐの帰投が成立します。' },
+  n05s: { type: 'say', who: 'takahashi_ren', next: 'n06s', text: '補給の高橋です。接舷中の給油で、タンクを {dv.max} まで戻せます。費用は推進剤ストック 15、補給物資 10、資金 20 です。戻せば、計算時点の出発が成立します。' },
   n06s: { type: 'choice', options: [
     { label: '補給して、改めて計算する', primary: true, goto: 'n10s' },
     { label: '補給しない', goto: 'n04n' } ] },
@@ -8631,7 +8803,7 @@ plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n10: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n11: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n12: { type: 'say', who: 'miura_aoi', next: 'n13', text: '承知しました。{choice.depart} までは捕捉軌道で待機し、その時刻に出発します。待機中は軌道の維持だけ当直が見ています。何かあれば、その時点でお伺いします。' },
-  n13: { type: 'log', next: 'end', text: '帰投計画を承認 —— 捕捉軌道待機のうえ {choice.depart} に出発（必要Δv {choice.need}／残量 {dv.remaining}）。即時出発は {est.ret.now.need} で不成立のため窓を採用。' }
+  n13: { type: 'log', next: 'end', text: '帰投計画を承認 —— 捕捉軌道待機のうえ {choice.depart} に出発（必要Δv {choice.need}／残量 {dv.remaining}）。計算時点の案は {est.ret.now.need} で不成立のため、窓の時刻を採用。' }
 } },
 delegation_scope: { title: '委任範囲の確認', start: 'n01', nodes: {
   n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、当直に任せる範囲を確認させてください。計画の範囲内の定型——噴射の実施、軌道の維持、予定どおりの手順——は、こちらで進めて事後にまとめて報告します。' },
@@ -9360,10 +9532,11 @@ function updatePortCraft(){
       const d = Math.hypot(b.fx, b.fy);
       m.position.set(st.x + laneDirW.x * d + N.x * b.fz - ref.x, st.y + laneDirW.y * d + N.y * b.fz - ref.y, st.z + laneDirW.z * d + N.z * b.fz - ref.z);
     });
-    /* レーン帯（港内コリドー）: バース（錨から約60）から出域フィックス
-       （210）までの短い帯を、航路が決まっている間だけ同じ世界方向で置く。
-       物理的な「ゲート」の輪は廃止した（2026-11-19 本人裁定: 出域フィックス
-       は計画上の通過点であって、輪をくぐらせるものではない） */
+    /* レーン帯（港内コリドー）: バース（錨から約60）から分離完了点
+       （80）までの短い帯を、航路が決まっている間だけ同じ世界方向で置く。
+       物理的な「ゲート」の輪は廃止した（2026-11-19 本人裁定）。この帯は
+       「そこへ移動してから出発する」進路ではなく、離舷・分離の作業範囲の
+       目印（同日夜の本人指摘で出域 210→80 に短縮し、二段構えを廃止）。 */
     if(laneBandMesh && effW){
       const dirW = laneDirW;
       let px = dirW.y * N.z - dirW.z * N.y, py = dirW.z * N.x - dirW.x * N.z, pz = dirW.x * N.y - dirW.y * N.x;
@@ -9371,7 +9544,7 @@ function updatePortCraft(){
       if(pm < 1e-6){ px = dirW.y; py = dirW.z; pz = dirW.x; pm = Math.hypot(px, py, pz) || 1; }
       px /= pm; py /= pm; pz /= pm;
       const bp = laneBandMesh.geometry.attributes.position.array;
-      [55, 105, 160, 210].forEach((d, k) => {
+      [55, 63, 71, 80].forEach((d, k) => {
         const cx = st.x + dirW.x * d, cy = st.y + dirW.y * d, cz = st.z + dirW.z * d;
         bp[k * 6] = cx - px * 12 - ref.x; bp[k * 6 + 1] = cy - py * 12 - ref.y; bp[k * 6 + 2] = cz - pz * 12 - ref.z;
         bp[k * 6 + 3] = cx + px * 12 - ref.x; bp[k * 6 + 4] = cy + py * 12 - ref.y; bp[k * 6 + 5] = cz + pz * 12 - ref.z;

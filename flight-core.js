@@ -967,7 +967,7 @@ function predictClosest(ship, target, starGM, tMax, pl, hMax){
 }
 /* 港内出発のシミュレーション（v0.6.4、課題2）: 実飛行の港内航行
    （updateDepartureOps）は「錨の速度＋depSep×プロファイル速度」への速度追従
-   操船で、出域フィックス（錨＋depSep×210、2026-11-19 に短縮）への到達で
+   操船で、錨中心から 80（バースの構造を離れる最小の分離）への到達で
    出域する。したがって本航行の
    実開始状態（出域時の位置・速度）は錨と目標の幾何で決まる湧出状態であり、
    単純なモデル状態（depSep×900・+3.2）で代用すると位相によって誘導の解の
@@ -996,21 +996,25 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw){
     dvHarbor += applied;
   };
   /* 港内プロファイル（2026-11-19 組み直し、実飛行 updateDepartureOps と同一則）:
-     バースは錨中心から depSep 方向に約60の位置にあり、分離はそのまま同じ
-     方向への直線移動になる。錨中心から HARBOR_FIX_DIST (=210) の出域フィックス
-     まで、速度は「残距離で決まる上限（近くで緩む）」と「離舷直後の緩やかな
-     立ち上がり」の小さい方。出域時の相対速度は約0.5と小さく、本航行の計画は
-     この状態をそのまま引き継ぐ（横向きの速度をため込まない）。 */
+     バースは錨中心から depSep 方向に約60の位置にあり（ステーションの縁）、
+     分離はそのまま同じ方向への直線移動になる。錨中心から 80（バースの構造を
+     離れる最小の分離）まで、速度は「残距離で決まる上限（近くで緩む）」と
+     「離舷直後の緩やかな立ち上がり」の小さい方。80 に達したら分離は完了で、
+     本航行の噴射がそのまま始まる（「出域点まで移動してから出発」という
+     二段構えは、2026-11-19 夜の本人指摘「最初の位置からそのまま行けるのに
+     出域フィックスまで移動する謎の動きはいらない」で廃止。210→130→80）。
+     出域時の相対速度は約0.5と小さく、本航行の計画はこの状態をそのまま
+     引き継ぐ（横向きの速度をため込まない）。 */
   while(t < 600){
     for(let i = 0; i < pls.length; i++) rk4StepState(pls[i], h, pls[i].isMoon ? accs[i] : sAcc);
     rk4StepState(a, h, accFull);
     rk4StepState(s, h, accFull);
     t += h;
     const distA = Math.hypot(s.x - a.x, s.y - a.y, s.z - a.z);
-    const remain = Math.max(0, 210 - distA);
+    const remain = Math.max(0, 80 - distA);
     const spd = Math.min(0.4 + t * 0.25, Math.max(0.5, Math.min(2.2, 0.5 + remain / 90)));
     steer(a.vx + depSep.x * spd, a.vy + depSep.y * spd, a.vz + depSep.z * spd);
-    if(distA >= 210) break;
+    if(distA >= 80) break;
   }
   return { state: s, dvHarbor, time: t };
 }
@@ -1170,15 +1174,19 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      最小限だけ回して回避する。大きさ（Δv コスト）は変えないため、推定の
      収支はそのまま実飛行に一致する。 */
   const departClearBurn = (d) => {
-    const KEEP = 110, HORIZON = 900;
+    const KEEP = 55, HORIZON = 900;
     if(Math.hypot(depAnchor.x - s.x, depAnchor.y - s.y, depAnchor.z - s.z) > 3000) return d;
     const acc = fullAccFn(starGM, pls);
-    /* 錨を噴射時刻（timeTotal）まで進めた状態を基準にする */
-    const pa0 = { x: depAnchor.x, y: depAnchor.y, z: depAnchor.z, vx: depAnchor.vx, vy: depAnchor.vy, vz: depAnchor.vz };
-    { let tA = 0; while(tA < timeTotal){ const hh = Math.min(20, timeTotal - tA); rk4StepState(pa0, hh, acc); tA += hh; } }
-    const probe = (dvx, dvy, dvz) => {
-      const ps = { x: s.x, y: s.y, z: s.z, vx: s.vx + dvx, vy: s.vy + dvy, vz: s.vz + dvz };
-      const pa = { x: pa0.x, y: pa0.y, z: pa0.z, vx: pa0.vx, vy: pa0.vy, vz: pa0.vz };
+    /* 錨を指定時刻まで進めた状態 */
+    const anchorAt = (epochT) => {
+      const pa = { x: depAnchor.x, y: depAnchor.y, z: depAnchor.z, vx: depAnchor.vx, vy: depAnchor.vy, vz: depAnchor.vz };
+      let tA = 0; while(tA < epochT){ const hh = Math.min(20, epochT - tA); rk4StepState(pa, hh, acc); tA += hh; }
+      return pa;
+    };
+    /* 与えた船状態・時刻から噴射した場合の、錨への最接近（900秒地平） */
+    const probeAt = (shipSt, epochT, dvx, dvy, dvz) => {
+      const ps = { x: shipSt.x, y: shipSt.y, z: shipSt.z, vx: shipSt.vx + dvx, vy: shipSt.vy + dvy, vz: shipSt.vz + dvz };
+      const pa = anchorAt(epochT);
       let minD = Math.hypot(ps.x - pa.x, ps.y - pa.y, ps.z - pa.z);
       let tE = 0;
       while(tE < HORIZON){
@@ -1188,7 +1196,29 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       }
       return minD;
     };
+    const probe = (dvx, dvy, dvz) => probeAt(s, timeTotal, dvx, dvy, dvz);
     if(probe(d.dvx, d.dvy, d.dvz) >= KEEP) return d;
+    /* 遅延を回転に優先する（2026-11-19）: 噴射ベクトルを回転させると迎撃の
+       前提そのものが壊れ、推定が「目標を素通り→周回して戻る」劣化計画に化ける
+       （実測: 回転 0.28 rad の案が会議で選ばれ、実飛行は到着圏を素通りするか
+       推進剤を使い切った）。同じベクトルのまま、分離ドリフトで滑空して航路が
+       錨を自然に避ける時刻まで噴射を遅らせる方が、迎撃を保ったまま安全になる。
+       滑空の確定はこのジョブの世界（自船・目標・惑星）を propStar でそのまま
+       進めて行うため、サンプル列・時刻列は一貫したままになる。遅延区間の
+       recordBody（擦過台帳）だけは付かないが、分離直後の開けた宙域であり、
+       対象の錨は pls に含まれないため実害はない。 */
+    for(const tau of [60, 120, 240, 480, 900, 1500]){
+      if(timeTotal + tau > 1750) break; /* 実飛行のコミット噴射ゲート（atT ≤ 1800）に収める */
+      const cs = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz };
+      let tc = 0; while(tc < tau){ const hh = Math.min(20, tau - tc); rk4StepState(cs, hh, acc); tc += hh; }
+      if(probeAt(cs, timeTotal + tau, d.dvx, d.dvy, d.dvz) >= KEEP){
+        const savedH = h; let doneTau = 0;
+        while(doneTau < tau){ const chunk = Math.min(120, tau - doneTau); h = chunk; propStar(); timeTotal += chunk; doneTau += chunk; }
+        h = savedH;
+        return d;
+      }
+    }
+    const pa0 = anchorAt(timeTotal);
     /* 回転軸: （錨方向）×（噴射後速度）。この軸回りの回転が最接近を最も素直に広げる */
     const rx = pa0.x - s.x, ry = pa0.y - s.y, rz = pa0.z - s.z;
     const wx = s.vx + d.dvx, wy = s.vy + d.dvy, wz = s.vz + d.dvz;
@@ -1230,6 +1260,9 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     if(firstBurn === null && depAnchor && d.cost > 0.001) d = departClearBurn(d);
     s.vx += d.dvx; s.vy += d.dvy; s.vz += d.dvz;
     dvTotal += d.cost;
+    /* 計画の噴射は予定表として記録する（2026-11-19）: 実飛行はサンプルの弦を
+       追うのではなく、この噴射列を時刻どおりに実行して計画そのものを飛ぶ */
+    if(d.cost > 0.01) burns.push({ t: timeTotal, dvx: d.dvx, dvy: d.dvy, dvz: d.dvz, cost: d.cost });
     if(phase === 'cruise') dvCruise += d.cost;
     if(d.cost > 0 && inVicinityOf(s, pls)) dvGravityComp += d.cost;
     if(firstBurn === null && d.cost > 0.001){ firstBurn = d.cost; firstBurnVec = { dvx: d.dvx, dvy: d.dvy, dvz: d.dvz, cost: d.cost }; firstBurnT = timeTotal; }
@@ -1237,13 +1270,14 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   };
   const split = rel => ({ dvDepart: dvCruise, dvArrival: dvTotal - dvCruise, dvGravityComp, finalRel: rel });
   let firstBurn = null, firstBurnVec = null, firstBurnT = null;
+  const burns = [];
   const phaseDv = {}, phaseT0 = {};
   const mkLegs = () => {
     const order = ['cruise', 'brake', 'captain', 'join', 'final'];
     const seen = order.filter(p => phaseT0[p] !== undefined);
     return seen.map((p, i) => ({ phase: p, t0: phaseT0[p], t1: (i + 1 < seen.length ? phaseT0[seen[i + 1]] : timeTotal), dv: phaseDv[p] || 0 }));
   };
-  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, sampleTimes });
+  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, sampleTimes, burns });
   let planetCross = false, surfaceHit = false, bestRisk = null, bestAlt = Infinity;
   let hitCount = 0, crossCount = 0, capHitBase = 0, capCrossBase = 0;
   /* 推定の暴走ガード（v0.6.1 #5）: シミュレーション上の艦が天体に捕捉される軌道に入ると、
@@ -1334,6 +1368,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const infoDistApprox = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
     const phaseCap = phase === 'cruise' ? (needDock && infoDistApprox < 300 ? Math.min(1.5, Math.max(0.25, checkTimer)) : Math.max(1, checkTimer)) : ((phase === 'final' || phase === 'join') ? 8 : BIG);
     h = Math.min(dynStep(s.x, s.y, s.z, starGM, pls, BIG), encounterCap(s, t), phaseCap, maxT - timeTotal);
+    /* 実飛行との刻み一致（2026-11-19）: 実飛行は天体 300,000 以内で刻みを
+       20 秒に cap する（game.html stepWorld）。推定側が井戸の中で ~52 秒
+       刻みだと、双子の軌道が通過の数分で数千ずれる（実測: 最接近通過で
+       位置誤差 673→3,064・速度誤差 6.79 まで発散し、追従が推進剤を
+       食い切った）。計画は世界を予測する側なので、世界の刻みに合わせる */
+    { let dMinP = Infinity; for(const p of pls){ if(!p.gm) continue; const dd = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z); if(dd < dMinP) dMinP = dd; } if(dMinP < 300000) h = Math.min(h, 20); }
     if(h <= 0){ job.result = Object.assign({ ok: false, planetCross, dvTotal, timeTotal, samples }, fin(0)); job.done = true; break; }
     const prevRel = pls.map(p => [s.x - p.x, s.y - p.y, s.z - p.z]);
     const prevStar = [s.x, s.y, s.z];
