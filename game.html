@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>宇宙シミュレーター 試作 v0.6.5（3D）</title>
+<title>宇宙シミュレーター 試作 v0.8（3D）</title>
 <style>
   :root{
     --bg:#040711;
@@ -154,25 +154,32 @@
     box-shadow:0 6px 20px rgba(0,0,0,0.45);
   }
   #msg-card.visible{display:block}
-  /* ===== 会話レイヤー (#conv-layer): 計画会議・お伺いはここで進める（最上位のカットイン。世界は止めない） ===== */
-  #conv-layer{display:none;position:fixed;left:50%;transform:translateX(-50%);bottom:118px;width:min(620px,94vw);max-height:46vh;overflow:auto;background:rgba(8,15,34,0.94);border:1px solid rgba(45,212,191,0.6);border-radius:12px;padding:10px 12px;color:#e6fffa;box-shadow:0 10px 28px rgba(0,0,0,0.55);z-index:90}
-  #conv-layer.open{display:block}
-  #conv-layer.min .conv-body,#conv-layer.min .conv-choices,#conv-layer.min .conv-next{display:none}
-  .conv-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
-  .conv-avatar{width:40px;height:40px;border-radius:50%;overflow:hidden;flex-shrink:0;background:rgba(8,15,32,0.55);display:flex;align-items:center;justify-content:center}
-  .conv-avatar img{width:100%;height:100%;object-fit:cover}
-  #conv-who{font-weight:700;font-size:13px}
-  .conv-title{font-size:11px;color:var(--muted);flex:1}
+  /* ===== 会話面は #msg-card の1面だけ（舞台形式）: 会話中は conv-mode で、現在の話者の
+     肖像＋名前＋現在の発言だけを舞台に載せる。前の発言は前面に残さない（全記録は日誌側）。
+     発言は一過性（見逃してよい）、判断（選択肢・承認）だけが #67 の保護を受ける。世界は止めない ===== */
+  #msg-card.conv-mode{background:rgba(8,15,32,0.97);backdrop-filter:none;-webkit-backdrop-filter:none}
+  #msg-card.conv-mode #msg-body,#msg-card.conv-mode #msg-actions{display:none}
+  #msg-card.conv-mode .msg-avatar{width:76px;height:76px}
+  #msg-card.conv-mode .msg-who{font-size:14px}
+  #conv-body{display:none;margin-top:6px}
+  #msg-card.conv-mode #conv-body{display:block}
+  #plan-panel.conv-hidden,#chart-panel.conv-hidden{visibility:hidden}
   .conv-bubble{margin:4px 0 8px;line-height:1.55;font-size:13px}
   .conv-bubble.cap{border-left:3px solid #6ea8ff;padding-left:8px}
   .conv-grounds{width:100%;border-collapse:collapse;font-size:12px;margin:6px 0}
   .conv-grounds td{border-bottom:1px solid rgba(255,255,255,0.12);padding:4px 6px}
   .conv-grounds td:last-child{text-align:right;font-variant-numeric:tabular-nums}
+  .conv-bar-row{display:grid;grid-template-columns:64px 1fr 92px;gap:6px;align-items:center;font-size:11.5px;margin:3px 0}
+  .conv-bar{height:9px;background:rgba(255,255,255,0.10);border-radius:5px;overflow:hidden}
+  .conv-bar i{display:block;height:100%;background:var(--teal,#39d0c4);border-radius:5px}
+  .conv-bar i.bad{background:var(--bad,#ff6378)}
   .conv-note{font-size:11px;color:var(--muted);line-height:1.5;margin:4px 0}
   .conv-calc-stage{font-size:12px;padding:3px 0}
-  .conv-choices{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+  .conv-choices{display:none;flex-direction:column;gap:6px;margin-top:8px}
+  #msg-card.conv-mode .conv-choices{display:flex}
   .conv-choices button{text-align:left;padding:8px 10px;font-size:13px}
-  .conv-next{text-align:right;margin-top:6px}
+  .conv-next{display:none;text-align:right;margin-top:6px}
+  #msg-card.conv-mode .conv-next{display:block}
   .conv-log{font-size:11px;color:#99f6e4;border:1px dashed rgba(45,212,191,0.5);border-radius:8px;padding:6px 8px;margin:6px 0}
   #msg-card.alert{border-color:rgba(255,209,102,0.85)}
   .msg-head{display:flex;align-items:center;gap:7px}
@@ -227,7 +234,7 @@
   #msg-actions{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
   #msg-actions:empty{display:none}
   #msg-actions button{padding:5px 10px;font-size:11px}
-  #msg-card.min #msg-body,#msg-card.min #msg-actions{display:none}
+  #msg-card.min #msg-body,#msg-card.min #msg-actions,#msg-card.min #conv-body,#msg-card.min .conv-choices,#msg-card.min #conv-next{display:none}
   /* ===== 委任チップ（v0.6.1 #4）: 副官への継続委任が立っていることを常時示す ===== */
   #delegate-chip{
     background:rgba(8,30,34,0.82);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);
@@ -337,7 +344,8 @@
   .traffic-row{display:flex;justify-content:space-between;gap:6px;font-size:11px;padding:5px 7px;border:1px solid var(--line);border-radius:7px;margin-bottom:4px;background:rgba(6,11,24,0.55)}
   .traffic-row .tn{font-weight:700}
   .traffic-row .tm{color:var(--muted);white-space:nowrap}
-  .npc-label{position:fixed;transform:translate(-50%,-130%);font-size:10px;font-weight:700;color:#e2e8f0;background:rgba(4,8,20,0.62);border:1px solid rgba(148,163,184,0.5);border-radius:5px;padding:1px 5px;pointer-events:none;z-index:15;white-space:nowrap;display:none}
+  .npc-label{position:fixed;transform:translate(-50%,-130%);font-size:10px;font-weight:700;color:#e2e8f0;background:rgba(4,8,20,0.62);border:1px solid rgba(148,163,184,0.5);border-radius:5px;padding:1px 5px;pointer-events:auto;cursor:pointer;z-index:15;white-space:nowrap;display:none}
+  .npc-label.orbit-off{opacity:0.45}
   .ff-bar .ff-now{color:#e9d5ff;font-weight:700;font-size:10px;white-space:nowrap}
   .ff-bar button{padding:4px 8px;font-size:11px;border-radius:999px;min-height:30px;white-space:nowrap}
   .dock-actions > button{padding:6px 9px;font-size:12px}
@@ -381,9 +389,16 @@
   #view-overlay{position:relative}
   .view-mode-tag{font-size:9.5px;font-weight:800;letter-spacing:0.06em;padding:2px 6px;border-radius:5px;background:rgba(56,189,248,0.22);color:var(--accent);border:1px solid rgba(56,189,248,0.45);white-space:nowrap}
   .view-mode-tag.manual{background:rgba(251,191,36,0.18);color:#fcd34d;border-color:rgba(251,191,36,0.5)}
-  .view-now{font-size:11.5px;color:var(--text);white-space:nowrap;display:inline-flex;align-items:baseline;gap:5px}
-  .view-now b{color:#fff}
-  .view-reason{font-size:10px;color:var(--muted)}
+  /* #73: バーの中で伸縮するのは中央のテキストだけ。ボタン類は固定位置にアンカーし、
+     モード表示や理由テキストの長さが変わっても「見方を変える」が動かないようにする */
+  .view-now{font-size:11.5px;color:var(--text);white-space:nowrap;display:inline-flex;align-items:baseline;gap:5px;flex:1 1 0;min-width:0;overflow:hidden}
+  .view-now b{color:#fff;flex:none}
+  .view-reason{font-size:10px;color:var(--muted);overflow:hidden;text-overflow:ellipsis}
+  #view-bar>button,#view-bar>.view-mode-tag,#view-bar>.view-labels-wrap{flex:none}
+  .vp-auto{display:flex;align-items:center;gap:8px;width:100%;margin-top:8px;padding:8px 10px;border-radius:9px;border:1px solid rgba(56,189,248,0.55);background:rgba(14,42,86,0.9);color:#e0f2fe;font-size:12px;font-weight:700;cursor:pointer;text-align:left}
+  .vp-auto .vp-auto-sub{font-size:10px;font-weight:400;color:var(--muted)}
+  /* #10(窓喪失の明示): 出発窓の再設定を伝える目立つ通知。日誌に埋もれさせない */
+  #window-alert{position:fixed;top:calc(8px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:240;max-width:min(520px,92vw);background:rgba(46,32,4,0.96);border:1.5px solid #f59e0b;color:#fde68a;font-size:13px;font-weight:700;line-height:1.5;border-radius:11px;padding:10px 14px;box-shadow:0 12px 32px rgba(0,0,0,0.65);cursor:pointer}
   .view-bar-sep{width:1px;align-self:stretch;background:var(--line);margin:2px 1px}
   .view-labels-wrap{display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
   .view-labels-cap{font-size:10.5px;color:var(--muted)}
@@ -575,6 +590,14 @@
   .pd-sec{border:1px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;background:rgba(6,11,24,0.55)}
   .pd-title{font-size:12px;font-weight:700;color:var(--accent);margin-bottom:5px}
   .pd-row{display:grid;grid-template-columns:1.5fr 0.9fr 0.7fr 1.1fr;gap:4px;font-size:11.5px;padding:2.5px 0;border-bottom:1px dotted rgba(92,138,225,0.16)}
+  .pd-fig{margin:8px 0;padding:7px 8px;background:rgba(92,138,225,0.07);border:1px solid rgba(92,138,225,0.18);border-radius:8px}
+  .pd-fig-title{font-size:11.5px;font-weight:700;margin-bottom:5px}
+  .pd-fig-note{font-size:10.5px;color:var(--muted);margin-top:4px}
+  .pd-bar{position:relative;height:12px;background:rgba(255,255,255,0.10);border-radius:6px}
+  .pd-bar i.use{display:block;height:100%;background:linear-gradient(90deg,#2f9e8f,#39d0c4);border-radius:6px}
+  .pd-bar i.prog{display:block;height:100%;background:linear-gradient(90deg,#3f7fd0,#6fb2ff);border-radius:6px}
+  .pd-bar-res{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--warn,#ffd166)}
+  .pd-bar-row{display:grid;grid-template-columns:86px 1fr 74px;gap:6px;align-items:center;font-size:11px;margin:4px 0}
   .pd-row:last-child{border-bottom:none}
   .pd-row.current{background:rgba(45,212,191,0.10);border-radius:4px}
   .pd-row.total{font-weight:700;color:#dbeafe}
@@ -768,14 +791,6 @@
       </div>
       <div class="msg-body" id="msg-body"></div>
       <div class="msg-actions" id="msg-actions"></div>
-    </div>
-    <div id="conv-layer">
-      <div class="conv-head">
-        <span class="conv-avatar" id="conv-avatar"></span>
-        <span id="conv-who"></span>
-        <span class="conv-title" id="conv-title"></span>
-        <button id="conv-min" title="しまう">―</button>
-      </div>
       <div class="conv-body" id="conv-body"></div>
       <div class="conv-choices" id="conv-choices"></div>
       <div class="conv-next" id="conv-next" style="display:none"><button id="conv-next-btn" class="teal">▶ 次へ</button></div>
@@ -790,6 +805,8 @@
     <p id="cel-sub">接舷成功！任務を達成しました</p>
   </div>
 
+  <div id="window-alert" style="display:none" title="タップで閉じる"></div>
+
   <!-- 下部スタック：画面端オーバーレイ（管制テロップ＋視点ボタン）＋半透明ドック -->
   <div id="bottom-stack">
     <div id="view-overlay">
@@ -798,12 +815,12 @@
         <span class="view-mode-tag auto" id="view-mode-tag">AUTO</span>
         <span class="view-now">いま：<b id="view-now-name">港の周辺</b><span class="view-reason" id="view-reason"></span></span>
         <button id="btn-view-pick" type="button">見方を変える</button>
-        <button id="btn-view-auto" type="button" style="display:none">AUTOに戻す</button>
         <span class="view-bar-sep"></span>
         <span class="view-labels-wrap"><span class="view-labels-cap">名前表示</span><button id="btn-view-labels" type="button" class="view-switch on" role="switch" aria-checked="true" title="名前表示のオン／オフ"><span class="knob"></span></button></span>
       </div>
       <div id="view-picker" style="display:none">
         <div class="vp-head">見方を選ぶ<span class="vp-sub">選んだ見方で保持します。角度はドラッグで自由に変えられます</span></div>
+        <button type="button" id="btn-view-auto" class="vp-auto" style="display:none">AUTOに戻す<span class="vp-auto-sub">状況に合わせた見方に任せます</span></button>
         <div class="vp-grid">
           <button type="button" class="vp-card" data-view="ship"><svg viewBox="0 0 64 40" aria-hidden="true"><circle cx="32" cy="20" r="13" fill="none" stroke="#38bdf8" stroke-width="1.4" stroke-dasharray="3 3"/><path d="M32 12 L36.5 25 L32 21.5 L27.5 25 Z" fill="#7dd3fc"/></svg><span class="vp-name">自船の周辺</span><span class="vp-tag" data-tag="ship">選べます</span></button>
           <button type="button" class="vp-card" data-view="route"><svg viewBox="0 0 64 40" aria-hidden="true"><path d="M6 32 C 22 30, 34 12, 56 9" fill="none" stroke="#2dd4bf" stroke-width="5" opacity="0.45"/><path d="M6 32 C 22 30, 34 12, 56 9" fill="none" stroke="#99f6e4" stroke-width="1.6"/><circle cx="6" cy="32" r="3" fill="#e2e8f0"/><circle cx="56" cy="9" r="5.5" fill="none" stroke="#38bdf8" stroke-width="2"/></svg><span class="vp-name">航路の全体</span><span class="vp-tag" data-tag="route">選べます</span></button>
@@ -863,6 +880,9 @@
             <span style="color:var(--muted);margin:0 3px"><b id="clock">1日目 00:00</b></span>
           </div>
           <button id="btn-plan" class="teal task-chip" data-n="">🗺 航海計画</button>
+          <button id="btn-talk-nav" class="teal task-chip" data-n="" title="航法士官 三浦葵に話しかける（計画会議・航行相談）">🗣 三浦（航法）</button>
+          <button id="btn-talk-sup" class="teal task-chip" data-n="" title="補給士官 高橋蓮に話しかける（補給・積荷の相談）">🗣 高橋（補給）</button>
+          <button id="btn-talk-guide" class="teal task-chip" data-n="" title="教導士官 榊原凛に話しかける（案内・委任の確認）">🗣 榊原（教導）</button>
           <span id="mode-toggle" role="group" aria-label="表示モード切替"><button id="btn-mode-nav">🧭 航行</button><button id="btn-ship">🚶 船内</button></span>
           <button id="btn-chart" class="teal task-chip" data-n="">🧭 海図</button>
           <button id="btn-task-traffic" class="task-chip" data-n="">📡 交通</button>
@@ -1130,7 +1150,7 @@
 <!-- スタート画面 (id="start-screen") -->
 <div id="start-screen">
   <div class="start-card-wrap">
-    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.6.5</div>
+    <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.8</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
     <p class="start-pitch"><b>船長は、操縦しない。判断する。</b>——船長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
     <div class="scenario-grid" id="scenario-cards">
@@ -1195,10 +1215,12 @@
 <!-- Three.js: 同梱ファイル(three.min.js)を優先し、無い場合のみCDNから読み込む -->
 <script src="three.min.js"></script>
 <script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');}</script>
+<!-- GLBモデル用ローダー（three r128 公式 examples/js 版を同梱。モデル統合ライン） -->
+<script src="GLTFLoader.js"></script>
 <script src="flight-core.js"></script>
 <script>/* 飛行コア（flight-core.js、台帳 #56）: 物理・推定・誘導の純粋計算は
    モジュール側にあり、ここでは従来どおりの名前で参照できるよう展開する */
-const { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble, createPlanEstimateJob, createPlanEstimateEnsembleJob } = window.FlightCore;
+const { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, captureGateAt, captureOrbitConfirmOk, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble, createPlanEstimateJob, createPlanEstimateEnsembleJob } = window.FlightCore;
 
 "use strict";
 /* ===== 宇宙シミュレーター 試作 v0.3 フル3D版 ===== */
@@ -1366,6 +1388,10 @@ function saveCaptainProfile(p){ try { localStorage.setItem('ss_captain_v1', JSON
    バック）は保存せず、復元時に定義側から再構築する。 */
 const SAVE_KEY = 'ss-save-v1';
 const SAVE_FORMAT = 1;
+const BUILD_VERSION = 'v0.8';
+/* 版数表示はこの定数が唯一の出所（タイトル／バッジ／セーブ／デバッグログ）。 */
+document.title = '宇宙シミュレーター 試作 ' + BUILD_VERSION + '（3D）';
+{ const lb = document.querySelector('.logo-badge'); if(lb) lb.textContent = '3D ORBITAL FLEET SIMULATOR ' + BUILD_VERSION; }
 
 function makeSaveEncoder(bodyKeyOf){
   const ids = new Map(); const objs = [];
@@ -1457,7 +1483,7 @@ function buildSaveData(){
   const rmEl = document.getElementById('result-modal');
   const rmOpen = !!(rmEl && rmEl.classList.contains('open'));
   return {
-    format: SAVE_FORMAT, version: 'v0.6.5', savedAt: Date.now(), shipTime: S.time,
+    format: SAVE_FORMAT, version: BUILD_VERSION, savedAt: Date.now(), shipTime: S.time,
     scenario: selectedScenario, missionIdx: currentMissionIdx, meritTotal,
     sysId: S.sys ? S.sys.id : null, prologue: !!S.prologue,
     camAzAccum: (typeof camAzAccum === 'number') ? camAzAccum : 0,
@@ -1963,20 +1989,35 @@ function predictImpact(horizon){
     b.vx += a[0] * h; b.vy += a[1] * h; b.vz += a[2] * h;
     b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h;
   };
+  const segMinPI = (ax0, ay0, az0, bx0, by0, bz0) => {
+    const dx = bx0 - ax0, dy = by0 - ay0, dz = bz0 - az0;
+    const len2 = dx * dx + dy * dy + dz * dz;
+    const u = len2 > 1e-12 ? Math.max(0, Math.min(1, -(ax0 * dx + ay0 * dy + az0 * dz) / len2)) : 0;
+    return Math.hypot(ax0 + dx * u, ay0 + dy * u, az0 + dz * u);
+  };
   let tt = 0, guard = 0;
   while(tt < horizon && guard++ < 60000){
     let dNear = Infinity;
     for(const p of pls){ const d = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z); if(d < dNear) dNear = d; }
     const hh = Math.min(Math.max(2, Math.min(dynStep(s.x, s.y, s.z, starGM, pls, 0.75 * SCALE_K), dNear < 300000 ? 20 : 120)), horizon - tt);
     if(!(hh > 0)) break;
+    /* 線分最小距離で判定する（#76 厳密化）: 旧実装はステップ端点の距離だけで
+       判定していたため、刻み（近傍 20 秒／遠方 120 秒）の間に天体を掠める
+       高速通過を取りこぼし得た。推定器の recordBody や predictClosest と同じ
+       線分最接近で測り、物理半径＋マージンの内側への侵入を必ず検知する。
+       判定境界は従来どおり物理半径（surfaceRadius）＋ impactMargin で、
+       表示半径（月の 12,000 等）は一切使わない。 */
+    const prevRelPI = pls.map(p => [s.x - p.x, s.y - p.y, s.z - p.z]);
+    const prevStarPI = [s.x, s.y, s.z];
     tt += hh;
     eulerPI(s, hh, acc);
     for(let i = 0; i < pls.length; i++){ if(pls[i].isMoon) eulerPI(pls[i], hh, accs[i]); else rk4StepState(pls[i], hh, sAcc); }
-    const dStar = Math.hypot(s.x, s.y, s.z);
+    const dStar = Math.min(Math.hypot(s.x, s.y, s.z), segMinPI(prevStarPI[0], prevStarPI[1], prevStarPI[2], s.x, s.y, s.z));
     if(dStar < STAR_SURFACE_R + impactMargin(STAR_SURFACE_R)) return { body: '恒星', tti: tt, bx: 0, by: 0, bz: 0 };
-    for(const p of pls){
+    for(let i = 0; i < pls.length; i++){
+      const p = pls[i];
       const sr = surfaceRadius(p);
-      const d = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z);
+      const d = Math.min(Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z), segMinPI(prevRelPI[i][0], prevRelPI[i][1], prevRelPI[i][2], s.x - p.x, s.y - p.y, s.z - p.z));
       if(d < sr + impactMargin(sr)) return { body: p.name, tti: tt, bx: p.x, by: p.y, bz: p.z };
     }
   }
@@ -2062,7 +2103,7 @@ function avoidanceWatch(){
     const rep = '🚨 ' + hit.body + ' への衝突まで約 ' + fmtDuration(hit.tti) + ' と予測 — 時間的余裕がないため、定常方針（船の保全優先）に基づき回避噴射を即時実施しました（Δv ' + plan.mag.toFixed(1) + '）。';
     logEvent('🚨 航行AI: ' + rep);
     showOfficerPopup(Object.assign({}, SHIP_AI_SPEAKER, { name: '航行AI ' + aiName(), role: '航行AI' }), rep);
-    setTimeout(() => { try{ startConversation('safety_action_report', { safety: { what: hit.body + ' への衝突回避', when: 'たった今', dv: plan.mag.toFixed(1) } }); }catch(e){} }, 1600);
+    setTimeout(() => { try{ requestReportConversation('safety_action_report', { safety: { what: hit.body + ' への衝突回避', when: 'たった今', dv: plan.mag.toFixed(1) } }); }catch(e){} }, 1600);
     return;
   }
   if(S.avoidSuppress && S.avoidSuppress[hit.body] && S.time < S.avoidSuppress[hit.body]){ if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null; return; }
@@ -2222,6 +2263,34 @@ function createBaseState(cfg, isPrologue){
   };
 }
 
+/* 接舷位置のバース基準点化（モデル統合ラインの残件）: 接舷中の自船は
+   ステーション中心でなく、自船指定バース（あおば第6バース）の基準点に置く。
+   バース基準点はモデル座標 berth_06 = (300, 38, 0) m（GLB 実測）で、ゲーム
+   単位では MODEL_K 倍。モデルの姿勢（orientStationAtt）と同一の基底
+   R（動径）／T'（直交化した速度方向）／N = R×T でステーション位置へ足す
+   ため、描画されるバースアーム・接舷船プロキシの位置と物理位置が一致する。
+   速度はフレーム回転（ω = r×v / |r|²）によるオフセットの時間微分を
+   ステーション速度へ加えたもの（係留中はステーションと一体で動く）。 */
+function stationBerthPoint(anchor){
+  const rp = Math.hypot(anchor.x, anchor.y, anchor.z) || 1;
+  const R = { x: anchor.x / rp, y: anchor.y / rp, z: anchor.z / rp };
+  const vp = Math.hypot(anchor.vx, anchor.vy, anchor.vz) || 1;
+  const Tv = { x: anchor.vx / vp, y: anchor.vy / vp, z: anchor.vz / vp };
+  let N = { x: R.y * Tv.z - R.z * Tv.y, y: R.z * Tv.x - R.x * Tv.z, z: R.x * Tv.y - R.y * Tv.x };
+  const nm = Math.hypot(N.x, N.y, N.z) || 1;
+  N = { x: N.x / nm, y: N.y / nm, z: N.z / nm };
+  const T = { x: N.y * R.z - N.z * R.y, y: N.z * R.x - N.x * R.z, z: N.x * R.y - N.y * R.x };
+  const bx = 300 * MODEL_K, by = 38 * MODEL_K;
+  const ox = R.x * bx + T.x * by, oy = R.y * bx + T.y * by, oz = R.z * bx + T.z * by;
+  const wx = (anchor.y * anchor.vz - anchor.z * anchor.vy) / (rp * rp);
+  const wy = (anchor.z * anchor.vx - anchor.x * anchor.vz) / (rp * rp);
+  const wz = (anchor.x * anchor.vy - anchor.y * anchor.vx) / (rp * rp);
+  return {
+    x: anchor.x + ox, y: anchor.y + oy, z: anchor.z + oz,
+    vx: anchor.vx + (wy * oz - wz * oy), vy: anchor.vy + (wz * ox - wx * oz), vz: anchor.vz + (wx * oy - wy * ox)
+  };
+}
+
 function startPrologue(){
   const cfg = SCENARIOS[selectedScenario];
   S = createBaseState(cfg, true);
@@ -2230,8 +2299,9 @@ function startPrologue(){
   loadPrologueSystem();
   // 港から始まる：最初はステーションに接舷中。出航は船長が承認するイベントとして扱う。
   S.docked = true; S.dockedTo = S.station;
-  S.ship.x = S.station.x; S.ship.y = S.station.y; S.ship.z = S.station.z;
-  S.ship.vx = S.station.vx; S.ship.vy = S.station.vy; S.ship.vz = S.station.vz;
+  { const bp = stationBerthPoint(S.station);
+    S.ship.x = bp.x; S.ship.y = bp.y; S.ship.z = bp.z;
+    S.ship.vx = bp.vx; S.ship.vy = bp.vy; S.ship.vz = bp.vz; }
   if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; frameState.ref = 'station'; }
   if(typeof chartState !== 'undefined'){ chartState.mode = 'auto'; chartState.range = 'port'; chartState.lastAutoT = -99; }
   cam.dist = typeof camDistForRange === 'function' ? camDistForRange('port') : 240;
@@ -2440,8 +2510,15 @@ function physics(simDt){
     }
     if(S.docked){
       const anchor=S.dockedTo||S.target;
-      S.ship.x=anchor.x; S.ship.y=anchor.y; S.ship.z=anchor.z;
-      S.ship.vx=anchor.vx; S.ship.vy=anchor.vy; S.ship.vz=anchor.vz;
+      if(anchor && anchor === S.station){
+        /* ステーション接舷中は中心でなく第6バース基準点に係留する */
+        const bp = stationBerthPoint(anchor);
+        S.ship.x=bp.x; S.ship.y=bp.y; S.ship.z=bp.z;
+        S.ship.vx=bp.vx; S.ship.vy=bp.vy; S.ship.vz=bp.vz;
+      } else if(anchor){
+        S.ship.x=anchor.x; S.ship.y=anchor.y; S.ship.z=anchor.z;
+        S.ship.vx=anchor.vx; S.ship.vy=anchor.vy; S.ship.vz=anchor.vz;
+      }
     } else if(!S.failed){
       if(S.activeBurn && S.activeBurn.tLeft > 0){
         const b = S.activeBurn;
@@ -2700,7 +2777,9 @@ function checkRendezvous(){
 // 完了後に completeDocking() で従来の達成処理を行う
 function startBerthing(){
   const t = S.target;
-  S.berthing = { t: 0, target: t, ox: S.ship.x - t.x, oy: S.ship.y - t.y, oz: S.ship.z - t.z, moored: false };
+  /* 接舷先がステーションなら終端は中心でなくバース基準点（stationBerthPoint） */
+  const bp0 = (t && t === S.station) ? stationBerthPoint(t) : t;
+  S.berthing = { t: 0, target: t, ox: S.ship.x - bp0.x, oy: S.ship.y - bp0.y, oz: S.ship.z - bp0.z, moored: false };
   if(S.planExec){ S.planExec.phase = 'berthing'; S.planExec.active = false; }
   logEvent('⚓ 接舷ゲート到達 — 接舷作業開始。最終進入、微速で寄せます。');
   showOfficerPopup(HELM, '接舷します。最終進入、速力良好。');
@@ -2711,8 +2790,9 @@ function updateBerthing(simDt){
   const b = S.berthing, t = b.target;
   b.t += simDt;
   const k = Math.max(0, 1 - b.t / 2.5);
-  S.ship.x = t.x + b.ox * k; S.ship.y = t.y + b.oy * k; S.ship.z = t.z + b.oz * k;
-  S.ship.vx = t.vx; S.ship.vy = t.vy; S.ship.vz = t.vz;
+  const bp = (t && t === S.station) ? stationBerthPoint(t) : t;
+  S.ship.x = bp.x + b.ox * k; S.ship.y = bp.y + b.oy * k; S.ship.z = bp.z + b.oz * k;
+  S.ship.vx = bp.vx; S.ship.vy = bp.vy; S.ship.vz = bp.vz;
   if(!b.moored && b.t >= 2.5){
     b.moored = true;
     logEvent('⚓ 接舷完了。係留を開始します。');
@@ -2928,7 +3008,11 @@ function buildWaypoints(cfg, est, opts){
   const wasDocked = (opts && opts.fromDocked !== undefined) ? opts.fromDocked : !!(S && S.docked);
   const depAnchor = (opts && opts.depAnchor) || (S && (S.dockedTo || S.station)) || null;
   const depSep = (opts && opts.depSep) || (depAnchor ? computeDepSep(depAnchor, cfg.targetBody) : null);
-  wps.push({ name: '出発レーン（港内）', t: 0, pos: smp.length ? smp[0] : null, note: '離舷→港内航行（制限速度）→出域' });
+  /* #69: レーンの起点マーカーはコースのサンプル点（smp[0]）でなくステーション自身に結びつける。
+     サンプル起点だと金色マーカーがステーションから離れた宙に浮いて見え、「レーンは港の外なのか」
+     と読まれた。レーン帯・ビーコン（updatePortCraft）は元々ステーション相対で描かれており、
+     起点チップも同じ錨に揃える */
+  wps.push({ name: '出発レーン（港内）', t: 0, pos: (wasDocked && depAnchor) ? [depAnchor.x, depAnchor.y, depAnchor.z] : (smp.length ? smp[0] : null), note: '離舷→港内航行（制限速度）→出域' });
   if(wasDocked && depAnchor && depSep){
     const depEta = 110;
     const off = { x: depSep.x * 700, y: depSep.y * 700, z: depSep.z * 700 };
@@ -3004,6 +3088,32 @@ function getActiveCourseData(){
   }
   return null;
 }
+/* 図化: 推定サンプル（航路の幾何）を平面投影の軌道図にする。世界層の実寸そのままを
+   縮尺した図で、装飾ではない（出発点・目標天体・到着圏を同じ物差しで描く） */
+function planRouteSvg(est, cfg){
+  const sm = (est && est.samples) || [];
+  if(sm.length < 2 || !cfg || !cfg.targetBody) return '';
+  const tb = cfg.targetBody;
+  const pts = sm.map(p => [p[0], p[1]]);
+  pts.push([tb.x, tb.y]);
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  pts.forEach(p => { minX = Math.min(minX, p[0]); maxX = Math.max(maxX, p[0]); minY = Math.min(minY, p[1]); maxY = Math.max(maxY, p[1]); });
+  const span = Math.max(maxX - minX, maxY - minY, 1);
+  const pad = span * 0.06;
+  minX -= pad; minY -= pad;
+  const W = 300, H = 150;
+  const px = x => ((x - minX) / (span + pad * 2) * W).toFixed(1);
+  const py = y => (H - (y - minY) / (span + pad * 2) * H).toFixed(1);
+  const line = sm.map(p => px(p[0]) + ',' + py(p[1])).join(' ');
+  const ringR = Math.max(3, (cfg.arrivalDist || 0) / (span + pad * 2) * W);
+  return '<div class="pd-fig"><div class="pd-fig-title">🗺 航路図（真上から見た平面投影・実寸の縮尺）</div>' +
+    '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" role="img" aria-label="航路図">' +
+    '<polyline points="' + line + '" fill="none" stroke="#39d0c4" stroke-width="1.6"/>' +
+    '<circle cx="' + px(sm[0][0]) + '" cy="' + py(sm[0][1]) + '" r="3.4" fill="#6fb2ff"/>' +
+    '<circle cx="' + px(tb.x) + '" cy="' + py(tb.y) + '" r="' + ringR.toFixed(1) + '" fill="none" stroke="#ffd166" stroke-width="1" stroke-dasharray="3 3"/>' +
+    '<circle cx="' + px(tb.x) + '" cy="' + py(tb.y) + '" r="3.4" fill="#ffd166"/></svg>' +
+    '<div class="pd-fig-note">青点＝出発点（現在位置）／黄点＝目標「' + tb.name + '」（点線円＝到着圏）／線＝推定航路。目標は動くため、線の終点は到着時刻の会合点です。</div></div>';
+}
 function renderPlanDetail(){
   const el = document.getElementById('plan-detail'); if(!el || !planPanelState || planPanelState.tracking) return;
   const st = planPanelState;
@@ -3045,6 +3155,11 @@ function renderPlanDetail(){
     '<div class="pd-row"><span>🧭 ' + courseLabel(v.id) + '</span><span></span><span>総Δv ' + est.dvTotal.toFixed(1) + '</span><span>所要 ' + fmtDuration(est.timeTotal) + '</span></div>' +
     '<div class="pd-row"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? 'ゲート12以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時（予測 約' + est.finalRel.toFixed(2) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2)) + '</span></div>' +
     '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + ' ／ 到着時残量 Δv ' + remain.toFixed(1) + (resOk ? '（予備 ' + st.reserve + '% ✓）' : '（⚠ 予備 ' + st.reserve + '% を割ります）') + '</span></div></div>' +
+    /* 図化: Δv予算バー（残量に対する計画消費と予備ライン）と航路図を、要約の直下に置く */
+    '<div class="pd-fig"><div class="pd-fig-title">⛽ Δv予算（現在の残量 ' + S.dv.toFixed(1) + ' に対して）</div>' +
+    '<div class="pd-bar"><i class="use" style="width:' + Math.min(100, (est.dvTotal + steerAllow) / Math.max(1, S.dv) * 100).toFixed(1) + '%"></i><span class="pd-bar-res" style="left:' + (100 - (st.reserve || 10)) + '%"></span></div>' +
+    '<div class="pd-fig-note">塗り＝計画消費 ' + (est.dvTotal + steerAllow).toFixed(1) + '（到着時に残り ' + remain.toFixed(1) + '）／黄線＝予備ライン ' + (st.reserve || 10) + '%（残量がこの線を割る案は承認不可）</div></div>' +
+    planRouteSvg(est, cfg) +
     '<details class="pd-details"><summary>🧭 航路の詳細（通過点・フィックス）</summary>' + wpHtml +
     '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + '</span></div></details>' +
     '<details class="pd-details"><summary>🔥 噴射計画の詳細</summary>' + legHtml +
@@ -3093,12 +3208,40 @@ function renderPlanTracking(){
     '<div class="pd-row"><span>🧭 ' + pd.course + '</span><span></span><span></span><span>' + pePhaseName(pe.phase) + '</span></div>' +
     '<div class="pd-row"><span>' + (nextWp ? '次の通過点： ' + nextWp.name : '最終区間') + '</span><span>' + (nextWp ? 'あと ' + fmtDuration(Math.max(0, nextWp.t - elapsed)) : '') + '</span><span></span><span>' + (nextWp ? 'ETA ' + fmtDayClock(pe.startT + nextWp.t) : '') + '</span></div>' +
     '<div class="pd-row total"><span>実績消費 Δv ' + spent.toFixed(1) + ' ／ 計画 ' + pd.plannedTotal.toFixed(1) + '</span><span></span><span></span><span>' + (pe.deviation ? '⚠ 計画より消費増' : '計画どおり推移') + '</span></div></div>' +
+    /* 図化: 進み具合はバーで示す（時間の経過と Δv 消費の対比で遅れ・過消費が見える） */
+    '<div class="pd-fig"><div class="pd-fig-title">📊 運航の進み具合</div>' +
+    '<div class="pd-bar-row"><span>時間の経過</span><div class="pd-bar"><i class="prog" style="width:' + (pd.plannedTime ? Math.min(100, elapsed / pd.plannedTime * 100) : 0).toFixed(0) + '%"></i></div><span>' + (pd.plannedTime ? Math.round(Math.min(1, elapsed / pd.plannedTime) * 100) : 0) + '%</span></div>' +
+    '<div class="pd-bar-row"><span>Δv の消費</span><div class="pd-bar"><i class="prog" style="width:' + (pd.plannedTotal ? Math.min(100, spent / pd.plannedTotal * 100) : 0).toFixed(0) + '%"></i></div><span>' + (pd.plannedTotal ? Math.round(Math.min(1, spent / pd.plannedTotal) * 100) : 0) + '%</span></div>' +
+    '<div class="pd-fig-note">時間のバーより Δv のバーが大きく先行していたら、計画より消費が多い状態です。</div></div>' +
     '<details class="pd-details"><summary>🧭 航路の詳細（通過点・フィックス）</summary>' + wpHtml + '</details>' +
     '<details class="pd-details"><summary>🔥 噴射計画と実績の詳細</summary>' + legHtml + steerLine + '</details>';
 }
 
 /* チュートリアルの自動出発（v0.6.1 #5）: 推定が非同期化され、出発ボタンは推定完了まで
    無効なままなので、固定時間でなく「押せるようになったら押す」ポーリングにする。 */
+/* 委任時の承認（界面憲法）: 副官はパネルのボタンを押さず、計画会議の会話の中で
+   「委任範囲内の承認」を行う。委任範囲外（出発窓の採用は with_window の時だけ）は
+   船長の判断に残す */
+function delegateApprovePlan(){
+  const cs = convState;
+  if(!cs || !planPanelState || planPanelState.tracking) return false;
+  const rec = convRecommended();
+  if(rec){
+    convApplyEffects(cs, [ { set_variant: rec.idx } ]);
+    logConv('🤝 委任により三浦が推奨案を承認： ' + rec.name);
+    endConversation();
+    return true;
+  }
+  const scope = S ? S.convDelegation : null;
+  if(scope === 'with_window' && cs.windowPick){
+    convApplyEffects(cs, [ { set_departure: true } ]);
+    logConv('🤝 委任により三浦が出発窓を承認： ' + cs.windowPick.label);
+    endConversation();
+    return true;
+  }
+  logConv('🤝 委任範囲で承認できる案がありません。船長のご判断をお願いします。');
+  return false;
+}
 function autoDepartWhenReady(){
   const c = document.getElementById('departure-checklist'); if(c) c.click();
   let tries = 0;
@@ -3106,8 +3249,17 @@ function autoDepartWhenReady(){
     tries++;
     const panel = document.getElementById('plan-panel');
     const b = document.getElementById('btn-depart');
-    /* 出発窓の探索中は、窓が提示されるまで待つ（台帳#49: 委任フローでも窓を掴む） */
-    if(!panel || !panel.classList.contains('open') || (tries > 100 && !(typeof planPanelState !== 'undefined' && planPanelState && planPanelState.windowSearching))){ clearInterval(iv); return; }
+    /* 出発窓の探索中は、窓が提示されるまで待つ（台帳#49: 委任フローでも窓を掴む）。
+       会話中・話しかけ待ちの間はパネルがまだ開いていなくても打ち切らない
+       （委任フローでは委任の会話が終わってから計画会議が始まるため） */
+    if(!panel || (!panel.classList.contains('open') && !convState && !pendingTalkNav) || (tries > 400 && !(typeof planPanelState !== 'undefined' && planPanelState && planPanelState.windowSearching))){ clearInterval(iv); return; }
+    /* 界面憲法: 会話が開いている間は、ボタンでなく会話の中で承認する */
+    if(convState && planPanelState && !planPanelState.tracking && planPanelState.mode === 'depart'){
+      if(planPanelState.variants && planPanelState.variants.length && planPanelState.variants.every(v => v.estDone) && !planPanelState.windowSearching){
+        clearInterval(iv); delegateApprovePlan();
+      }
+      return;
+    }
     if(b && !b.disabled){ clearInterval(iv); b.click(); }
   }, 300);
 }
@@ -3148,6 +3300,14 @@ function openPlanPanel(cfg){
   planPanelState.priority = 'balance'; planPanelState.reserve = 10;
   document.getElementById('plan-levers').style.display = '';
   document.getElementById('btn-depart').style.display = '';
+  /* 界面憲法: M0 の計画パネルは証拠表示に降格する。優先・予備レバーと出発ボタンは
+     会話側（承認の選択肢）へ移したため、パネル上では隠す。パネル単体では世界の
+     状態を変えられない（カードの選択は表示上の注目先にすぎず、承認は会話で行う）。
+     閉じる時に closePlanPanel が表示を戻す */
+  if(S.prologue && S.tutorial && cfg.mode === 'depart'){
+    document.getElementById('plan-levers').style.display = 'none';
+    document.getElementById('btn-depart').style.display = 'none';
+  }
   // タスク共存: 海図が開いていれば計画パネルはコンパクトな下部シートで重なる
   document.getElementById('plan-panel').classList.toggle('compact', chartState.open);
   document.getElementById('plan-route-name').textContent = cfg.routeName;
@@ -3295,7 +3455,7 @@ function openPlanPanel(cfg){
         const cheapest = variants.filter(v => v.est && v.est.ok).sort((x, y) => x.est.dvTotal - y.est.dvTotal)[0];
         noteEl.textContent = '⚠ 探索範囲（標準／省燃料／最速の直接遷移・予備 ' + (planPanelState.reserve || 10) + '%）では、成立する案がありません。'
           + (cheapest ? '最安の案でも推定 Δv ' + cheapest.est.dvTotal.toFixed(1) + '（現在残量 ' + S.dv.toFixed(1) + '）です。' : '到達できる案自体がありませんでした。')
-          + (planPanelState.windowNone ? '出発窓も今後約 ' + fmtDuration(planPanelState.windowCycle || 0) + ' の範囲で探索しましたが、成立する窓はありませんでした。' : '')
+          + (planPanelState.windowNone ? '出発窓も今後約 ' + fmtDuration(planPanelState.windowScanSpan || planPanelState.windowCycle || 0) + ' の範囲で探索しましたが、成立する窓はありませんでした。' : '')
           + '出発地点の状態（目標との相対速度・距離）が通常の範囲を外れている可能性があります。まず接近・捕捉で状態を立て直してから、再計画してください。';
         noteEl.style.color = 'var(--bad)';
       } else {
@@ -3395,8 +3555,16 @@ function openPlanPanel(cfg){
     const STEPS = fineSteps + COARSE_STEPS;
     const fineChunk = finePeriod > 0 ? finePeriod / FINE_STEPS : 0;
     const coarseChunk = cycle / COARSE_STEPS;
-    planPanelState.windowStepsTotal = STEPS;
+    /* 拡張走査（#79）: 1 回の走査（細密＋会合周期1周）で窓が無くても、そこで
+       「窓なし」と確定しない。会合周期は相対幾何の繰り返しだが、自船の周回位相は
+       周期ごとにずれるため、後続の周期では別の位相の組み合わせを試せる。
+       上限は初回＋3 周期（合計4周）。上限まで走査して無ければ、その範囲では
+       実在しないものとして正直に申告する（幽霊の窓を提示しない）。 */
+    const SCAN_MAX_ROUNDS = 4;
+    planPanelState.windowStepsTotal = STEPS + (SCAN_MAX_ROUNDS - 1) * COARSE_STEPS;
     planPanelState.windowCycle = (finePeriod > 0 ? finePeriod * FINE_PERIODS : 0) + cycle;
+    planPanelState.windowScanSpan = 0;
+    planPanelState.windowRound = 0;
     const accFull = fullAccFn(starGM, snapPlanets);
     const propSnap = (dt) => {
       /* スナップショットの伝播は「実際に待機する世界」と同じ積分規律にする
@@ -3447,6 +3615,8 @@ function openPlanPanel(cfg){
       return remain >= S.dv * ((planPanelState && planPanelState.reserve) || 10) / 100;
     };
     let step = 0, waitSoFar = 0;
+    let scanRound = 0, stepInRound = 0;
+    const roundSteps = () => scanRound === 0 ? STEPS : COARSE_STEPS;
     /* 推定はジョブで刻む（第2段b・スコープD）: 走査の判定順序・使う推定・
        検証の規則は従来どおりで、同期ブロックだけを実時間の隙間に変える。
        ジョブはスナップショットのコピー上で進むため、刻んでも結果は変わらない。 */
@@ -3475,18 +3645,29 @@ function openPlanPanel(cfg){
     };
     const probeStep = () => {
       if(!planPanelState || planPanelState.cfg !== cfg) return; /* パネルを閉じた／別計画に切替 */
-      if(step >= STEPS){
+      if(stepInRound >= roundSteps()){
+        if(scanRound + 1 < SCAN_MAX_ROUNDS){
+          /* 次の周期へ走査を延長する（#79）。スナップショットは伝播済みの
+             状態から続けるため、後続周期は別の位相の組み合わせを試す。 */
+          scanRound++;
+          stepInRound = 0;
+          planPanelState.windowRound = scanRound;
+          setTimeout(probeStep, 30);
+          return;
+        }
         planPanelState.windowSearching = false;
         planPanelState.windowNone = true;
+        planPanelState.windowScanSpan = waitSoFar;
         renderVars(); renderPlanDetail(); renderChecklist(false);
         return;
       }
-      const inFine = step < fineSteps;
+      const inFine = scanRound === 0 && stepInRound < fineSteps;
       const thisChunk = inFine ? fineChunk : coarseChunk;
-      step++;
+      step++; stepInRound++;
       planPanelState.windowProgress = step;
       propSnap(thisChunk);
       waitSoFar += thisChunk;
+      planPanelState.windowScanSpan = waitSoFar;
       const shipState = (wasDocked && anchorSnap) ? { x: anchorSnap.x, y: anchorSnap.y, z: anchorSnap.z, vx: anchorSnap.vx, vy: anchorSnap.vy, vz: anchorSnap.vz } : shipSnap;
       const snapDepSep = wasDocked ? computeDepSep(anchorSnap, targetSnap) : null;
       const estOpts = { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: snapDepSep };
@@ -3510,6 +3691,7 @@ function openPlanPanel(cfg){
                   const best = { idx: c.idx, id: c.id, label: c.label, scale: c.scale, est: ee };
                   planPanelState.windowSearching = false;
                   planPanelState.windowPick = { waitSec: waitSoFar, variantIdx: best.idx, variantId: best.id, label: best.label, scale: best.scale, est: best.est, fine: inFine, finePeriod: finePeriod || 0 };
+                  planPanelState.windowScanSpan = waitSoFar;
                   planPanelState.windowSelected = true;
                   logEvent('🕐 ' + aiName() + ': 出発窓を特定。約 ' + fmtDuration(waitSoFar) + ' 後の出発で ' + best.label + '案が成立します（推定Δv ' + best.est.dvTotal.toFixed(1) + '）。');
                   renderVars(); renderPlanDetail(); renderChecklist(false);
@@ -3658,7 +3840,16 @@ function confirmDeparture(){
 function confirmDepartureRest(ctx){
   const wp = ctx.wp, cfg = ctx.cfg, winCycle = ctx.winCycle, reservePct = ctx.reservePct;
   let v = ctx.v, wps = ctx.wps;
-  const departBurn = ctx.departBurn;
+  let departBurn = ctx.departBurn;
+  /* 接舷・即時出発のコミット（#76）: 非接舷の即時出発は承認時点の再推定から
+     初回噴射をコミットするが、接舷出発（窓なし）は departBurn が null のまま
+     港内出域後に approach で再評価され、推定の初回噴射と別解になっていた
+     （実測: 計画 11.64 に対し 13.73）。接舷出発の推定（v.est）は港内航行の
+     シミュレーション込みで初回噴射を持っているので、それをコミットする。
+     窓ありの場合は departAtWindow が再検証時点の噴射で上書きする。 */
+  if(!departBurn && S.docked && v.est && v.est.firstBurnVec && v.est.firstBurnT != null && v.est.firstBurnT <= 1800){
+    departBurn = { dvx: v.est.firstBurnVec.dvx, dvy: v.est.firstBurnVec.dvy, dvz: v.est.firstBurnVec.dvz, cost: v.est.firstBurnVec.cost, atT: v.est.firstBurnT };
+  }
   closePlanPanel();
   playSfx('click');
   const wasDocked = !!S.docked;
@@ -3844,11 +4035,19 @@ function startWindowDeparture(){
   pe.planDoc = { routeName: cfgLite.routeName, course: courseLabel(pe.waitVariantId || 'std'), legs: est.legs || [], rows: docRows, waypoints: finalWps, fixes: fixes, plannedTotal: est.dvTotal + harborDv, plannedTime: est.timeTotal, dvAtStart: S.dv, finalRel: est.finalRel };
   pe.remDv = est.dvTotal + harborDv;
   pe.remTime = est.timeTotal;
-  /* 出発噴射のコミット（v0.6.5）: 再検証した推定の初回噴射を、その時刻
-     （atT）まで滑空してからそのまま実行する（非接舷の場合）。窓の時刻の
+  /* 出発噴射のコミット（v0.6.5、#76 で接舷出発にも拡張）: 再検証した推定の
+     初回噴射を、その時刻（atT）まで滑空してからそのまま実行する。窓の時刻の
      状態で計算した噴射が計画の前提であり、実飛行の初回評価の遅れで
-     位相ナッジに化けさせない。 */
-  pe.departBurn = (!wasDocked && est.firstBurnVec && est.firstBurnT != null && est.firstBurnT <= 1800) ? { dvx: est.firstBurnVec.dvx, dvy: est.firstBurnVec.dvy, dvz: est.firstBurnVec.dvz, cost: est.firstBurnVec.cost, atT: est.firstBurnT } : null;
+     位相ナッジに化けさせない。
+     旧規則は接舷出発を除外し、港内出域の実状態で approach を再評価していたが、
+     その再評価が推定の初回噴射と別解になった（実測: 計画 11.64 に対し実勢
+     13.73 の別遷移）ことが、遭遇幾何の乖離（近点 5,075 の双曲線通過→到着圏の
+     安全修正で Δv 浪費）の種になっていた。接舷出発の推定初回噴射は港内航行の
+     シミュレーション（simulateHarborExit）の出域状態から計算されており、
+     atT は港内所要込みの時刻系で実飛行の startT（窓到達時）と一致する。
+     ページ上での実測（work-076/probe-flight-b）: コミット有りでは Δv 実績
+     45.89／約束 45.35（+1.2%）、捕捉は capVr +0.11 の近点捕捉（cost 2.66）。 */
+  pe.departBurn = (est.firstBurnVec && est.firstBurnT != null && est.firstBurnT <= 1800) ? { dvx: est.firstBurnVec.dvx, dvy: est.firstBurnVec.dvy, dvz: est.firstBurnVec.dvz, cost: est.firstBurnVec.cost, atT: est.firstBurnT } : null;
   S.planSamples = est.samples;
   S.planFullSamples = est.samples;
   logEvent('🕐 出発窓に到達 — ' + pe.variantLabel + ' で自動出発します（再検証推定 Δv ' + (est.dvTotal + harborDv).toFixed(1) + (pe.waitPromisedDv ? '／窓提示時の推定 ' + (pe.waitPromisedDv + harborDv).toFixed(1) : '') + (chosen.vd.id !== promisedId ? '／窓提示時の ' + promisedLabel + '案は現在の状態では成立しないため、成立する最安の案へ切替' : '') + '）。');
@@ -4004,15 +4203,25 @@ function updatePlanExecution(simDt){
   const recalcDist = Math.hypot(S.ship.x - pe.targetBody.x, S.ship.y - pe.targetBody.y, S.ship.z - pe.targetBody.z);
   /* 再推定の規律（v0.6.1 #5）: 推定は高コストなので船内時ケイデンスに加えて実時間でも
      間引く（最低4秒間隔、かつ前回所要の3倍）。
-     【v0.6.4 課題2】追いつき処理中も船内時ケイデンス（最低 3,600 秒）では再推定する:
-     従来は追いつき中いっさい再推定せず、逸脱検知（badEst→一時停止）が無効化されて
-     いたため、分岐の悪い位相では「推定は不成立を示し続けているのに誰も止めず、
-     推進剤を使い切る」事故になった（実測 Δ=240: 実時間の引用は全て ok:false
-     だったが、スキップ飛行中は検査自体が走らなかった）。追いつきは船長判断
-     イベントで停止する設計なので、逸脱の一時停止はその停止条件として働く。 */
+     【v0.6.4 課題2】追いつき処理中も再推定する: 従来は追いつき中いっさい再推定せず、
+     逸脱検知（badEst→一時停止）が無効化されていたため、分岐の悪い位相では「推定は
+     不成立を示し続けているのに誰も止めず、推進剤を使い切る」事故になった（実測
+     Δ=240: 実時間の引用は全て ok:false だったが、スキップ飛行中は検査自体が
+     走らなかった）。追いつきは船長判断イベントで停止する設計なので、逸脱の
+     一時停止はその停止条件として働く。
+     【v0.8 追いつき実行忠実度】追いつき中も実時間飛行と「同じ」規律（船内時
+     ケイデンス＋実時間ゲート）で再推定する。v0.6.4〜v0.7 の追いつき側規律
+     （ケイデンス最低 3,600 秒・実時間ゲート無効）は、推定器が同じ滑空を不成立と
+     判定し続ける位相窓（数千秒幅）を船内時だけで密にサンプリングし、誘導の
+     approach 噴射が状態を変える前に badEst が 2 に達して、誘導では到達可能な
+     航程まで逸脱停止させる事故を起こした（実測: 処女航海 std 案。実時間駆動では
+     到着した同じ出発が、追いつき駆動では t≈10,800 で停止し、お伺いの再計画も
+     同じ位相で不成立となり座礁）。現在の追いつきはフレーム分割で実時間が流れる
+     ため、実時間ゲートを適用しても再推定が止まることはなく、実時間飛行と同じ
+     間引きで位相窓を最大1回だけ踏む。 */
   const estGateMs = Math.max(4000, (pe.lastEstDur || 0) * 3);
-  const recalcCadence = S.catchingUp ? Math.max(3600, planCadenceFor(S.ship, recalcDist, S.planets)) : Math.max(900, planCadenceFor(S.ship, recalcDist, S.planets));
-  if(pe.recalcTimer >= recalcCadence && (S.catchingUp || performance.now() - (pe.lastEstMs || 0) >= estGateMs)){
+  const recalcCadence = Math.max(900, planCadenceFor(S.ship, recalcDist, S.planets));
+  if(pe.recalcTimer >= recalcCadence && performance.now() - (pe.lastEstMs || 0) >= estGateMs){
     pe.recalcTimer = 0;
     pe.lastEstMs = performance.now();
     const estT0 = performance.now();
@@ -4164,24 +4373,15 @@ function updatePlanExecution(simDt){
          直結する。捕捉できない場合は判断ポイントとして止める。 */
       if(pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && !pe.captureDone){
         if(pe.captureState === 'burning'){
-          if(!S.activeBurn) pe.captureDone = true;
+          if(!S.activeBurn){ pe.captureDone = true; pe.captureConfirmT = S.time; }
           return;
         }
-        const capSr = surfaceRadius(pe.targetBody);
-        const capR = Math.min(capSr + impactMargin(capSr) + 4200, pe.arrivalDist * 0.9);
-        let capReady = info.dist >= capR && info.closing <= 0.05;
-        if(!capReady && info.closing <= 0.05){
-          const eOrb = info.rel * info.rel / 2 - pe.targetBody.gm / Math.max(info.dist, 1);
-          if(eOrb < 0 && 2 * (-pe.targetBody.gm / (2 * eOrb)) - info.dist < capR) capReady = true;
-          /* 近点通過での捕捉（v0.6.4、課題2）: 近点が捕捉フロア（capR）未満だと
-             従来は近点を取り逃し、離行脚で dist が capR に戻った時点で捕捉して
-             いた。その時点では動径速度が大きく（実測 vr +11.6）、それを殺す
-             だけで捕捉噴射が 11.6 に膨らんだ（推定 4.7 との乖離の主因）。
-             近点で、捕捉後の軌道が安全帯（近点フロア・遠点ヒル上限）に収まる
-             ことを解析確認できた場合は、その場で捕捉する。推定器も同じ規則。 */
-          if(!capReady && eOrb < 0 && info.dist >= capSr + impactMargin(capSr) + 800 && captureSettlesOk(S.ship, pe.targetBody, S.planets)) capReady = true;
-        }
-        if(!capReady) return;
+        /* 捕捉の発火幾何は推定器と共用の captureGateAt（#76 で単一化）。
+           旧インライン判定は branch 1 が closing <= 0.05（接近が止んだ）だけで
+           通るため、近点を高速通過した後の離行脚（実測 vr +11.6）でも発火し、
+           非束縛フライバイを力任せに捕捉して「到着」に化けさせた（v0.7 実測:
+           約束 15:32 に対し 04:04 到着）。動径速度は絶対値で見る。 */
+        if(!captureGateAt(S.ship, pe.targetBody, S.planets, pe.arrivalDist)) return;
         if(!S.activeBurn){
           /* 捕捉は「捕捉後の軌道が安全帯に収まり、72 時間伝播しても安定」な
              場合だけ撃つ（v0.6.4 課題3）: 遠点側で捕捉すると広い軌道のまま
@@ -4218,6 +4418,22 @@ function updatePlanExecution(simDt){
           }
         }
         return;
+      }
+      /* 到着の確定（#76、推定器と同一規則）: 質量のある天体への到着は、捕捉噴射の
+         完了をもって成立としない。捕捉後に 1800 秒滑空し、束縛・近点フロア・
+         到着圏×3 への滞留（captureOrbitConfirmOk＋距離）を確認して初めて到着が
+         成立する。確認できない場合は成功を装わず、逸脱として判断点に止める。 */
+      if(pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && pe.captureDone && !pe.captureConfirmed){
+        if(S.time - (pe.captureConfirmT || 0) < 1800) return;
+        if(info.dist <= pe.arrivalDist * 3 && captureOrbitConfirmOk(S.ship, pe.targetBody)){
+          pe.captureConfirmed = true;
+          logEvent('🛰️ ' + aiName() + ': 捕捉軌道の安定を確認。' + pe.targetBody.name + ' への到着が成立しました。');
+        } else {
+          pe.paused = true; pe.deviated = true;
+          showOfficerPopup(HELM, '捕捉後の軌道が安定しません。到着を確定できません');
+          logEvent('⚠️ 三浦: 捕捉後の軌道確認に失敗しました。到着を保留し、船長の判断を仰ぎます。');
+          return;
+        }
       }
       setPlanPhase(pe, 'done'); pe.active = false;
       if(pe.onDone) pe.onDone();
@@ -4495,7 +4711,7 @@ function buildPrologueTutorial(hab){
     step: 0,
     stuckTime: 0,
     skipped: false,
-    nextActionText: '「航海計画」を開いて観光航路を承認しよう',
+    nextActionText: '航法の三浦に話しかけて観光航路を承認しよう',
     onPlanOpened: () => {},
     onDeparted: () => {
       if(S.tutorial.step === 0){ S.tutorial.step = 1; S.tutorial.stuckTime = 0; camAzAccum = 0; }
@@ -4504,16 +4720,11 @@ function buildPrologueTutorial(hab){
     steps: [
       {
         title: 'A1: 観光航海計画の承認',
-        short: '「航海計画」を開いて観光航路を承認しよう',
-        desc: '榊原「まず航海計画を立てます。航行AI『'+aiName()+'』が計算し、航法士官が提案しますから、船長は承認するだけです。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
-        hl: '#btn-plan',
+        short: '航法の三浦に話しかけて観光航路を承認しよう',
+        desc: '榊原「まず航海計画を立てます。航行AI『'+aiName()+'』が計算し、航法士官が提案しますから、船長は承認するだけです。操作はクルーに話しかけることから始まります。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
+        hl: '#btn-talk-nav',
         autoAction: () => {
-          openPlanPanel({
-            mode:'depart', legType:'simple',
-            routeName:'観光航路 ソル周遊 S1',
-            fixes:'ステーション「あおば」 → 衛星「こよみ」近傍点',
-            targetBody: hab, arrivalDist: 12000, needDock: false, shortChecklist: false
-          });
+          queueTalkToNavigator();
           setTimeout(autoDepartWhenReady, 300);
         }
       },
@@ -4540,16 +4751,11 @@ function buildPrologueTutorial(hab){
       },
       {
         title: 'B1: 帰還計画の承認',
-        short: '「航海計画」を開いて帰還計画を承認しよう',
-        desc: '榊原「素晴らしい眺めでしたね。ではステーション『あおば』への帰還計画を承認しましょう」',
-        hl: '#btn-plan',
+        short: '航法の三浦に話しかけて帰還計画を承認しよう',
+        desc: '榊原「素晴らしい眺めでしたね。では航法の三浦に話しかけて、ステーション『あおば』への帰還計画を承認しましょう」',
+        hl: '#btn-talk-nav',
         autoAction: () => {
-          openPlanPanel({
-            mode:'depart', legType:'simple',
-            routeName:'帰投航路 あおば R0',
-            fixes:'衛星「こよみ」近傍 → ステーション「あおば」',
-            targetBody: S.station, arrivalDist: 90, needDock: false, shortChecklist: true
-          });
+          queueTalkToNavigator();
           setTimeout(autoDepartWhenReady, 300);
         }
       },
@@ -4568,18 +4774,9 @@ function startPrologueSteps(){
   const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0]; // ソル系 つむぎ周回 衛星「こよみ」
   S.tutorial = buildPrologueTutorial(hab);
   S.target = hab;
-  showOfficerPopup(GUIDE, 'まず航海計画を立てます。航法士官が案を用意しています。ご確認をお願いします。');
+  showOfficerPopup(GUIDE, 'まず航海計画を立てます。航法の三浦に話しかけてください。案を用意しています。');
   renderTutorialUI();
-  setTimeout(()=>{
-    if(S && S.prologue && S.tutorial && S.tutorial.step === 0){
-      openPlanPanel({
-        mode:'depart', legType:'simple',
-        routeName:'観光航路 ソル周遊 S1',
-        fixes:'ステーション「あおば」 → 衛星「こよみ」近傍点',
-        targetBody: hab, arrivalDist: 12000, needDock: false, shortChecklist: false
-      });
-    }
-  }, 500);
+  /* 界面憲法: パネルは自動で開かない。計画会議は船長が三浦に話しかけて始める */
 }
 
 function buildM1Tutorial(){
@@ -4702,18 +4899,9 @@ function updateTutorialAndPrologue(simDt){
         tut.step = 4; tut.stuckTime = 0;
         S.planExec = null; S.activeBurn = null;
         S.target = S.station;
-        showOfficerPopup(S.officers[0], '衛星「こよみ」に到着しました！つむぎを望む眺めが美しいですね…さあ、ステーションへ戻りましょう。');
+        showOfficerPopup(S.officers[0], '衛星「こよみ」に到着しました！つむぎを望む眺めが美しいですね…さあ、航法の三浦に話しかけて、ステーションへ戻りましょう。');
         logEvent('🌙 衛星「こよみ」近傍に到達。帰投フェーズへ。');
-        setTimeout(()=>{
-          if(S && S.prologue && S.tutorial && S.tutorial.step === 4){
-            openPlanPanel({
-              mode:'depart', legType:'simple',
-              routeName:'帰投航路 あおば R0',
-              fixes:'衛星「こよみ」近傍 → ステーション「あおば」',
-              targetBody: S.station, arrivalDist: 90, needDock: false, shortChecklist: true
-            });
-          }
-        }, 1800);
+        /* 界面憲法: 帰投の計画会議も、船長が三浦に話しかけて始める（自動で開かない） */
       }
     } else if(tut.step === 5){
       const d = Math.hypot(S.ship.x - S.station.x, S.ship.y - S.station.y, S.ship.z - S.station.z);
@@ -4981,6 +5169,182 @@ function buildWingMesh(){
   return grp;
 }
 
+/* ===== モデル統合ライン: 実物大 GLB モデル（assets/models/）の読み込みと差し替え =====
+   描画層のみ。飛行・推定・判定・セーブには一切触らない。
+   換算係数 MODEL_K: 1m = 0.2 ゲーム単位（単一係数、MODELING.md §1）。
+   根拠: 自船（さくら 64m → 12.8 単位）が従来の仮メッシュ船体長（約12.3単位）とほぼ一致し、
+   カメラのフレーミング（港ビュー距離 240 等）の前提を保ったまま、全モデル間の
+   実寸比（あおば 2,596m : さくら 64m = 40.6 : 1 等）を正しくする値として選んだ。
+   姿勢: 船モデルは船首 +X（glTF空間）→ ゲームの前方 +Z へ内側ラッパーで変換する。
+   ステーションは軸 +X をゲームのステーションフレーム（R=動径／T=速度方向／N=R×T、
+   updatePortCraft と同じ基底）に割り当てる（MODELING.md 姿勢割り当て追記節:
+   軸は動径方向・主端が天頂側。ゲームの R は星系原点基準で、惑星基準との差は 0.6° 未満）。
+   読み込み失敗時は仮メッシュのままフォールバックし、シーンは壊れない。 */
+const MODEL_K = 0.2;
+const MODEL_DEFS = {
+  aoba:    { url: 'assets/models/aoba.glb',    kind: 'station', ringSpeed: 0.128 }, /* 1.22rpm */
+  shinkou: { url: 'assets/models/shinkou.glb', kind: 'surface' },
+  shinkou_driver: { url: 'assets/models/shinkou_driver.glb', kind: 'surface' },
+  akane:   { url: 'assets/models/akane.glb',   kind: 'station', ringSpeed: 0.181 }, /* 1.73rpm */
+  uzushio: { url: 'assets/models/uzushio.glb', kind: 'station', ringSpeed: 0.206 }, /* 1.97rpm */
+  talos:   { url: 'assets/models/talos.glb',   kind: 'station', ringSpeed: 0 },
+  sakura:  { url: 'assets/models/sakura.glb',  kind: 'ship' },
+  mizuho:  { url: 'assets/models/mizuho.glb',  kind: 'ship' },
+  hayate:  { url: 'assets/models/hayate.glb',  kind: 'ship' },
+  soyokaze:{ url: 'assets/models/soyokaze.glb', kind: 'ship' },
+  kepler:  { url: 'assets/models/kepler.glb',  kind: 'ship' },
+  canopus: { url: 'assets/models/canopus.glb', kind: 'ship' },
+  boreas:  { url: 'assets/models/boreas.glb',  kind: 'ship' }
+};
+const _modelCache = {};
+const ModelLib = { K: MODEL_K, DEFS: MODEL_DEFS, status: {} };
+window.ModelLib = ModelLib;
+function loadModel(id){
+  if(_modelCache[id]) return _modelCache[id];
+  const def = MODEL_DEFS[id];
+  ModelLib.status[id] = 'loading';
+  _modelCache[id] = new Promise((resolve, reject) => {
+    if(!def || typeof THREE === 'undefined' || !THREE.GLTFLoader){
+      ModelLib.status[id] = 'error';
+      reject(new Error('GLTFLoader unavailable'));
+      return;
+    }
+    new THREE.GLTFLoader().load(def.url,
+      g => { ModelLib.status[id] = 'ready'; resolve(g.scene); },
+      undefined,
+      e => { ModelLib.status[id] = 'error'; reject(e || new Error('load failed: ' + id)); });
+  });
+  return _modelCache[id];
+}
+ModelLib.load = loadModel;
+/* 仮メッシュと同じ作法の噴射炎コーン（軸はローカル -Z が後方） */
+function makeModelFlame(r, len, color){
+  const fl = new THREE.Mesh(
+    new THREE.ConeGeometry(r, len, 8),
+    new THREE.MeshBasicMaterial({ color: color || 0x60d5ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending })
+  );
+  fl.rotation.x = -Math.PI / 2;
+  return fl;
+}
+/* 船モデル 1 隻ぶんの表示グループを作る。外側グループは従来どおり位置・lookAt で
+   操られ、内側ラッパーが「船首 +X → 前方 +Z」変換と実寸スケールを担う。
+   ロード完了までは仮メッシュを表示し、完了後に差し替える（失敗時は仮のまま）。 */
+function buildShipDisplay(modelId, opts){
+  opts = opts || {};
+  const outer = new THREE.Group();
+  outer.userData.modelId = modelId;
+  let prov = null;
+  if(opts.fallback === 'player') prov = buildPlayerShipMesh();
+  else if(opts.fallback === 'target') prov = buildTargetShipMesh();
+  else if(opts.fallback === 'wing') prov = buildWingMesh();
+  else { prov = buildNpcMesh(opts.fallbackColor || 0x9fb4c8); if(opts.scale) prov.scale.setScalar(opts.scale); }
+  outer.add(prov);
+  outer.userData.provisional = prov;
+  if(prov.userData.flames) outer.userData.flames = prov.userData.flames;
+  if(prov.userData.flame) outer.userData.flame = prov.userData.flame;
+  if(prov.userData.ring) outer.userData.ring = prov.userData.ring;
+  loadModel(modelId).then(master => {
+    const inst = master.clone(true);
+    const wrap = new THREE.Group();
+    wrap.rotation.y = -Math.PI / 2; /* 船首 +X → +Z */
+    wrap.scale.setScalar(MODEL_K);
+    wrap.add(inst);
+    outer.remove(prov);
+    outer.userData.provisional = null;
+    outer.add(wrap);
+    outer.userData.isModel = true;
+    outer.userData.modelWrap = wrap;
+    if(outer.userData.ring) outer.userData.ring = null;
+    /* 噴射炎はモデルのノズル位置に付け直す（プロビジョナルの炎は仮メッシュと共に外れる） */
+    if(opts.fallback === 'player'){
+      const flames = [];
+      if(modelId === 'mizuho'){ /* ノズル×4（モデル座標 x=-33.5, ±2.2×±2.2m）→ ローカル (±0.44, ±0.44, -6.7) */
+        [[0.44, 0.44], [0.44, -0.44], [-0.44, 0.44], [-0.44, -0.44]].forEach(([fx, fy]) => { const fl = makeModelFlame(0.45, 4.2); fl.position.set(fx, fy, -7.9); outer.add(fl); flames.push(fl); });
+      } else if(modelId === 'hayate'){
+        const fl = makeModelFlame(0.6, 4.2); fl.position.set(0, 0, -7.0); outer.add(fl); flames.push(fl);
+      } else { /* sakura: ノズル×2（モデル座標 x=-30.75, 横 ±2.0m）→ ローカル (±0.4, 0, -6.15) */
+        [0.4, -0.4].forEach(fx => { const fl = makeModelFlame(0.5, 4.4); fl.position.set(fx, 0, -8.0); outer.add(fl); flames.push(fl); });
+      }
+      outer.userData.flames = flames;
+    } else if(opts.fallback === 'wing'){
+      const fl = makeModelFlame(0.6, 4.2); fl.position.set(0, 0, -7.0); outer.add(fl);
+      outer.userData.flame = fl;
+    } else if(outer.userData.flames){ outer.userData.flames = null; }
+    if(outer.userData.flame && opts.fallback !== 'wing') outer.userData.flame = null;
+  }).catch(() => { /* フォールバック: 仮メッシュのまま */ });
+  return outer;
+}
+ModelLib.buildShip = buildShipDisplay;
+/* ステーションの姿勢: ローカル X→R（動径）／Y→T（速度方向）／N=R×T。
+   updatePortCraft と同じ基底なので、バース・レーンの相対配置がモデルと一致する */
+const _attR = new THREE.Vector3(), _attT = new THREE.Vector3(), _attN = new THREE.Vector3();
+const _attM = new THREE.Matrix4();
+function orientStationAtt(att, st){
+  const rp = Math.hypot(st.x, st.y, st.z) || 1;
+  _attR.set(st.x / rp, st.y / rp, st.z / rp);
+  const vp = Math.hypot(st.vx, st.vy, st.vz) || 1;
+  _attT.set(st.vx / vp, st.vy / vp, st.vz / vp);
+  _attN.crossVectors(_attR, _attT).normalize();
+  _attT.crossVectors(_attN, _attR).normalize(); /* 直交化し直す */
+  _attM.makeBasis(_attR, _attT, _attN);
+  att.quaternion.setFromRotationMatrix(_attM);
+}
+ModelLib.orientStationAtt = orientStationAtt;
+/* ステーション表示グループ。姿勢は内側の att グループが担い、外側は従来どおり
+   位置だけを syncMeshes に操られる。リング（seg/band/spoke）は回転サブグループへ
+   移し、軸（ローカル X）まわりに正典回転数で回す。ハブはデスパンのまま。 */
+function buildStationDisplay(modelId){
+  const outer = new THREE.Group();
+  outer.userData.modelId = modelId;
+  const prov = (modelId === 'aoba') ? buildStationMesh() : new THREE.Group();
+  outer.add(prov);
+  outer.userData.provisional = prov;
+  if(prov.userData.ring) outer.userData.ring = prov.userData.ring;
+  loadModel(modelId).then(master => {
+    const inst = master.clone(true);
+    const att = new THREE.Group();
+    const inner = new THREE.Group();
+    inner.scale.setScalar(MODEL_K);
+    inner.add(inst);
+    att.add(inner);
+    outer.remove(prov);
+    outer.userData.provisional = null;
+    if(outer.userData.ring) outer.userData.ring = null;
+    outer.add(att);
+    outer.userData.isModel = true;
+    outer.userData.modelAtt = att;
+    outer.userData.modelWrap = inner;
+    const def = MODEL_DEFS[modelId] || {};
+    if(def.ringSpeed){
+      const ringGroup = new THREE.Group();
+      inner.add(ringGroup);
+      inner.updateMatrixWorld(true);
+      const parts = [];
+      inst.traverse(o => { if(/_ring_(seg|band|spoke)/.test(o.name)) parts.push(o); });
+      parts.forEach(o => ringGroup.attach(o));
+      outer.userData.ringSpin = { g: ringGroup, speed: def.ringSpeed, _t: 0 };
+    }
+  }).catch(() => { /* フォールバック: 仮メッシュのまま */ });
+  return outer;
+}
+ModelLib.buildStation = buildStationDisplay;
+function playerShipModelId(){
+  const tr = trackData(captainProfile ? captainProfile.track : 'transport');
+  return { transport: 'sakura', supply: 'mizuho', patrol: 'hayate' }[tr.id] || 'sakura';
+}
+function npcModelId(n){
+  if(n && n.kind === 'patrol') return 'hayate';
+  return 'sakura'; /* 定期・民間輸送は輸送艦級で代表 */
+}
+function portCraftModelId(c){
+  const nm = (c && c.name) || '';
+  if(nm.indexOf('哨戒') >= 0) return 'hayate';
+  if(nm.indexOf('作業艇') >= 0) return 'canopus';
+  if(nm.indexOf('連絡') >= 0) return 'soyokaze';
+  if(nm.indexOf('貨物') >= 0) return 'boreas';
+  return 'sakura';
+}
+
 // ---------- Three.js 描画・予測軌道・カメラ ----------
 const container = document.getElementById('view3d');
 let renderer, scene, camera, sysGroup=null, skyGroup=null, beltPoints=null, beltGroup=null, beltLabel=null;
@@ -4998,20 +5362,24 @@ function frameCamOnShip(){
 }
 let starMesh, planetMeshes=[], shipMesh, targetMesh, stationMesh=null, npcMeshes=[], portCraftMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, planGlowLine=null, planCoursePoints=null, planWpGroup=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
 let planLineRef = null;
+let _lastPlanSamplesRef = undefined; /* #75: サンプル列の差し替え検出（チップ再構築用） */
 let trafficTrajGroup = null, trafficTrajRef = null, trafficTrajBuiltAt = -1e18, trafficTrajRealAt = 0; /* #25 他船の申告軌道 */ /* 計画線を焼いた時点のフレーム基準点（慣性座標）。syncMeshes が現在基準との差分を毎フレーム補正する */
 /* ===== 2b描画トラック（台帳#58/#59/#61/#66/#54）: リボン・目的地軌道・ゴースト・港シンボル・レーン帯 =====
    いずれも表示専用。飛行・推定・判定の数値には一切触らない。 */
-let ribbonHalo = null, ribbonCore = null, ribbonArrows = [], destArcLine = null, destArcArrows = [], destGhostGroup = null, destGhostSphere = null, destGhostRing = null, destMidChip = null, stationSymbol = null, laneBandMesh = null, laneGateMesh = null, tapPulseSprite = null;
+let ribbonHalo = null, ribbonCore = null, ribbonPast = null, ribbonArrows = [], ribbonTicks = [], destArcLine = null, destArcArrows = [], destGhostGroup = null, destGhostSphere = null, destGhostRing = null, destMidChip = null, stationSymbol = null, laneBandMesh = null, laneGateMesh = null, tapPulseSprite = null;
+let departChip = null, departRing = null, departChipKey = ''; /* #77: 出発窓待機中の出発点マーカー */
+let orbitGroup = null, orbitLines = [], orbitBuiltAt = -1e18, orbitRealAt = 0; const orbitOff = new Set(); /* #77: 全階層の軌道線。orbitOff はラベルタップで消した天体名の集合 */
 let tapPulse = null; /* {pos:[x,y,z] 絶対座標, t0: performance.now()} */
 let destArcCache = null; /* {key, tb, arrivalAbs, builtAt, T, pts:[[x,y,z]...]} */
 let destGhostPos = null; /* 絶対座標 [x,y,z] */
-const STATION_DISPLAY_SCALE = 2.2; /* #54/#55: 全幅 約190→約420。軸ハブ＋リング＋アームの港として読める大きさへ */
-const MOON_DISPLAY_R = 12000; /* #61: 月の表示半径（表示専用）。物理半径 dispR=2600 は判定用に不変 */
-/* 表示半径: 物理フィールド（dispR / radius）は flight-core の surfaceRadius が衝突・捕捉判定に使うため
-   絶対に書き換えない。メッシュ生成だけがこの関数を通す（#61 表示と物理の分離） */
+/* 表示ドクトリン（2026-11-18確定）: 「拡大縮小して変わるのは実際の物体だけ」。
+   世界層（天体・ステーション・船）は実寸で描く。旧 #61 の月の表示半径 12,000（物理 2,600 の
+   4.6倍）と旧 #54/#55 のステーション 2.2 倍表示は廃止した。見えない問題は本体の膨張でなく
+   カメラ（手動ズーム＋監督式 AUTO）で解く。記号・線・ラベル等の情報層は画面一定で別に示す。
+   物理フィールド（dispR / radius）は flight-core の surfaceRadius が衝突・捕捉判定に使うため
+   絶対に書き換えない。この関数はメッシュ生成専用で、実寸をそのまま返す */
 function bodyDisplayRadius(p){
   if(!p) return 2600;
-  if(p.isMoon) return Math.max(p.dispR || 0, MOON_DISPLAY_R);
   return p.dispR || p.radius || 2600;
 }
 /* フレーム内で1回だけ getActiveCourseData を引くためのキャッシュ（毎フレーム複数箇所から使う） */
@@ -5256,6 +5624,44 @@ function propagateFiledTraj(b0, horizonSec){
   }
   return pts;
 }
+/* #72: 申告軌道は「次の寄港地まで」伝播する。旧実装は HORIZON=10800（3時間）で打ち切って
+   いたため、他船の航路だけが短いスタブに見えた（自船は目的地まで全線表示なのに非対称）。
+   到着検出は表示専用の近似：天体へ十分近づいたら寄港とみなして打ち切る。物理・判定には触らない */
+function propagateToNextPort(b0){
+  const bodies = S.planets.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, name: p.name || '', isMoon: !!p.isMoon }));
+  const stC = S.station ? { x: S.station.x, y: S.station.y, z: S.station.z, vx: S.station.vx, vy: S.station.vy, vz: S.station.vz, gm: 0, radius: 11, name: S.station.name || '', isMoon: false } : null;
+  const all = stC ? bodies.concat([stC]) : bodies.slice();
+  const acc = fullAccFn(S.sys.starGM, all);
+  const sAcc = starAccFn(S.sys.starGM);
+  const c = { x: b0.x, y: b0.y, z: b0.z, vx: b0.vx, vy: b0.vy, vz: b0.vz };
+  const stepB = (b, h) => { const a = acc(b.x, b.y, b.z); b.vx += a[0] * h; b.vy += a[1] * h; b.vz += a[2] * h; b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h; };
+  const ports = all.map(b => ({ b, thr: (b.dispR || b.radius || 2600) + 15000, departed: false }));
+  const STEP = 240, MAXT = 518400; /* 最大6日先まで */
+  const raw = [[c.x, c.y, c.z]], rawT = [0];
+  let t = 0;
+  while(t < MAXT){
+    for(const p of bodies){ if(p.isMoon) stepB(p, STEP); else rk4StepState(p, STEP, sAcc); }
+    if(stC) stepB(stC, STEP);
+    stepB(c, STEP);
+    t += STEP;
+    raw.push([c.x, c.y, c.z]); rawT.push(t);
+    if(t > 1800){
+      let arrived = false;
+      for(const po of ports){
+        const d = Math.hypot(c.x - po.b.x, c.y - po.b.y, c.z - po.b.z);
+        if(!po.departed){ if(d > po.thr + 45000) po.departed = true; }
+        else if(d < po.thr){ arrived = true; break; }
+      }
+      if(arrived) break;
+    }
+  }
+  /* 時刻チップの按分に使うため、間引き後も各点の時刻を保持する */
+  const stride = Math.max(1, Math.ceil(raw.length / 360));
+  const pts = [], times = [];
+  for(let i = 0; i < raw.length; i += stride){ pts.push(raw[i]); times.push(rawT[i]); }
+  if((raw.length - 1) % stride !== 0){ pts.push(raw[raw.length - 1]); times.push(rawT[rawT.length - 1]); }
+  return { pts, times, dur: t };
+}
 function rebuildTrafficTrajectories(){
   if(!trafficTrajGroup || !S) return;
   while(trafficTrajGroup.children.length) trafficTrajGroup.remove(trafficTrajGroup.children[0]);
@@ -5263,15 +5669,15 @@ function rebuildTrafficTrajectories(){
   trafficTrajRef = { x: ref.x, y: ref.y, z: ref.z };
   trafficTrajBuiltAt = S.time;
   trafficTrajRealAt = performance.now();
-  const HORIZON = 10800; /* 申告軌道の表示範囲は 3 時間先まで */
   (S.npcs || []).forEach(n => {
-    const pts = propagateFiledTraj(n, HORIZON);
+    const traj = propagateToNextPort(n);
+    const pts = traj.pts;
     if(pts.length < 2) return;
     const pos = new Float32Array(pts.length * 3);
     for(let i = 0; i < pts.length; i++){ pos[i * 3] = pts[i][0] - ref.x; pos[i * 3 + 1] = pts[i][1] - ref.y; pos[i * 3 + 2] = pts[i][2] - ref.z; }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: n.color || 0x94a3b8, transparent: true, opacity: 0.45, depthWrite: false }));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: n.color || 0x94a3b8, transparent: true, opacity: 0.32, depthWrite: false })); /* #72: 本数が増える分、細く淡く（LineBasicMaterial は常に画面1px） */
     line.renderOrder = 6;
     trafficTrajGroup.add(line);
     const ai = Math.max(1, Math.floor(pts.length * 0.66));
@@ -5284,7 +5690,7 @@ function rebuildTrafficTrajectories(){
       trafficTrajGroup.add(cone);
     }
     const css = '#' + (n.color || 0x94a3b8).toString(16).padStart(6, '0');
-    [[Math.floor(pts.length / 2), HORIZON / 2], [pts.length - 1, HORIZON]].forEach(([idx, dt]) => {
+    [[Math.floor(pts.length / 2), traj.times[Math.floor(pts.length / 2)] || 0], [pts.length - 1, traj.dur]].forEach(([idx, dt]) => {
       const sp = makeWpLabelSprite('🚢 ' + (n.name || '交通船'), fmtDayClock(S.time + dt) + ' 予定', css);
       sp.position.set(pts[idx][0] - ref.x, pts[idx][1] - ref.y, pts[idx][2] - ref.z);
       sp.userData = { worldPos: pts[idx], isTrajChip: true };
@@ -5300,7 +5706,7 @@ function updateTrafficTrajFrame(ref){
   }
   /* 軌道は船の時刻で 900 秒進むか実時間で 8 秒経ったら焼き直す（追いつきにも追随）。
      初回は children が空なので、可視判定より前に再構築を判定する */
-  if(S.time - trafficTrajBuiltAt > 900 || performance.now() - trafficTrajRealAt > 8000){ rebuildTrafficTrajectories(); return; }
+  if(S.time - trafficTrajBuiltAt > 900 || performance.now() - trafficTrajRealAt > 20000){ rebuildTrafficTrajectories(); return; } /* #72: 伝播が長くなった分、実時間の焼き直し間隔を広げた */
   trafficTrajGroup.visible = labelsOn && trafficTrajGroup.children.length > 0;
   if(!trafficTrajGroup.visible) return;
   const gp = trafficTrajGroup.position;
@@ -5312,6 +5718,134 @@ function updateTrafficTrajFrame(ref){
     if(u.isTrajChip) ch.scale.set(d * 0.22, d * 0.055, 1);
     else if(u.isTrajArrow) ch.scale.setScalar(d * 0.012);
   });
+}
+/* ================= #77 軌道線: 階層の全レベルを描く =================
+   惑星は恒星の周り、月・ステーションは惑星の周り、自船の待機軌道は対象天体の周り。
+   軌道線は飛行幾何の情報であると同時に「何が基準か」を画面で読み取る視覚的な錨。
+   描画規則はドクトリンどおり情報層の流儀——細く（Line は常に画面 1px）・淡く・画面一定。
+   伝播は実飛行と同じ階層モデル（惑星=恒星重力RK4／衛星・駅・船=全重力オイラー）で、
+   宿主相対の形を焼き、毎フレーム宿主の現在位置へ置き直す。表示専用で物理・判定には触らない */
+let orbitPhaseKey = '';
+function orbitPeriodOf(r, v2, gm){
+  if(!(gm > 0) || !(r > 0)) return 0;
+  const a = 1 / (2 / r - v2 / gm);
+  if(!(a > 0) || !isFinite(a)) return 0;
+  return 2 * Math.PI * Math.sqrt(a * a * a / gm);
+}
+function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip){
+  const bodies = S.planets.map(p => ({ ref: p, x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, name: p.name || '', isMoon: !!p.isMoon }));
+  const stC = S.station ? { ref: S.station, x: S.station.x, y: S.station.y, z: S.station.z, vx: S.station.vx, vy: S.station.vy, vz: S.station.vz, gm: 0, radius: 11, name: S.station.name || '', isMoon: false } : null;
+  const all = stC ? bodies.concat([stC]) : bodies.slice();
+  const shipC = includeShip && S.ship ? { ref: S.ship, x: S.ship.x, y: S.ship.y, z: S.ship.z, vx: S.ship.vx, vy: S.ship.vy, vz: S.ship.vz, gm: 0, radius: 7, name: '自船', isMoon: true } : null;
+  if(shipC) all.push(shipC);
+  const acc = fullAccFn(S.sys.starGM, all);
+  const sAcc = starAccFn(S.sys.starGM);
+  const tgt = all.find(b => b.ref === targetRef);
+  const host = hostRef ? all.find(b => b.ref === hostRef) : null;
+  if(!tgt) return null;
+  const hx = host ? host.x : 0, hy = host ? host.y : 0, hz = host ? host.z : 0;
+  const rvx = tgt.vx - (host ? host.vx : 0), rvy = tgt.vy - (host ? host.vy : 0), rvz = tgt.vz - (host ? host.vz : 0);
+  const r = Math.hypot(tgt.x - hx, tgt.y - hy, tgt.z - hz);
+  const T = orbitPeriodOf(r, rvx * rvx + rvy * rvy + rvz * rvz, gmHost);
+  if(!T) return null;
+  const stepB = (b, h) => { const a = acc(b.x, b.y, b.z); b.vx += a[0] * h; b.vy += a[1] * h; b.vz += a[2] * h; b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h; };
+  const N = 160, h = T / N, pts = [];
+  for(let i = 0; i <= N; i++){
+    pts.push([tgt.x - (host ? host.x : 0), tgt.y - (host ? host.y : 0), tgt.z - (host ? host.z : 0)]);
+    if(i < N){
+      for(const p of bodies){ if(p.isMoon) stepB(p, h); else rk4StepState(p, h, sAcc); }
+      if(stC) stepB(stC, h);
+      if(shipC) stepB(shipC, h);
+    }
+  }
+  return pts;
+}
+function rebuildOrbitLines(){
+  if(!orbitGroup || !S || !S.planets) return;
+  while(orbitGroup.children.length){ const ch = orbitGroup.children[0]; orbitGroup.remove(ch); if(ch.geometry) ch.geometry.dispose(); if(ch.material) ch.material.dispose(); }
+  orbitLines = [];
+  orbitBuiltAt = S.time; orbitRealAt = performance.now();
+  const pe = S.planExec;
+  orbitPhaseKey = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '');
+  const addLine = (key, hostBody, relPts, color, opacity) => {
+    if(!relPts || relPts.length < 8) return;
+    const pos = new Float32Array(relPts.length * 3);
+    relPts.forEach((p, i) => { pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2]; });
+    const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
+    line.renderOrder = 5; line.frustumCulled = false;
+    line.userData = { key, hostBody: hostBody || null };
+    orbitGroup.add(line); orbitLines.push(line);
+  };
+  const framePlanet = (typeof getFrameRefPlanet === 'function') ? getFrameRefPlanet() : null;
+  (S.planets || []).forEach(p => {
+    if(p.isMoon){
+      const host = (S.planets || []).find(q => q.name === p.moonOf) || framePlanet;
+      if(host) addLine('orbit:' + p.name, host, propagateOrbitRel(p, host, host.gm, false), p.color || 0x9fb4c8, 0.45);
+    } else {
+      addLine('orbit:' + p.name, null, propagateOrbitRel(p, null, S.sys.starGM, false), p.color || 0x64748b, 0.30);
+    }
+  });
+  if(S.station && framePlanet) addLine('orbit:' + (S.station.name || 'あおば'), framePlanet, propagateOrbitRel(S.station, framePlanet, framePlanet.gm, false), 0x2dd4bf, 0.45);
+  /* 待機中は自船の待機軌道も描く: 窓の到来が「数字」でなく幾何で追えるようにする */
+  if(pe && pe.active && pe.phase === 'waitwin' && pe.targetBody){
+    addLine('orbit:自船待機', pe.targetBody, propagateOrbitRel(S.ship, pe.targetBody, pe.targetBody.gm, true), 0xffd166, 0.6);
+  }
+}
+function updateOrbitLines(ref){
+  if(!orbitGroup || !S) return;
+  const pe = S.planExec;
+  const pk = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '');
+  if(pk !== orbitPhaseKey || S.time - orbitBuiltAt > 900 || performance.now() - orbitRealAt > 20000) rebuildOrbitLines();
+  let any = false;
+  orbitLines.forEach(line => {
+    const host = line.userData.hostBody;
+    line.position.set((host ? host.x : 0) - ref.x, (host ? host.y : 0) - ref.y, (host ? host.z : 0) - ref.z);
+    line.visible = !orbitOff.has(line.userData.key);
+    if(line.visible) any = true;
+  });
+  orbitGroup.visible = any;
+}
+/* #77: 出発点マーカー。待機中、申告航路の起点（サンプル先頭＝出発点）に置く。
+   船長は「あと何分」ではなく、待機軌道上のどこから離脱するかを見て窓を追える */
+function updateDepartureMarker(ref){
+  if(!departRing || !departChip) return;
+  const pe = S && S.planExec;
+  const cd = courseDataCached();
+  const show = !!(pe && pe.active && pe.phase === 'waitwin' && cd && !cd.isPreview && cd.samples && cd.samples.length > 1);
+  departRing.visible = show; departChip.visible = show;
+  if(!show) return;
+  const p = cd.samples[0];
+  const x = p[0] - ref.x, y = p[1] - ref.y, z = p[2] - ref.z;
+  const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(x, y, z)));
+  departRing.position.set(x, y, z);
+  departRing.scale.setScalar(d * 0.10);
+  departChip.position.set(x, y + d * 0.05, z);
+  departChip.scale.set(d * 0.22, d * 0.055, 1);
+  const key = 'dep' + Math.floor((pe.waitUntil || 0) / 60);
+  if(departChipKey !== key){
+    departChipKey = key;
+    const sp = makeWpLabelSprite('出発点', fmtEtaShort(pe.waitUntil || S.time), '#ffd166');
+    departChip.material.map = sp.material.map; departChip.material.needsUpdate = true;
+  }
+}
+/* ラベルタップで天体ごとの軌道線を ON/OFF する（#77 追記のアイデア: 設定パネルでなく直接操作） */
+function orbitKeyForLabel(name, cat){
+  if(!name) return null;
+  if(cat === 'station') return 'orbit:' + name;
+  if(cat === 'target' || cat === 'port'){
+    const p = (S.planets || []).find(q => name.indexOf(q.name) >= 0 || q.name.indexOf(name) >= 0);
+    if(p) return 'orbit:' + p.name;
+    if(S.station && name.indexOf(S.station.name) >= 0) return 'orbit:' + S.station.name;
+  }
+  const p2 = (S.planets || []).find(q => q.name === name);
+  return p2 ? 'orbit:' + p2.name : null;
+}
+function toggleOrbitByLabel(name, cat){
+  const key = orbitKeyForLabel(name, cat);
+  if(!key) return false;
+  if(orbitOff.has(key)) orbitOff.delete(key); else orbitOff.add(key);
+  return true;
 }
 const _clampV = new THREE.Vector3();
 function updatePlanCourseScales(ref){
@@ -5398,6 +5932,14 @@ function buildCourseVizObjects(){
   };
   ribbonHalo = mkStrip(0.5, 14);
   ribbonCore = mkStrip(0.9, 15);
+  ribbonPast = mkStrip(0.55, 13); /* #75: 飛行済み区間（申告航路のうち自船が通過した部分）を沈んだ色で区別する */
+  ribbonTicks = [];
+  for(let i = 0; i < 2; i++){ const tk = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false })); tk.renderOrder = 20; tk.visible = false; tk.userData = { tickKey: '' }; sysGroup.add(tk); ribbonTicks.push(tk); }
+  departRing = new THREE.Sprite(new THREE.SpriteMaterial({ map: wpRingTexture(false, true), color: 0xffd166, transparent: true, opacity: 0.95, depthWrite: false, depthTest: false }));
+  departRing.renderOrder = 19; departRing.visible = false; sysGroup.add(departRing);
+  departChip = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false }));
+  departChip.renderOrder = 20; departChip.visible = false; sysGroup.add(departChip);
+  orbitGroup = new THREE.Group(); sysGroup.add(orbitGroup);
   const arrowGeo = new THREE.ConeGeometry(0.42, 1.5, 6);
   const arrowMat = new THREE.MeshBasicMaterial({ color: 0xa5f3e8, transparent: true, opacity: 0.95, depthWrite: false });
   ribbonArrows = [];
@@ -5427,13 +5969,36 @@ function buildCourseVizObjects(){
   tapPulseSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: wpRingTexture(false, false), color: 0xffd166, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
   tapPulseSprite.renderOrder = 21; tapPulseSprite.visible = false; sysGroup.add(tapPulseSprite);
 }
-/* 表示用パス: 始点は常に自船の現在位置。港内フェーズでは バース→フィックス→推定サンプル をつなぎ、
-   巡航以降は自船に最も近いサンプルから先だけを引く（線が自船の後ろに残らない） */
+function nearestSampleIdx(smp){
+  let bi = 0, bd = Infinity;
+  for(let i = 0; i < smp.length; i++){
+    const dx = smp[i][0] - S.ship.x, dy = smp[i][1] - S.ship.y, dz = smp[i][2] - S.ship.z;
+    const d = dx * dx + dy * dy + dz * dz;
+    if(d < bd){ bd = d; bi = i; }
+  }
+  return bi;
+}
+/* #75: 申告航路のうち既に通過した区間（サンプル列の先頭→最寄りサンプル）。
+   実績の航跡（trailLines.ship）とは別に「計画のどこまでを消化したか」を示す */
+function courseFlownPath(cd){
+  if(!cd || cd.isPreview || !cd.samples || cd.samples.length < 2 || !S || !S.ship) return null;
+  const pe = S.planExec;
+  if(!pe || pe.phase === 'undock' || pe.phase === 'harbor' || pe.phase === 'waitwin') return null;
+  const bi = nearestSampleIdx(cd.samples);
+  if(bi < 1) return null;
+  return decimatePath(cd.samples.slice(0, bi + 1), 240);
+}
+/* 表示用パス: 始点は原則として自船の現在位置。港内フェーズでは バース→フィックス→推定サンプル をつなぎ、
+   巡航以降は自船に最も近いサンプルから先だけを引く（線が自船の後ろに残らない）。
+   #77 例外: 出発窓待機中はまだ飛んでいないので、申告航路は現在位置でなく出発点（サンプル先頭）を
+   起点に描く。現在位置との接続は待機軌道線と出発点マーカーが担う（現在位置から無理に線を引くと
+   再計画のたびに鋭い折れ＝継ぎ目が海図に残った） */
 function courseDisplayPath(cd){
   if(!cd || !cd.samples || cd.samples.length < 2 || !S || !S.ship) return null;
   const smp = cd.samples;
-  const out = [[S.ship.x, S.ship.y, S.ship.z]];
   const pe = S.planExec;
+  if(!cd.isPreview && pe && pe.phase === 'waitwin') return decimatePath(smp.slice(), 240);
+  const out = [[S.ship.x, S.ship.y, S.ship.z]];
   const harborPhase = cd.isPreview ? !!S.docked : (pe && (pe.phase === 'undock' || pe.phase === 'harbor'));
   if(harborPhase){
     const dep = (cd.waypoints || []).find(w => w.kind === 'depart');
@@ -5443,12 +6008,7 @@ function courseDisplayPath(cd){
     }
     for(let i = 0; i < smp.length; i++) out.push(smp[i]);
   } else {
-    let bi = 0, bd = Infinity;
-    for(let i = 0; i < smp.length; i++){
-      const dx = smp[i][0] - S.ship.x, dy = smp[i][1] - S.ship.y, dz = smp[i][2] - S.ship.z;
-      const d = dx * dx + dy * dy + dz * dz;
-      if(d < bd){ bd = d; bi = i; }
-    }
+    const bi = nearestSampleIdx(smp);
     const last = smp[smp.length - 1];
     for(let i = bi; i < smp.length; i++){
       const p = smp[i];
@@ -5523,19 +6083,60 @@ function placeArrowsAlongPath(arrows, fp, fracs, scaleFn){
     a.visible = true;
   });
 }
+function pointAtFrac(fp, frac){
+  const cum = [0]; let total = 0;
+  for(let i = 1; i < fp.length; i++){ total += Math.hypot(fp[i][0] - fp[i - 1][0], fp[i][1] - fp[i - 1][1], fp[i][2] - fp[i - 1][2]); cum.push(total); }
+  if(total <= 0) return fp[0];
+  const target = total * frac;
+  let i = 1; while(i < cum.length - 1 && cum[i] < target) i++;
+  const segLen = Math.max(1e-6, cum[i] - cum[i - 1]);
+  const u = Math.max(0, Math.min(1, (target - cum[i - 1]) / segLen));
+  return [fp[i - 1][0] + (fp[i][0] - fp[i - 1][0]) * u, fp[i - 1][1] + (fp[i][1] - fp[i - 1][1]) * u, fp[i - 1][2] + (fp[i][2] - fp[i - 1][2]) * u];
+}
 function updateCourseRibbon(ref){
   if(!ribbonCore || !ribbonHalo) return;
   const cd = courseDataCached();
   const path = courseDisplayPath(cd);
   const has = !!(path && path.length >= 2);
   ribbonCore.visible = has; ribbonHalo.visible = has;
-  if(!has){ ribbonArrows.forEach(a => { a.visible = false; }); return; }
+  if(!has){ ribbonArrows.forEach(a => { a.visible = false; }); ribbonTicks.forEach(tk => { tk.visible = false; }); if(ribbonPast) ribbonPast.visible = false; return; }
   const fp = path.map(p => [p[0] - ref.x, p[1] - ref.y, p[2] - ref.z]);
   /* 根元（自船の位置）は細く絞り、船体が帯に飲まれないようにする */
   const taper = t => 0.3 + 0.7 * Math.min(1, t / 0.04);
-  buildRibbonStrip(ribbonHalo, fp, (d, t) => Math.max(2.5, d * 0.026) * taper(t), t => [0.10 + 0.08 * t, 0.34, 0.30]);
-  buildRibbonStrip(ribbonCore, fp, (d, t) => Math.max(1.1, d * 0.010) * taper(t), t => [0.16 + 0.16 * t, 0.80 - 0.10 * t, 0.72 + 0.24 * t]);
-  placeArrowsAlongPath(ribbonArrows, fp, [0.14, 0.30, 0.46, 0.62, 0.78, 0.92], d => Math.max(6, d * 0.030));
+  /* #71: 帯幅はデータを運ばない。地図アプリのルート線と同じく、画面上で太さ一定・細く。
+     旧係数（halo d*0.026／core d*0.010）は「太すぎて許容幅に読める」と本人が却下した */
+  buildRibbonStrip(ribbonHalo, fp, (d, t) => Math.max(0.8, d * 0.0075) * taper(t), t => [0.10 + 0.08 * t, 0.34, 0.30]);
+  buildRibbonStrip(ribbonCore, fp, (d, t) => Math.max(0.4, d * 0.0032) * taper(t), t => [0.16 + 0.16 * t, 0.80 - 0.10 * t, 0.72 + 0.24 * t]);
+  placeArrowsAlongPath(ribbonArrows, fp, [0.14, 0.30, 0.46, 0.62, 0.78, 0.92], d => Math.max(2.5, d * 0.016));
+  /* #75: 飛行済み区間は沈んだ色の別帯で示し、「計画のどこまでを消化したか」と
+     「これから飛ぶ航路」を海図上で区別する */
+  if(ribbonPast){
+    const flown = courseFlownPath(cd);
+    if(flown && flown.length >= 2){
+      const ff = flown.map(p => [p[0] - ref.x, p[1] - ref.y, p[2] - ref.z]);
+      buildRibbonStrip(ribbonPast, ff, d => Math.max(0.35, d * 0.0026), t => [0.30 + 0.10 * t, 0.36 + 0.08 * t, 0.46 + 0.06 * t]);
+      ribbonPast.visible = true;
+    } else ribbonPast.visible = false;
+  }
+  /* #77 時刻表: リボンの中間点に時刻注記を置く（航路＝時刻表の思想）。
+     時刻はウェイポイントの最大 t を航程総時間として、残区間の弧長比で按分する */
+  const totalT = (cd.waypoints || []).reduce((m, w) => Math.max(m, w.t || 0), 0);
+  ribbonTicks.forEach((tk, k) => {
+    if(!totalT || cd.isPreview){ tk.visible = false; return; }
+    const frac = k === 0 ? 0.36 : 0.68;
+    const p = pointAtFrac(fp, frac);
+    const eta = (cd.baseTime || 0) + totalT * (cd.samples && cd.samples.length > 1 ? (nearestSampleIdx(cd.samples) / (cd.samples.length - 1)) * (1 - frac) + frac : frac);
+    const key = 'tk' + Math.floor(eta / 60);
+    if(tk.userData.tickKey !== key){
+      tk.userData.tickKey = key;
+      const sp = makeWpLabelSprite('⏱', fmtEtaShort(eta), '#7dd3fc');
+      tk.material.map = sp.material.map; tk.material.needsUpdate = true;
+    }
+    const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(p[0], p[1], p[2])));
+    tk.position.set(p[0], p[1] + d * 0.045, p[2]);
+    tk.scale.set(d * 0.22, d * 0.055, 1);
+    tk.visible = true;
+  });
 }
 /* #59: 目的地天体の軌道弧（現在位置→会合点）。予測は誘導と同じ predictTargetPos を使い、
    弧の終端＝ゴースト＝会合点とする。重いのでキー変化時と時間経過時のみ再構築する */
@@ -5577,7 +6178,7 @@ function updateDestOrbitViz(ref){
   fp.forEach((p, i) => { pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2]; });
   destArcLine.geometry.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   destArcLine.geometry.computeBoundingSphere();
-  placeArrowsAlongPath(destArcArrows, fp, [0.3, 0.55, 0.8], d => Math.max(50, d * 0.024));
+  placeArrowsAlongPath(destArcArrows, fp, [0.3, 0.55, 0.8], d => Math.max(20, d * 0.013)); /* #71と同規則: 情報層は画面一定・細く */
   const gx = destGhostPos[0] - ref.x, gy = destGhostPos[1] - ref.y, gz = destGhostPos[2] - ref.z;
   destGhostGroup.position.set(gx, gy, gz);
   const tb = destArcCache.tb;
@@ -5753,7 +6354,7 @@ function buildSystemMeshes(){
 
   planetMeshes=S.planets.map(p=>{
     const tex = makePlanetTexture(p);
-    const visR = bodyDisplayRadius(p); /* #61: 表示半径は物理半径と分離（月は MOON_DISPLAY_R へ） */
+    const visR = bodyDisplayRadius(p); /* 表示ドクトリン: 天体は実寸で描く（表示専用の膨張は廃止） */
     const m=new THREE.Mesh(
       new THREE.SphereGeometry(visR,28,24),
       new THREE.MeshStandardMaterial({ map:tex, roughness:0.78, metalness:0.08 })
@@ -5765,8 +6366,8 @@ function buildSystemMeshes(){
   });
 
   if(S.station){
-    stationMesh = buildStationMesh();
-    stationMesh.scale.setScalar(STATION_DISPLAY_SCALE); /* #54/#55: 港として読める大きさへ拡大（判定・港内幾何は不変） */
+    stationMesh = buildStationDisplay('aoba');
+    /* 表示ドクトリン: ステーションも実寸（旧 2.2 倍表示は廃止）。港として読ませるのは記号とカメラの仕事 */
     sysGroup.add(stationMesh);
   } else {
     stationMesh = null;
@@ -5775,11 +6376,11 @@ function buildSystemMeshes(){
      stationMesh を使い回す」別名があり、目標が月へ変わった後も別名が残り、
      syncMeshes の目標配置がステーションメッシュを月の相対位置へ毎フレーム
      上書きしていた（停泊画でステーション構造物が消える／月位置に描かれる）。 */
-  targetMesh = buildTargetShipMesh();
+  targetMesh = buildShipDisplay('mizuho', { fallback: 'target' }); /* 目標船は補給船級（あけぼの等） */
   sysGroup.add(targetMesh);
   trailLines.target = makeTrail(0x47e5a1); sysGroup.add(trailLines.target);
 
-  shipMesh = buildPlayerShipMesh(); sysGroup.add(shipMesh);
+  shipMesh = buildShipDisplay(playerShipModelId(), { fallback: 'player' }); sysGroup.add(shipMesh);
   trailLines.ship = makeTrail(0x58b4ff); sysGroup.add(trailLines.ship);
 
   predLine = makeTrail(0x38bdf8); sysGroup.add(predLine);
@@ -5805,18 +6406,18 @@ function buildSystemMeshes(){
   corridorGroup.add(corridorMidRing);
   sysGroup.add(corridorGroup);
 
-  npcMeshes = (S.npcs || []).map(n => { const m = buildNpcMesh(n.color); m.scale.setScalar(1.35); sysGroup.add(m); return m; });
-  portCraftMeshes = (S.portCraft || []).map(c => { const m = buildNpcMesh(c.color); m.scale.setScalar(c.scale || 1.3); sysGroup.add(m); return m; });
+  npcMeshes = (S.npcs || []).map(n => { const m = buildShipDisplay(npcModelId(n), { fallback: 'npc', fallbackColor: n.color, scale: 1.35 }); sysGroup.add(m); return m; });
+  portCraftMeshes = (S.portCraft || []).map(c => { const m = buildShipDisplay(portCraftModelId(c), { fallback: 'npc', fallbackColor: c.color, scale: c.scale || 1.3 }); sysGroup.add(m); return m; });
   trafficLines = [];
   laneBeaconMeshes = [];
 
   wingMeshes = S.wings.map(()=>{
-    const m = buildWingMesh(); sysGroup.add(m); return m;
+    const m = buildShipDisplay('hayate', { fallback: 'wing' }); sysGroup.add(m); return m;
   });
 }
 function addWingMesh(w, pushState){
   if(pushState) S.wings.push(w);
-  const m = buildWingMesh();
+  const m = buildShipDisplay('hayate', { fallback: 'wing' });
   if(sysGroup) sysGroup.add(m);
   wingMeshes.push(m);
 }
@@ -5930,6 +6531,21 @@ function setupCameraControls(){
   el.addEventListener('touchstart', e=>{ if(e.touches.length === 1) tapDown = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: performance.now() }; }, { passive: true });
   el.addEventListener('touchend', e=>{ if(tapDown && e.changedTouches.length === 1){ const t = e.changedTouches[0]; if(Math.hypot(t.clientX - tapDown.x, t.clientY - tapDown.y) < 10 && performance.now() - tapDown.t < 450) handleViewTap(t.clientX, t.clientY); } tapDown = null; });
 }
+/* #74 監督式 AUTO の状態と、判断操作中かどうかの表示層チェック（#67 の安全条件） */
+const directorState = { shot: 'ship', until: 0, phase: '', burnSeen: false, distSet: false };
+function uiJudgementOpen(){
+  try {
+    const pp = document.getElementById('plan-panel');
+    if(pp && pp.classList.contains('open')) return true;
+    const rm = document.getElementById('result-modal');
+    if(rm && rm.classList.contains('open')) return true;
+    /* 判断を伴うカードだけを対象にする: alert は actions を持つ判断提示、tutorial は
+       手順の選択提示。officer の一過性通知（選択肢なし・5.6秒で消える）は判断ではないので
+       監督を止めない（止めると通知のたびに画が固まる） */
+    if(typeof msgState !== 'undefined' && msgState && !msgState.minimized && (msgState.alert || msgState.tutorial)) return true;
+  } catch(e){}
+  return false;
+}
 function updateCamera(){
   if(camDistTarget){
     cam.dist += (camDistTarget - cam.dist) * 0.06;
@@ -5968,6 +6584,61 @@ function updateCamera(){
     }
     if(ax !== null) cam.target.lerp(_lookTmp.set(ax, ay, az), 0.10);
   }
+  /* #74 監督式 AUTO: AUTO は静止追随ではなく「監督」として振る舞う。巡航系フェーズでは
+     自船画／航路全体画／目的地画をゆっくり切り替え、進入系では目的地画に固定する。
+     噴射が始まったら自船画へ寄せる。判断操作中（計画パネル・会話カード・結果モーダルが
+     開いている間）はカットしない（#67: 判断を邪魔しない）。手動の見方・手動保持・
+     手動フレームの間は監督は一切口を出さない */
+  let directorSuppressCruise = false;
+  if(S && S.planExec && typeof gameStarted !== 'undefined' && gameStarted && viewState.mode === 'auto' && frameState.mode === 'auto'){
+    const pe = S.planExec;
+    const ph = pe.active ? pe.phase : '';
+    const rotPhases = (ph === 'cruise' || ph === 'depart' || ph === 'brake' || ph === 'waitwin' || ph === 'captain');
+    const destPhases = (ph === 'join' || ph === 'final' || ph === 'berthing');
+    if(!cam.manualHold && !uiJudgementOpen() && (rotPhases || destPhases)){
+      const nowMs = performance.now();
+      if(ph !== directorState.phase){ directorState.phase = ph; directorState.shot = destPhases ? 'dest' : 'ship'; directorState.until = nowMs + 16000; directorState.distSet = false; }
+      if(S.activeBurn && !directorState.burnSeen){ directorState.burnSeen = true; directorState.shot = 'ship'; directorState.until = nowMs + 9000; directorState.distSet = false; }
+      if(!S.activeBurn) directorState.burnSeen = false;
+      if(rotPhases && nowMs > directorState.until){
+        const order = ['ship', 'wide', 'dest'];
+        directorState.shot = order[(order.indexOf(directorState.shot) + 1) % order.length];
+        directorState.until = nowMs + 16000;
+        directorState.distSet = false;
+      }
+      const shot = destPhases ? 'dest' : directorState.shot;
+      if(shot === 'ship'){
+        if(!cam.follow) cam.follow = true;
+        directorState.distSet = false;
+      } else {
+        cam.follow = false;
+        directorSuppressCruise = true;
+        const refD = getFrameRefPos();
+        const tb = destBodyForView();
+        let ax = null, ay = 0, az = 0, wantDist = null;
+        if(shot === 'dest' && tb){
+          ax = tb.x - refD.x; ay = tb.y - refD.y; az = tb.z - refD.z;
+          const sep = Math.hypot(tb.x - S.ship.x, tb.y - S.ship.y, tb.z - S.ship.z);
+          wantDist = Math.max(1600, Math.min(4e6, sep * 0.32));
+        } else if(shot === 'wide'){
+          const ip = interceptPointAbs();
+          if(ip){
+            ax = (S.ship.x + ip[0]) / 2 - refD.x; ay = (S.ship.y + ip[1]) / 2 - refD.y; az = (S.ship.z + ip[2]) / 2 - refD.z;
+            const sep = Math.hypot(ip[0] - S.ship.x, ip[1] - S.ship.y, ip[2] - S.ship.z);
+            wantDist = Math.max(1800, Math.min(1.2e8, sep * 1.25));
+          } else if(tb){ ax = tb.x - refD.x; ay = tb.y - refD.y; az = tb.z - refD.z; wantDist = 4000; }
+        }
+        if(ax !== null && cam.target){
+          cam.target.lerp(_lookTmp.set(ax, ay, az), 0.07);
+          if(!directorState.distSet){ directorState.distSet = true; camDistTarget = wantDist; }
+        }
+      }
+    } else if(directorState.shot !== 'ship' && !cam.manualHold && !uiJudgementOpen()){
+      /* 対象フェーズを抜けたら監督を畳んで自船追随へ戻す */
+      directorState.shot = 'ship'; directorState.distSet = false;
+      cam.follow = true;
+    }
+  }
   /* 出発フレーミング（Fix 13）: 離舷・港内航行中はカメラを惑星の反対側へ回し、
      「港を背にして離れていく／船の向こうに惑星が見える」構図を保つ。港がフレーム内で後退して見える */
   if(cam.follow && !cam.manualHold && frameState.mode === 'auto' && S && S.planExec && (S.planExec.phase === 'undock' || S.planExec.phase === 'harbor') && S.station){
@@ -5987,12 +6658,12 @@ function updateCamera(){
       if(cam.dist < 560 && !camDistTarget) camDistTarget = 680; /* #54: 拡大したステーション全体が入る距離 */
     }
   }
-  /* 接舷中のAUTO画角（#54）: 港全体（全幅 約420）が1画面に入る距離へ寄せる */
+  /* 接舷中のAUTO画角: 実寸の港（全幅 約190）と周辺が1画面に入る距離へ寄せる */
   if(cam.follow && !cam.manualHold && frameState.mode === 'auto' && S && S.docked && !camDistTarget && Math.abs(cam.dist - 680) > 40) camDistTarget = 680;
   /* 巡航フレーミング（v0.6.1 #9）: AUTO の巡航中は広域に引かず、自船が見える距離（420）で
      進路（速度＋目的地方向）を見せる。カメラは自船の後方上空に回り、目的地や母港惑星が
      画に入りやすい構図を保つ。船長が手で動かしたら manualHold で譲る。 */
-  if(cam.follow && !cam.manualHold && S && S.planExec && frameState.mode === 'auto' && chartState.mode === 'auto'
+  if(cam.follow && !cam.manualHold && !directorSuppressCruise && S && S.planExec && frameState.mode === 'auto' && chartState.mode === 'auto'
      && (S.planExec.phase === 'depart' || S.planExec.phase === 'cruise' || S.planExec.phase === 'brake' || S.planExec.phase === 'captain')){
     let dx = 0, dz = 0;
     const vm = Math.hypot(S.ship.vx, S.ship.vz);
@@ -6208,6 +6879,17 @@ function syncMeshes(){
   if(stationMesh && S.station){
     stationMesh.position.set(S.station.x - ref.x, S.station.y - ref.y, S.station.z - ref.z);
     if(stationMesh.userData.ring) stationMesh.userData.ring.rotation.z += 0.008;
+    if(stationMesh.userData.modelAtt){
+      /* 実モデル: 姿勢（軸＝動径方向・主端が天頂側）とリング回転（正典 rpm） */
+      orientStationAtt(stationMesh.userData.modelAtt, S.station);
+      const rs = stationMesh.userData.ringSpin;
+      if(rs){
+        const now = performance.now();
+        const dt = rs._t ? Math.min(0.1, (now - rs._t) / 1000) : 0;
+        rs._t = now;
+        if(dt > 0) rs.g.rotation.x += rs.speed * dt;
+      }
+    }
   }
   if(targetMesh){
     /* 目標メッシュは「相手が船舶」の時だけ出す。天体（惑星・衛星・駅）が目標の
@@ -6261,6 +6943,11 @@ function syncMeshes(){
     if(planCoursePoints) planCoursePoints.position.set(ox, oy, oz);
   }
   updateTrafficTrajFrame(ref); /* #25 */
+  updateOrbitLines(ref); /* #77: 全階層の軌道線 */
+  updateDepartureMarker(ref); /* #77: 待機中の出発点 */
+  /* #75: 再推定・再計画でサンプル列が差し替わったら、ウェイポイントのチップも
+     その場で焼き直す（古い計画のチップが海図に残り続けるのを防ぐ） */
+  if(S.planSamples !== _lastPlanSamplesRef){ _lastPlanSamplesRef = S.planSamples; if(typeof updatePlanLineMesh === 'function') updatePlanLineMesh(); }
 
   // 進入コース描画
   if(corridorGroup){
@@ -6381,6 +7068,15 @@ function logEvent(text){
   while(logEl.children.length>80) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop=logEl.scrollHeight;
 }
+/* 会話の記録専用: 会話の全記録は日誌に残し、振り返りはプレイヤーが日誌を開いた時に
+   行う。未読バッジは立てない（発言は一過性で、未読の圧をかけない） */
+function logConv(text){
+  const d = document.createElement('div');
+  d.textContent = formatShipTime(S ? S.time : 0) + ' ' + text;
+  logEl.appendChild(d);
+  while(logEl.children.length > 80) logEl.removeChild(logEl.firstChild);
+  logEl.scrollTop = logEl.scrollHeight;
+}
 function setStatusMsg(text){
   const el = document.getElementById('status-msg');
   el.textContent = text;
@@ -6389,15 +7085,29 @@ function setStatusMsg(text){
 // ---------- 単一メッセージ面 (#msg-card) ----------
 // 台詞・教導ステップ・計画アラートは優先度つきでこの1面にだけ出す（二重表示の禁止）。
 // 優先度: 計画アラート（判断が必要） > 士官の台詞（新着・短時間） > 教導ステップ（継続）
-const msgState = { officer: null, tutorial: null, alert: null, minimized: false, key: '', tutStepKey: '', bound: false };
+const msgState = { officer: null, tutorial: null, alert: null, minimized: false, key: '', tutStepKey: '', bound: false, convActive: false };
 let msgSeq = 0;
 function officerRoleLabel(officer){
   return officer.title ? (officer.rank ? officer.rank + '・' + officer.title : officer.title) : (officer.role === '待機' ? '副長' : officer.role);
 }
 function showOfficerPopup(officer, text){
+  /* 会話中は舞台を奪わない: 士官の発言は一過性の情報として、日誌の会話記録へ流す
+     （前面に保持しない。判断はアラート側が担い、そちらは従来どおり保持される） */
+  if(msgState.convActive){ logConv('💬 ' + officer.name + '： ' + text); return; }
   msgState.officer = { officer, text, id: ++msgSeq, expires: performance.now() + 5600 };
   msgState.minimized = false;
   renderMsgCard();
+}
+/* 会話面の外観同期: 会話が舞台を占有している間のカードの見た目はここで一元管理する */
+function syncSurfaceChrome(){
+  const card = document.getElementById('msg-card');
+  if(!card) return;
+  if(msgState.convActive){
+    card.classList.add('conv-mode');
+    card.classList.add('visible');
+    card.classList.remove('alert');
+    card.classList.toggle('min', msgState.minimized);
+  }
 }
 function renderMsgCard(){
   const card = document.getElementById('msg-card');
@@ -6408,6 +7118,14 @@ function renderMsgCard(){
     document.getElementById('msg-min').addEventListener('click', ()=>{ playSfx('click'); msgState.minimized = !msgState.minimized; renderMsgCard(); });
     document.getElementById('msg-close').addEventListener('click', ()=>{ playSfx('click'); if(msgState.officer && performance.now() < msgState.officer.expires){ msgState.officer = null; } else { msgState.minimized = true; } renderMsgCard(); });
   }
+  /* 会話面は1つだけ。ただし急ぎの報告（判断アラート）は会話に割り込む（界面憲法）:
+     会話を退避して報告を前面に出し、処理が済めば元の会話へ戻る。
+     定型の報告（士官メッセージ等）は割り込まず、従来どおり会話の後ろで待つ */
+  if(msgState.convActive){
+    if(msgState.alert && convState){ suspendConversation(); return; }
+    syncSurfaceChrome(); return;
+  }
+  card.classList.remove('conv-mode');
   const na = document.getElementById('next-action');
   let c = null;
   if(msgState.alert){
@@ -6420,6 +7138,7 @@ function renderMsgCard(){
     c = { kind: 'tutorial', key: t.key, who: '教導士官 榊原少佐', speaker: GUIDE, title: t.title + '（' + t.stepLabel + '）', text: t.text, actions: 'tutorial' };
   }
   if(!c){
+    if(convSuspended){ resumeConversation(); return; }
     if(msgState.key !== ''){ msgState.key = ''; card.classList.remove('visible'); }
     if(na) na.style.display = '';
     return;
@@ -6521,8 +7240,10 @@ function planGroundsText(pe){
    conversation-data.md §7 のうち本スコープに要る分: ノード解釈器／条件評価／
    plan_diff 接続／束縛解決／calc の実推定接続／報告到達の保証（tier 2/3 は
    関係値によらず必ず届く。rel 条件は口調バリアントの選択にだけ使う）。
-   会話は最上位レイヤーで開き、世界の時計は止めない。選択肢が開いている間は
-   判断ホールド（#67）の対象になる（decisionOpenNow が convState を見る）。 */
+   会話は単一の会話面（#msg-card）の舞台で開き、世界の時計は止めない（選択しようが
+   しなかろうが、見逃そうが、航海は進む）。舞台には現在の話者と発言だけを載せ、
+   全記録は日誌へ送る。選択肢が開いている間は判断ホールド（#67）の対象になる
+   （decisionOpenNow が convState を見る）。 */
 const CONV_SCOPES = { standard: '標準の委任（定型は自律実施＋事後報告）', narrow: '狭い委任（小さな補正も毎回お伺い）', with_window: '窓の採用まで含む委任' };
 const CAPTAIN_SPEAKER = { name: '船長', initial: '船', color: '#6ea8ff', silhouette: 'cap' };
 let convState = null;
@@ -6530,9 +7251,33 @@ function convFlags(){ if(!S) return {}; S.convFlags = S.convFlags || {}; return 
 function convPerson(id){
   if(id === 'miura_aoi') return HELM;
   if(id === 'sakurabara_rin') return GUIDE;
-  if(id === 'captain') return CAPTAIN_SPEAKER;
+  if(id === 'captain'){
+    /* 船長の肖像は作成済みプロフィールのものを引く（無ければシルエット＋名前で処理） */
+    if(typeof captainProfile !== 'undefined' && captainProfile && captainProfile.art) return { name: captainProfile.name || '船長', art: captainProfile.art, color: CAPTAIN_SPEAKER.color, silhouette: CAPTAIN_SPEAKER.silhouette };
+    return CAPTAIN_SPEAKER;
+  }
   const nm = { sato_mio: '佐藤 澪', takahashi_ren: '高橋 蓮', chen_dashu: '陳 大樹', irina_kowalska: 'イリナ・コワルスカ' }[id];
   return (S && S.officers || []).find(o => o.name === nm) || OFFICER_DEFS.find(o => o.name === nm) || HELM;
+}
+/* 補給が「その場で実際に実施できる」状態か（#79 補足）。推進剤は地表・接舷で
+   入れるのが本筋で、捕捉軌道にいるだけでは補給できない。現行ビルドで実施できる
+   のは接舷中のみ。地表基地への着陸（着陸中＝地表接舷）が実装されたら、その状態を
+   ここに足すこと（提示側はこの関数だけを見る）。 */
+function resupplyExecutableHere(){
+  return !!(S && S.docked);
+}
+/* 会話で補給を提示してよいか: 実施できる場所にいて、在庫が足り、今は不成立だが
+   補給すれば（タンク全回復）成立する、の全てを満たす時だけ true。
+   満たさない補給は「無い窓」と同じく提示しない。 */
+function convResupplyPossible(){
+  if(!S || !resupplyExecutableHere()) return false;
+  if(!(S.res && S.res.prop >= 15 && S.res.sup >= 10 && S.res.cred >= 20)) return false;
+  const vs = convVariants().filter(v => v.est);
+  if(!vs.length) return false;
+  if(vs.some(v => convVarFeasible(v))) return false;
+  const need = Math.min.apply(null, vs.map(v => v.est.dvTotal));
+  const reserve = S.maxDv * ((planPanelState && planPanelState.reserve) || 10) / 100;
+  return (S.maxDv - need) >= reserve;
 }
 function convVarFeasible(vv){
   if(!vv || !vv.est || !vv.est.ok) return false;
@@ -6572,6 +7317,8 @@ function convBind(name){
   if(cs.bindings && cs.bindings[name] !== undefined) return cs.bindings[name];
   let m;
   if(name === 'dv.remaining') return S.dv.toFixed(1);
+  if(name === 'dv.max') return S.maxDv.toFixed(1);
+  if(name === 'est.ret.scan.span'){ const sp = planPanelState && (planPanelState.windowScanSpan || planPanelState.windowCycle); return sp ? '約 ' + fmtDuration(sp) : '—'; }
   if(name === 'sched.turnaround.remain') return '完了';
   if(name === 'delegation.scope_name') return CONV_SCOPES[S.convDelegation || 'standard'] || '—';
   if((m = name.match(/^est\.(std|eco|fast)\.(\w+)$/))){ const f = convVarFacts(convVar(m[1])); return f[m[2]] !== undefined ? f[m[2]] : '—'; }
@@ -6614,6 +7361,12 @@ function convCond(expr){
   }
   if(expr === 'state:plan.any_feasible == true') return convVariants().some(v => convVarFeasible(v));
   if(expr === 'state:plan.window_found == true') return !!(planPanelState && planPanelState.windowPick);
+  if(expr === 'state:plan.window_none == true') return !!(planPanelState && planPanelState.windowNone && !planPanelState.windowPick);
+  if(expr === 'state:plan.resupply_possible == true') return convResupplyPossible();
+  if(expr === 'state:resupply.executable == true') return resupplyExecutableHere();
+  if(expr === 'state:resupply.stock_ok == true') return !!(S.res && S.res.prop >= 15 && S.res.sup >= 10 && S.res.cred >= 20);
+  if(expr === 'state:tutorial.delegated == true') return !!(S.tutorial && S.tutorial.delegated);
+  if(expr === 'state:tutorial.delegated == false') return !(S.tutorial && S.tutorial.delegated);
   if(expr === 'state:plan.next_window_feasible == true') return false; /* 次周期の窓は本段では未走査（報告書に明記） */
   if(expr === 'state:phase == berthed') return !!S.docked;
   if(expr === 'state:plan.active == true') return !!(S.planExec && S.planExec.active);
@@ -6652,10 +7405,14 @@ function convApplyEffects(effects){
           cs.choice = Object.assign({}, cs.choice, { depart: fmtDayClock(S.time + wp.waitSec), need: wp.est.dvTotal.toFixed(1), time: fmtDuration(wp.est.timeTotal), dv: wp.est.dvTotal.toFixed(1), arr: fmtDayClock(S.time + wp.waitSec + wp.est.timeTotal) });
           if(planPanelState._render) planPanelState._render();
         } else {
+          /* 窓が実在しないのに「即時出発」へ化けさせない（#79 の本体）:
+             推奨案が成立しない状態で set_departure が来たら、出発をコミットせず
+             記録だけ残す。窓の承認は窓が実在する時だけ成立する。 */
           const rec = convRecommended();
-          if(rec){ const idx = convVariants().findIndex(v => v.id === rec.id); if(idx >= 0) planPanelState.selIdx = idx; const f = convVarFacts(rec); cs.choice = Object.assign({}, cs.choice, { depart: '即時', need: f.need, time: f.time, dv: f.dv, arr: f.arr }); }
+          if(rec && convVarFeasible(rec)){ const idx = convVariants().findIndex(v => v.id === rec.id); if(idx >= 0) planPanelState.selIdx = idx; const f = convVarFacts(rec); cs.choice = Object.assign({}, cs.choice, { depart: '即時', need: f.need, time: f.time, dv: f.dv, arr: f.arr }); cs.commitDeparture = true; }
+          else { logEvent('⚠️ ' + aiName() + ': 出発窓が確定していないため、出発の承認は行いませんでした。'); }
         }
-        cs.commitDeparture = true;
+        if(wp) cs.commitDeparture = true;
       } else if(pd.kind === 'hold_position'){ logEvent('🕐 現在の軌道で待機します（当直が軌道維持を見ています）。'); }
       else if(pd.kind === 'resume_plan'){ const pe = S && S.planExec; if(pe){ pe.deviated = false; pe.paused = false; pe.manualModified = false; } if(typeof msgState !== 'undefined' && msgState.alert) msgState.alert = null; updatePlanStatusUI(); }
       else if(pd.kind === 'request_replan'){ cs.afterEnd = () => openMissionPlanPanel(); }
@@ -6663,6 +7420,22 @@ function convApplyEffects(effects){
     else if(e.delegation){ S.convDelegation = e.delegation.scope; if(S.tutorial){ S.tutorial.delegated = true; S.tutorial.delegateDoneStep = S.tutorial.step; const cur = S.tutorial.steps[S.tutorial.step]; if(cur && cur.autoAction) cur.autoAction(); if(typeof updateDelegateChip === 'function') updateDelegateChip(); } }
     else if(e.schedule){ logEvent('📋 航行計画を時刻表へ公開しました（他船から見える計画になりました）。'); }
     else if(e.log){ logEvent(convResolve(e.log)); }
+    else if(e.resupply){
+      /* 会話経由の補給（#79 補足）: 実施できる状態（接舷中）でのみ、在庫を消費して
+         タンクを全回復する。実施できない場合は消費も回復もせず、その旨を残す。 */
+      if(resupplyExecutableHere() && S.res && S.res.prop >= 15 && S.res.sup >= 10 && S.res.cred >= 20){
+        S.res.prop -= 15; S.res.sup -= 10; S.res.cred -= 20;
+        S.dv = S.maxDv;
+        logEvent('⛽ 補給を実施 —— 推進剤ストック −15・補給物資 −10・資金 −20。タンク Δv は ' + S.maxDv.toFixed(1) + ' に回復。');
+        if(typeof updatePanels === 'function') updatePanels();
+        if(typeof updateHUD === 'function') updateHUD();
+      } else {
+        logEvent('⚠️ 補給を実施できませんでした（接舷状態でないか、在庫が不足しています）。');
+      }
+    }
+    else if(e.start_conv){ const nid = e.start_conv; cs.afterEnd = () => { startConversation(nid); }; }
+    else if(e.open_tracking){ cs.afterEnd = () => { if(typeof openPlanTracking === 'function') openPlanTracking(); }; }
+    else if(e.undelegate){ if(typeof undelegateTutorial === 'function') undelegateTutorial(); }
     else if(e.commit){ cs.commitDeparture = true; }
   });
 }
@@ -6678,25 +7451,44 @@ function convCrossTrack(){
   return best;
 }
 function convShowLayer(on){
-  const el = document.getElementById('conv-layer');
-  if(el) el.classList.toggle('open', !!on);
+  const card = document.getElementById('msg-card');
+  if(on){
+    /* 舞台を開く: 会話面（#msg-card）を会話が占有する。背後の計画パネル等は隠し、
+       委任チップ・次アクション行も退ける（前面に出る面は1つだけ） */
+    if(card){ card.classList.add('conv-mode'); card.classList.add('visible'); card.classList.remove('min'); }
+    const th = document.getElementById('top-hud');
+    if(th && th.classList.contains('collapsed')){ th.classList.remove('collapsed'); uiPrefs.top = false; saveUiPrefs(); const tb = document.getElementById('btn-top-toggle'); if(tb) tb.textContent = '▽ しまう'; }
+    msgState.minimized = false;
+    msgState.key = ''; /* 見出しの所有権を会話へ渡す（終了時に通知を再描画させる） */
+    const na = document.getElementById('next-action'); if(na) na.style.display = 'none';
+    const chip = document.getElementById('delegate-chip'); if(chip) chip.style.display = 'none';
+    ['plan-panel', 'chart-panel'].forEach(id => { const p = document.getElementById(id); if(p && p.classList.contains('open')) p.classList.add('conv-hidden'); });
+  } else {
+    /* 舞台から退場: 前面に会話は残らない。背後パネルを戻し、保留していた通知を再描画する */
+    if(card) card.classList.remove('conv-mode');
+    ['plan-panel', 'chart-panel'].forEach(id => { const p = document.getElementById(id); if(p) p.classList.remove('conv-hidden'); });
+    if(typeof _delegateChipShown !== 'undefined') _delegateChipShown = null;
+    if(typeof updateDelegateChip === 'function') updateDelegateChip();
+    renderMsgCard();
+  }
 }
 function convSetSpeaker(whoId){
   const p = convPerson(whoId);
-  const av = document.getElementById('conv-avatar');
-  if(av) av.innerHTML = faceHTML(p);
-  const who = document.getElementById('conv-who');
+  const av = document.getElementById('msg-avatar');
+  if(av){ av.innerHTML = faceHTML(p); av.style.background = 'rgba(8,15,32,0.55)'; av.style.display = ''; }
+  const who = document.getElementById('msg-who');
   if(who) who.textContent = p.name + (p.title ? '（' + p.title + '）' : (p.post ? '（' + p.post + '）' : ''));
 }
 function convAppend(html, cls){
+  /* 舞台形式: 前面には現在の発言だけを載せる。前の発言は残さない（記録は日誌側）。
+     話者が替われば顔と発言が入れ替わる — convSetSpeaker と対で使う */
   const body = document.getElementById('conv-body');
   if(!body) return null;
+  body.innerHTML = '';
   const div = document.createElement('div');
   if(cls) div.className = cls;
   div.innerHTML = html;
   body.appendChild(div);
-  const layer = document.getElementById('conv-layer');
-  if(layer) layer.scrollTop = layer.scrollHeight;
   return div;
 }
 function convEsc(t){ return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
@@ -6717,6 +7509,7 @@ function convSetChoices(options){
       playSfx('click');
       cs.awaitingChoice = false;
       convAppend('<b>船長</b>： ' + convEsc(opt.label), 'conv-bubble cap');
+      logConv('💬 船長： ' + opt.label);
       if(opt.effects) convApplyEffects(opt.effects);
       box.innerHTML = '';
       gotoConvNode(opt.goto);
@@ -6775,7 +7568,7 @@ function convRunCalc(node){
       if(stageEls[i]) stageEls[i].textContent = (done ? '✓ ' : '… ') + st.name + (!done && st.task === 'estimate:replan' && cs.devJob ? '（計算 ' + cs.devJob.iterCount.toLocaleString() + ' ステップ）' : '');
       if(!done) all = false;
     });
-    if(all){ clearInterval(iv); setTimeout(() => gotoConvNode(node.next), 350); }
+    if(all){ clearInterval(iv); logConv('🧮 ' + (node.title || '計算') + '： ' + (node.stages || []).map(st => '✓ ' + st.name).join('／')); setTimeout(() => gotoConvNode(node.next), 350); }
   }, 220);
 }
 function convFillDev(){
@@ -6802,6 +7595,7 @@ function gotoConvNode(nodeId){
     }
     convSetSpeaker(node.who);
     convAppend('<b>' + convEsc(convPerson(node.who).name) + '</b>： ' + convEsc(convResolve(text)), 'conv-bubble');
+    if(!convQuietResume) logConv('💬 ' + convPerson(node.who).name + '： ' + convResolve(text));
     convSetChoices(null);
     convShowNext(node.next);
   } else if(node.type === 'calc'){ convSetChoices(null); convRunCalc(node); }
@@ -6810,8 +7604,31 @@ function gotoConvNode(nodeId){
     let html = '<div style="font-weight:700">📋 ' + convEsc(convResolve(node.title || '根拠')) + '</div><table class="conv-grounds">';
     (node.rows || []).forEach(r => { html += '<tr><td>' + convEsc(convResolve(r[0])) + '</td><td>' + convEsc(convResolve(r[1])) + '</td></tr>'; });
     html += '</table>';
+    /* 図化: 根拠は文字の羅列にしない（本人の原則「人間は選択するだけ」: 判断材料は図が主役）。
+       bars:'variants' = 案ごとの必要Δvバー、bars:'dv' = 残量と完了時見込みのバー */
+    if(node.bars === 'variants' && typeof planPanelState !== 'undefined' && planPanelState && planPanelState.variants && planPanelState.variants.length){
+      try {
+        const vs = planPanelState.variants;
+        const tot = v => v.est ? (v.est.dvTotal + (S.docked ? harborDvFor(v.est) : 0)) : 0;
+        const mx = Math.max(1, S.dv, ...vs.map(tot));
+        html += vs.map(v => {
+          if(!v.est) return '<div class="conv-bar-row"><span>' + convEsc(v.label) + '</span><div class="conv-bar"><i style="width:0%"></i></div><span>推定中</span></div>';
+          const feas = convVarFeasible(v);
+          return '<div class="conv-bar-row"><span>' + convEsc(v.label) + '</span><div class="conv-bar"><i class="' + (feas ? '' : 'bad') + '" style="width:' + Math.min(100, tot(v) / mx * 100).toFixed(0) + '%"></i></div><span>Δv ' + tot(v).toFixed(1) + (feas ? '' : '（不成立）') + '</span></div>';
+        }).join('') + '<div class="conv-note">バーの物差しは現在の残量 Δv ' + S.dv.toFixed(1) + ' まで。満幅を超える案は残量では成立しません。</div>';
+      } catch(e) { /* 図化は証拠表示の飾り: 失敗しても会話の流れは止めない */ }
+    } else if(node.bars === 'dv' && S.planExec){
+      try {
+        const mx = Math.max(1, S.maxDv);
+        const rem = isFinite(S.planExec.remDv) ? Math.max(0, S.planExec.remDv) : 0;
+        html += '<div class="conv-bar-row"><span>現在の残量</span><div class="conv-bar"><i style="width:' + Math.min(100, S.dv / mx * 100).toFixed(0) + '%"></i></div><span>Δv ' + S.dv.toFixed(1) + '</span></div>' +
+          '<div class="conv-bar-row"><span>完了時見込み</span><div class="conv-bar"><i style="width:' + Math.min(100, rem / mx * 100).toFixed(0) + '%"></i></div><span>Δv ' + rem.toFixed(1) + '</span></div>' +
+          '<div class="conv-note">バーの満幅はタンク最大 Δv ' + S.maxDv.toFixed(1) + ' です。</div>';
+      } catch(e) { /* 図化の失敗で会話を止めない */ }
+    }
     if(node.note) html += '<div class="conv-note">' + convEsc(convResolve(node.note)) + '</div>';
     convAppend(html, 'conv-bubble');
+    if(!convQuietResume) logConv('📋 ' + convResolve(node.title || '根拠') + '： ' + (node.rows || []).map(r => convResolve(r[0]) + ' ＝ ' + convResolve(r[1])).join('／') + (node.note ? '（' + convResolve(node.note) + '）' : ''));
     convSetChoices(null);
     convShowNext(node.next);
   } else if(node.type === 'evidence'){
@@ -6830,7 +7647,7 @@ function gotoConvNode(nodeId){
   else if(node.type === 'effect'){ convApplyEffects(node.effects); gotoConvNode(node.next); }
   else if(node.type === 'log'){
     const t = convResolve(node.text || '');
-    if(t) logEvent('📜 ' + t);
+    if(t && !convQuietResume) logEvent('📜 ' + t);
     convAppend('📜 ' + convEsc(t), 'conv-log');
     convSetChoices(null);
     convShowNext(node.next);
@@ -6842,6 +7659,11 @@ function gotoConvNode(nodeId){
 function startConversation(id, extra){
   const def = CONVERSATIONS[id];
   if(!def || convState || !S) return false;
+  if(convSuspended){
+    /* 新しい会話が始まるなら、中断したままの会話は終了扱いにする（宙吊りにしない） */
+    logConv('💬 ── 中断していた「' + (convSuspended.def.title || '会話') + '」は、新しい会話のため終了 ──');
+    convSuspended = null;
+  }
   convState = { id, def, bindings: extra || {}, choice: null, dev: null, devEst: null, devJob: null, awaitingChoice: false, commitDeparture: false, afterEnd: null, pendingVariant: null };
   S.convCounts = S.convCounts || {};
   S.convCounts[id] = (S.convCounts[id] || 0) + 1;
@@ -6851,21 +7673,70 @@ function startConversation(id, extra){
   }
   const body = document.getElementById('conv-body');
   if(body) body.innerHTML = '';
-  const title = document.getElementById('conv-title');
+  const title = document.getElementById('msg-title');
   if(title) title.textContent = def.title || '';
-  const layer = document.getElementById('conv-layer');
-  if(layer) layer.classList.remove('min');
+  msgState.convActive = true;
+  logConv('💬 ── ' + (def.title || '会話') + ' ──');
   convShowLayer(true);
   gotoConvNode(def.start);
   return true;
 }
+let pendingTalkNav = false;
+function queueTalkToNavigator(){
+  if(convState){ pendingTalkNav = true; return; }
+  talkToNavigator();
+}
 function endConversation(){
   const cs = convState;
   convState = null;
+  msgState.convActive = false;
   convShowLayer(false);
+  if(pendingTalkNav){ pendingTalkNav = false; setTimeout(() => { if(!convState) talkToNavigator(); }, 350); }
   if(!cs) return;
+  logConv('💬 ── ' + (cs.def.title || '会話') + ' 終了 ──');
   if(cs.afterEnd){ const f = cs.afterEnd; setTimeout(f, 60); return; }
+  if(!cs.commitDeparture && convPendingReport){
+    const pr = convPendingReport; convPendingReport = null;
+    setTimeout(() => { try{ startConversation(pr.id, pr.extra); }catch(e){} }, 60);
+    return;
+  }
   if(cs.commitDeparture && typeof planPanelState !== 'undefined' && planPanelState){ confirmDeparture(); }
+}
+/* ---- 会話の割り込み（界面憲法）: 急ぎの報告が来たら会話を退避し、報告の処理が
+   済んだら元の会話の続きへ戻る。中断した会話の状態（ノード・選択文脈）は
+   convState オブジェクトごと保持するので失われない。再描画は現在のノードを
+   描き直すだけ（日誌への二重記録は convQuietResume で抑える） ---- */
+let convSuspended = null;
+let convPendingReport = null;
+let convQuietResume = false;
+function suspendConversation(){
+  const cs = convState; if(!cs) return false;
+  convSuspended = cs;
+  convState = null;
+  msgState.convActive = false;
+  logConv('💬 ── 「' + (cs.def.title || '会話') + '」を中断（急ぎの報告） ──');
+  convShowLayer(false); /* 退場処理の中で renderMsgCard が走り、アラートが前面に出る */
+  return true;
+}
+function resumeConversation(){
+  const cs = convSuspended; if(!cs || convState) return false;
+  convSuspended = null;
+  convState = cs;
+  msgState.convActive = true;
+  const title = document.getElementById('msg-title');
+  if(title) title.textContent = cs.def.title || '';
+  logConv('💬 ── 「' + (cs.def.title || '会話') + '」を再開 ──');
+  convShowLayer(true);
+  convQuietResume = true;
+  try{ gotoConvNode(cs.nodeId); } finally { convQuietResume = false; }
+  return true;
+}
+/* 安全直結の実施報告など「会話の形で届く報告」が、別の会話の最中に届いた場合の
+   受け口: 今の会話（または割り込み処理）が終わってから提示する */
+function requestReportConversation(id, extra){
+  if(startConversation(id, extra)) return true;
+  if(!convPendingReport) convPendingReport = { id, extra };
+  return false;
 }
 function startPlanConversation(){
   if(!S || !planPanelState) return;
@@ -6879,7 +7750,57 @@ function startDelegationConversation(){
     if(S && S.tutorial){ S.tutorial.delegated = true; if(typeof updateDelegateChip === 'function') updateDelegateChip(); }
   }
 }
-document.getElementById('conv-min').addEventListener('click', () => { const l = document.getElementById('conv-layer'); if(l) l.classList.toggle('min'); });
+/* ---- 話しかける入口（界面憲法）: 計画・補給・案内は、役職への話しかけから始まる。
+   パネルやボタンの直接操作では世界の状態を変えない ---- */
+function openPlanMeeting(){
+  if(!S) return;
+  if(S.prologue && S.tutorial){
+    const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0];
+    if(S.tutorial.step >= 4){
+      openPlanPanel({ mode:'depart', legType:'simple', routeName:'帰投航路 あおば R0', fixes:'衛星「こよみ」近傍 → ステーション「あおば」', targetBody:S.station, arrivalDist:90, needDock:false, shortChecklist:true });
+    } else {
+      openPlanPanel({ mode:'depart', legType:'simple', routeName:'観光航路 ソル周遊 S1', fixes:'ステーション「あおば」 → 衛星「こよみ」近傍点', targetBody:hab, arrivalDist:12000, needDock:false, shortChecklist:false });
+    }
+  } else {
+    /* M0 以外（従来ミッション）は会話化の対象外のため、従来のパネル経路を移行措置として使う */
+    openMissionPlanPanel();
+  }
+}
+function talkToNavigator(){
+  if(!S) return;
+  if(convState){ setStatusMsg('🗣 会話中です。終わってから話しかけてください。'); return; }
+  if(S.planExec && S.planExec.active){
+    const pe = S.planExec;
+    startConversation('nav_consult', {
+      'nav.phase': pePhaseName(pe.phase),
+      'nav.target': (pe.targetBody && pe.targetBody.name) || '—',
+      'nav.eta': pe.planDoc ? fmtDayClock(pe.startT + (pe.planDoc.plannedTime || 0)) : '—',
+      'nav.dvnow': S.dv.toFixed(1),
+      'nav.remdv': isFinite(pe.remDv) ? pe.remDv.toFixed(1) : '—',
+      'nav.spent': pe.planDoc ? Math.max(0, pe.planDoc.dvAtStart - S.dv).toFixed(1) : '—',
+      'nav.planned': pe.planDoc ? pe.planDoc.plannedTotal.toFixed(1) : '—'
+    });
+    return;
+  }
+  openPlanMeeting();
+}
+function talkToSupply(){
+  if(!S) return;
+  if(convState){ setStatusMsg('🗣 会話中です。終わってから話しかけてください。'); return; }
+  startConversation('supply_consult', {
+    'sup.prop': String(Math.round(S.res ? S.res.prop : 0)),
+    'sup.sup': String(Math.round(S.res ? S.res.sup : 0)),
+    'sup.cred': String(Math.round(S.res ? S.res.cred : 0))
+  });
+}
+function talkToGuide(){
+  if(!S) return;
+  if(convState){ setStatusMsg('🗣 会話中です。終わってから話しかけてください。'); return; }
+  startConversation('guide_consult', {
+    'guide.objective': (S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText) ? S.tutorial.nextActionText : '処女航海の案内は終了しています。通常運航中です'
+  });
+}
+/* 最小化は会話面共通の #msg-min に統一（旧 #conv-min は廃止） */
 
 /* ================= 会話データ（conversation-data.md §2・§3・§4 の実装転写） =================
    数値はすべて束縛で実状態から引く。§3 n01 のターンアラウンド残りは M0 では
@@ -6925,7 +7846,7 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n36: { type: 'log', next: 'end', text: '航海計画を承認 —— {choice.variant_name}（Δv {choice.dv}／所要 {choice.time}／到着 {choice.arr}）。あおば第6バースより出発準備に入る。' },
   n34: { type: 'say', who: 'miura_aoi', next: 'n20', text: '承知しました。計画はこのまま保持しておきます。お決まりになったら声をかけてください。' },
   n90: { type: 'say', who: 'miura_aoi', next: 'n91', text: '計算が終わりました。正直にお伝えします——今の位相では、3案とも成立しません。理由を順に説明します。' },
-  n91: { type: 'grounds', title: '全案不成立 — 不足の内訳（根拠）', next: 'n92', rows: [
+  n91: { type: 'grounds', title: '全案不成立 — 不足の内訳（根拠）', bars: 'variants', next: 'n92', rows: [
     [ '標準案の必要量', '{est.std.need}（{est.std.lack} 不足）' ], [ '省燃料案の必要量', '{est.eco.need}（{est.eco.lack} 不足）' ], [ '最速案の必要量', '{est.fast.need}（{est.fast.lack} 不足）' ], [ '現在の残量', '{dv.remaining}' ] ],
     note: '不足する案は、責任を持って出せません。出発を遅らせれば位相が変わります。' },
   n92: { type: 'say', who: 'sakurabara_rin', next: 'n93', text: 'これが「出発窓」です。月もステーションも動き続けているので、同じ航路でも出発の時刻で必要な推進剤が大きく変わる。窓が開くまで待つのは、失敗ではなく作法です。' },
@@ -6949,10 +7870,12 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
 } },
 plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。「あけぼの」からの受け取りは完了、積荷は固定まで済んでいます。点検も完了しています。それより前には、どのみち出られません。' },
-  n02: { type: 'say', who: 'miura_aoi', next: 'n03', text: '航法の三浦です。帰投の計画を計算します。……先に言っておくと、今すぐ出るのは高いです。理由ごと出します。' },
-  n03: { type: 'calc', title: '帰投計画を計算中', sub: '即時出発の案と、月の1周期分の出発窓を走査しています。', next: 'n03b', stages: [
+  n02: { type: 'say_variants', who: 'miura_aoi', next: 'n03', variants: [
+    { when: 'state:plan.any_feasible == true', text: '航法の三浦です。帰投の計画を計算します。' },
+    { when: 'default', text: '航法の三浦です。帰投の計画を計算します。……先に言っておくと、今すぐ出るのは高いです。理由ごと出します。' } ] },
+  n03: { type: 'calc', title: '帰投計画を計算中', sub: '即時出発の案と、出発窓を走査しています。窓がなければ、会合周期の次の周期へ走査を延ばします。', next: 'n03b', stages: [
     { name: '即時出発の推定', task: 'estimate:immediate' }, { name: '帰投窓の走査', task: 'scan:return_window_one_period' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
-  n03b: { type: 'branch', cases: [ { when: 'state:plan.window_found == true', goto: 'n04' }, { when: 'state:plan.any_feasible == true', goto: 'n05i' } ], default: 'n04' },
+  n03b: { type: 'branch', cases: [ { when: 'state:plan.window_found == true', goto: 'n04' }, { when: 'state:plan.any_feasible == true', goto: 'n05i' }, { when: 'state:plan.resupply_possible == true', goto: 'n04s' } ], default: 'n04n' },
   n05i: { type: 'say', who: 'miura_aoi', next: 'n06i', text: '今すぐ出ても成立する案があります。必要量は {est.ret.now.need}、最良の案で出発できます。窓を待てば安くなる可能性はありますが、探索は計画パネル側でも続けられます。' },
   n06i: { type: 'choice', options: [
     { label: '最良の案で今すぐ出発する', primary: true, goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] },
@@ -6960,18 +7883,37 @@ plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n10i: { type: 'say', who: 'miura_aoi', next: 'n13i', text: '承知しました。{choice.variant_name}で帰投します。所要 {choice.time}、Δv {choice.dv}、到着 {choice.arr}。' },
   n13i: { type: 'log', next: 'end', text: '帰投計画を承認 —— 即時出発（{choice.variant_name}／必要Δv {choice.dv}／残量 {dv.remaining}）。' },
   n07i: { type: 'log', next: 'end', text: '帰投計画は計画パネルで継続確認 —— 即時出発の成立案あり（必要Δv {est.ret.now.need}）。' },
-  n04: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', next: 'n05', rows: [
-    [ '今すぐ出発', '{est.ret.now.need}' ], [ '{est.ret.window.wait} 待って出発（最良窓）', '{est.ret.window.need}' ], [ '次の周期の窓（約 {est.ret.period} 後）', '{est.ret.next.need}' ], [ '現在の残量', '{dv.remaining}' ] ],
-    note: '走査範囲は月の公転1周期分です。価格を決めるのは月の公転運動の向きと、抜ける方向とあおばの位相の組み合わせで、窓の位置は計算でしか分かりません。次の周期の窓は本走査では未計算です。' },
+  n04: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', bars: 'variants', next: 'n05', rows: [
+    [ '今すぐ出発', '{est.ret.now.need}' ], [ '{est.ret.window.wait} 待って出発（最良窓）', '{est.ret.window.need}' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
+    note: '走査は捕捉軌道の位相（細密）と会合周期（粗）で、{est.ret.scan.span} 先まで行いました。価格を決めるのは月の公転運動の向きと、抜ける方向とあおばの位相の組み合わせで、窓の位置は計算でしか分かりません。' },
   n05: { type: 'say', who: 'miura_aoi', next: 'n06', text: '帰りは、月の公転に乗るのが一番安くなります。今の位置から力任せに出ると {est.ret.now.need} かかって、残量では足りません。捕捉軌道で {est.ret.window.wait} 待てば、月が運んでくれる側に出られます。必要量は {est.ret.window.need}、余裕が {est.ret.window.margin} 残ります。' },
   n06: { type: 'choice', options: [
-    { label: '窓まで捕捉軌道で待機して帰投する', primary: true, goto: 'n10' },
+    { label: '窓まで捕捉軌道で待機して帰投する', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
     { label: '次の周期の窓まで待つ', when: 'state:plan.next_window_feasible == true', goto: 'n11' },
     { label: '今すぐ出発できないか、もう一度見て', goto: 'n07' } ] },
   n07: { type: 'say', who: 'miura_aoi', next: 'n08', text: '見直しましたが、変わりません。今すぐは必要 {est.ret.now.need} に対し残量 {dv.remaining}、予備を除けば {est.ret.now.lack} 足りません。この案は出せません。出られるのは窓だけです。' },
   n08: { type: 'choice', options: [
-    { label: '最良窓で帰投する', primary: true, goto: 'n10' },
+    { label: '最良窓で帰投する', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
     { label: '次の周期の窓まで待つ', when: 'state:plan.next_window_feasible == true', goto: 'n11' } ] },
+  n04n: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', next: 'n05n', rows: [
+    [ '今すぐ出発', '{est.ret.now.need}' ], [ '走査範囲内の成立する窓', 'なし' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
+    note: '走査は {est.ret.scan.span} 先まで行いましたが、予備を確保して成立する出発窓はありませんでした。即時出発も残量では足りません。実在しない窓は提示しません。' },
+  n05n: { type: 'say', who: 'miura_aoi', next: 'n06n', text: '正直に言います。今すぐ出るには {est.ret.now.need} かかって、残量 {dv.remaining} では足りません。{est.ret.scan.span} 先まで窓を探しましたが、成立する窓はありませんでした。嘘の窓は出せません。' },
+  n06n: { type: 'choice', options: [
+    { label: '捕捉軌道で待機し、改めて計算させる', primary: true, goto: 'n10n' },
+    { label: '計画パネルで根拠を確認する', goto: 'n07n' } ] },
+  n10n: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } } ], next: 'n13n' },
+  n13n: { type: 'log', next: 'end', text: '帰投計画は保留 —— {est.ret.scan.span} 先まで走査して成立する窓なし（即時 {est.ret.now.need}／残量 {dv.remaining}）。捕捉軌道で待機し、幾何が変われば再計算する（計画パネルからいつでも再計算できる）。' },
+  n07n: { type: 'log', next: 'end', text: '帰投計画は計画パネルで継続確認 —— 走査範囲内に成立する窓なし（即時 {est.ret.now.need}／残量 {dv.remaining}）。' },
+  n04s: { type: 'grounds', title: '帰投 — 補給した場合の必要量（根拠）', next: 'n05s', rows: [
+    [ '今すぐ出発（補給なし）', '{est.ret.now.need}' ], [ '現在の残量', '{dv.remaining}' ], [ '補給の費用', '推進剤ストック 15・補給物資 10・資金 20' ], [ '補給後のタンク Δv', '{dv.max}' ], [ '補給後に必要な量', '{est.ret.now.need}（成立します）' ] ],
+    note: '補給は接舷中に給油して実施します。補給すれば即時出発が成立する場合だけ、この案を出しています。' },
+  n05s: { type: 'say', who: 'takahashi_ren', next: 'n06s', text: '補給の高橋です。接舷中の給油で、タンクを {dv.max} まで戻せます。費用は推進剤ストック 15、補給物資 10、資金 20 です。戻せば、今すぐの帰投が成立します。' },
+  n06s: { type: 'choice', options: [
+    { label: '補給して、改めて計算する', primary: true, goto: 'n10s' },
+    { label: '補給しない', goto: 'n04n' } ] },
+  n10s: { type: 'effect', effects: [ { resupply: true } ], next: 'n11s' },
+  n11s: { type: 'say', who: 'miura_aoi', next: 'n03', text: '補給が済みました。残量は {dv.remaining} です。この状態で、帰投計画を計算し直します。' },
   n10: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n11: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n12: { type: 'say', who: 'miura_aoi', next: 'n13', text: '承知しました。{choice.depart} までは捕捉軌道で待機し、その時刻に出発します。待機中は軌道の維持だけ当直が見ています。何かあれば、その時点でお伺いします。' },
@@ -7015,6 +7957,37 @@ safety_action_report: { title: '安全直結の実施報告', start: 'n01', node
   n03: { type: 'grounds', title: '回避の影響（根拠）', next: 'end', rows: [
     [ '回避に使った Δv', '{safety.dv}' ], [ '計画航路からのずれ', '{dev.cross_track}' ], [ '到着への影響', '{dev.eta_impact}' ] ],
     note: 'ずれが大きい場合は、復帰のお伺いを別途立てます。' }
+} },
+/* ---- 話しかける入口の会話（界面憲法）: 操作はすべて「クルーに話しかける」から始まる ---- */
+nav_consult: { title: '航法相談（三浦）', start: 'n01', nodes: {
+  n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、航法の三浦です。現在は「{nav.target}」への航程で、フェーズは{nav.phase}です。到着見込みは {nav.eta}、残り Δv は {nav.dvnow} です。' },
+  n02: { type: 'grounds', title: '航行状況（根拠）', bars: 'dv', next: 'n03', rows: [
+    [ '現在フェーズ', '{nav.phase}' ], [ '到着見込み', '{nav.eta}' ], [ '計画の総 Δv', '{nav.planned}' ], [ '実績消費', '{nav.spent}' ], [ '現在の残量', '{nav.dvnow}' ], [ '完了時の残量見込み', '{nav.remdv}' ] ],
+    note: '計画は当直と航行AIが運航中です。判断が要る事態が起きれば、その時点でお伺いします。' },
+  n03: { type: 'choice', options: [
+    { label: '計画の証拠（運航文書）を見せて', goto: 'n04', effects: [ { open_tracking: true } ] },
+    { label: '分かった。続けてくれ', primary: true, goto: 'end' } ] },
+  n04: { type: 'say', who: 'miura_aoi', next: 'end', text: '分かりました。承認いただいた計画の運航文書をお見せします。通過点と実績はそちらで確認できます。' }
+} },
+supply_consult: { title: '補給相談（高橋）', start: 'n01', nodes: {
+  n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。積荷は固定まで済んでいます。いまの在庫は、推進剤ストック {sup.prop}、補給物資 {sup.sup}、資金 {sup.cred}。タンクの Δv は {dv.remaining}／{dv.max} です。' },
+  n02: { type: 'branch', cases: [ { when: 'state:resupply.executable == true', goto: 'n10' } ], default: 'n30' },
+  n10: { type: 'branch', cases: [ { when: 'state:resupply.stock_ok == true', goto: 'n11' } ], default: 'n20' },
+  n11: { type: 'say', who: 'takahashi_ren', next: 'n12', text: '接舷中ですから、今すぐ給油できます。費用は推進剤ストック 15・補給物資 10・資金 20 で、タンクは {dv.max} まで戻ります。' },
+  n12: { type: 'choice', options: [
+    { label: '補給を頼む', primary: true, goto: 'n13', effects: [ { resupply: true } ] },
+    { label: '今はいい', goto: 'end' } ] },
+  n13: { type: 'say', who: 'takahashi_ren', next: 'end', text: '補給が済みました。タンクは {dv.remaining} まで回復しています。消費した在庫は台帳に付けてあります。' },
+  n20: { type: 'say', who: 'takahashi_ren', next: 'end', text: '接舷中ではありますが、在庫が足りません（要：推進剤ストック 15・補給物資 10・資金 20）。調達が先です。港の手続きは私が段取りします。' },
+  n30: { type: 'say', who: 'takahashi_ren', next: 'end', text: '今は接舷していないので、給油はできません。推進剤は港で入れるのが本筋ですから。接舷したら声をかけてください。その場で段取りします。' }
+} },
+guide_consult: { title: '教導相談（榊原）', start: 'n01', nodes: {
+  n01: { type: 'say', who: 'sakurabara_rin', next: 'n02', text: '船長、教導の榊原です。現在の案内は「{guide.objective}」です。当直への委任範囲は {delegation.scope_name} になっています。' },
+  n02: { type: 'choice', options: [
+    { label: '委任範囲を確認・変更したい', primary: true, goto: 'end', effects: [ { start_conv: 'delegation_scope' } ] },
+    { label: '委任を解除したい', when: 'state:tutorial.delegated == true', goto: 'n03', effects: [ { undelegate: true } ] },
+    { label: '案内は以上でいい', goto: 'end' } ] },
+  n03: { type: 'say', who: 'sakurabara_rin', next: 'end', text: '委任を解除しました。これ以降は定型のことも都度お伺いします。任せたくなったら、また声をかけてください。' }
 } }
 };
 
@@ -7029,7 +8002,7 @@ function updatePlanStatusUI(){
   maybeCruiseIntro();
   if(pe.deviated){
     msgState.alert = { key: 'alert:deviated', title: '計画から逸脱', text: '⚠️ 計画から逸脱しています（このままでは到達不可）。「計画続行」または「計画変更・再計算」を選択してください。' + planGroundsText(pe), actions: 'deviated' };
-    if(!pe._convShown){ pe._convShown = true; setTimeout(() => { try{ startConversation('deviation_consult'); }catch(e){} }, 900); }
+    if(!pe._convShown){ pe._convShown = true; setTimeout(() => { try{ if(!convSuspended) startConversation('deviation_consult'); }catch(e){} }, 900); }
   } else if(pe.manualModified){
     msgState.alert = { key: 'alert:manual', title: '船長命令により修正中（' + pePhaseName(pe.phase) + '）', text: '🛠 船長の命令で計画を修正しています。計画に戻るか、再計算するか選べます。' + planGroundsText(pe), actions: 'manual' };
   } else if(pe.stallAlertActive){
@@ -7095,7 +8068,7 @@ function updateContextUI(){
   const mc = targetMetricsContext();
   document.querySelectorAll('.metric-chip.cond').forEach(el => el.classList.toggle('visible', mc));
   const assist = document.getElementById('btn-assist'); if(assist) assist.style.display = mc ? '' : 'none';
-  const resup = document.getElementById('btn-resupply'); if(resup) resup.style.display = S.docked ? '' : 'none';
+  const resup = document.getElementById('btn-resupply'); if(resup) resup.style.display = 'none'; /* 界面憲法: 補給は高橋との会話から。直接操作ボタンは廃止 */
   // モード切替のアクティブ表示（ドロワーが開いていれば船内モード）
   const dr = document.getElementById('drawer');
   const shipMode = !!(dr && dr.classList.contains('open'));
@@ -7187,7 +8160,7 @@ function updateHUD(){
     }
   }
   { const ct = Math.floor(S.time); document.getElementById('clock').textContent = (Math.floor(ct / 86400) + 1) + '日目 ' + String(Math.floor(ct / 3600) % 24).padStart(2, '0') + ':' + String(Math.floor(ct / 60) % 60).padStart(2, '0'); }
-  document.getElementById('btn-resupply').disabled = !S.docked;
+  document.getElementById('btn-resupply').disabled = !resupplyExecutableHere();
   document.getElementById('btn-assist').disabled = S.docked || S.failed || S.assistUses<=0 || S.dv<=0;
   document.getElementById('assist-left').textContent = S.assistUses;
   updateMissionBanner();
@@ -7355,7 +8328,7 @@ function assistBurn(){
   updateHUD();
 }
 function resupply(){
-  if(!S.docked) return;
+  if(!resupplyExecutableHere()) return;
   if(S.res.prop<15||S.res.sup<10||S.res.cred<20){ playSfx('fail'); logEvent('⚠️ 補給資源が不足（推進剤15／物資10／資金20）。'); return; }
   S.res.prop-=15; S.res.sup-=10; S.res.cred-=20;
   S.dv=S.maxDv;
@@ -7430,16 +8403,19 @@ document.getElementById('btn-plan').addEventListener('click', ()=>{
   if(!S) return;
   if(S.planExec && S.planExec.active && S.planExec.planDoc && !S.docked){ openPlanTracking(); return; }
   if(S.prologue && S.tutorial){
-    const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0];
-    if(S.tutorial.step >= 4){
-      openPlanPanel({ mode:'depart', legType:'simple', routeName:'帰投航路 あおば R0', fixes:'衛星「こよみ」近傍 → ステーション「あおば」', targetBody:S.station, arrivalDist:90, needDock:false, shortChecklist:true });
-    } else {
-      openPlanPanel({ mode:'depart', legType:'simple', routeName:'観光航路 ソル周遊 S1', fixes:'ステーション「あおば」 → 衛星「こよみ」近傍点', targetBody:hab, arrivalDist:12000, needDock:false, shortChecklist:false });
-    }
-  } else {
-    openMissionPlanPanel();
+    /* 界面憲法: このボタンは「見るだけ」。計画会議は航法の三浦に話しかけて始まる。
+       既に会議が開いている場合、その証拠表示（計画パネル）の開閉だけを行う */
+    const pp = document.getElementById('plan-panel');
+    if(planPanelState && !planPanelState.tracking && pp){ pp.classList.toggle('open'); return; }
+    setStatusMsg('🗣 計画会議は航法の三浦に話しかけて始めます');
+    return;
   }
+  openMissionPlanPanel();
 });
+/* 話しかける入口（界面憲法） */
+document.getElementById('btn-talk-nav').addEventListener('click', ()=>{ playSfx('click'); talkToNavigator(); });
+document.getElementById('btn-talk-sup').addEventListener('click', ()=>{ playSfx('click'); talkToSupply(); });
+document.getElementById('btn-talk-guide').addEventListener('click', ()=>{ playSfx('click'); talkToGuide(); });
 document.getElementById('btn-plan-close').addEventListener('click', ()=>{ playSfx('click'); closePlanPanel(); updatePlanLineMesh(); });
 document.getElementById('btn-depart').addEventListener('click', confirmDeparture);
 
@@ -7760,9 +8736,34 @@ function updateNpcLabels(){
     el.textContent = c.name;
     el.style.left = lx + 'px';
     el.style.top = ly + 'px';
+    /* #77: ラベルタップでその天体の軌道線を ON/OFF（直接操作）。消えている間はラベルを淡くする */
+    el.dataset.bodyName = c.name;
+    el.dataset.bodyCat = c.cat;
+    const okKey = (typeof orbitKeyForLabel === 'function') ? orbitKeyForLabel(c.name, c.cat) : null;
+    el.classList.toggle('orbit-off', !!(okKey && orbitOff.has(okKey)));
+    el.title = okKey ? 'タップで軌道線の表示を切り替え' : '';
   });
   for(let i = cs.length; i < npcLabelPool.length; i++) npcLabelPool[i].style.display = 'none';
 }
+
+/* #77: 名前ラベルのタップで軌道線を切り替える（委譲で1回だけ登録） */
+(function(){
+  const wrap = document.getElementById('npc-labels');
+  if(wrap) wrap.addEventListener('click', (e) => {
+    const el = e.target && e.target.closest ? e.target.closest('.npc-label') : null;
+    if(!el || !el.dataset.bodyName) return;
+    if(toggleOrbitByLabel(el.dataset.bodyName, el.dataset.bodyCat)){
+      playSfx('click');
+      const b = (S && S.planets ? S.planets.find(p => p.name === el.dataset.bodyName) : null) || (S && S.station && el.dataset.bodyCat === 'station' ? S.station : null);
+      if(b) tapPulse = { pos: [b.x, b.y, b.z], t0: performance.now() };
+    }
+  });
+  const dbl = document.getElementById('dest-body-label');
+  if(dbl) dbl.addEventListener('click', () => {
+    const cd = (typeof courseDataCached === 'function') ? courseDataCached() : null;
+    if(cd && cd.targetBody && toggleOrbitByLabel(cd.targetBody.name, 'target')) playSfx('click');
+  });
+})();
 
 // ---------- 船内生活（巡航時間） ----------
 const CHAT_LINES = {
@@ -8324,6 +9325,7 @@ function openFrameSelector(selId){
   }).join('');
   html += '<div class="frame-sep"></div>';
   html += '<button type="button" data-fref="auto"' + (frameState.mode === 'auto' ? ' class="active"' : '') + '><span>AUTOに戻す</span>' + (frameState.mode === 'auto' ? '<span>●</span>' : '') + '</button>';
+  html += '<div style="font-size:10px;color:var(--muted);padding:5px 4px 2px">基準を選ぶと、その天体を中心に据えた図になります（周りの軌道線が基準の目印です）</div>';
   el.innerHTML = html;
   el.querySelectorAll('button[data-fref]').forEach(b => b.addEventListener('click', (e)=>{
     e.stopPropagation();
@@ -8332,10 +9334,16 @@ function openFrameSelector(selId){
     if(v === 'auto'){ frameState.mode = 'auto'; cam.manualHold = false; camDistTarget = camDistForRange(chartState.range); }
     else {
       frameState.mode = 'manual'; frameState.ref = v;
-      /* 手動選択では注視点を基準天体へ移すため、距離も基準の既定値へ寄せる
-         （そのままでは近すぎ／遠すぎて「変わらない」画になる） */
+      /* #77 基準の仕様: 基準を選ぶ＝その天体を中心に据えた図が得られること。
+         原点（描画座標）とカメラ（所在）を分離したままにすると、「つむぎ基準」と
+         表示されても画面中心は自船のまま、という食い違いが起きた（台帳 01:02）。
+         手動の見方保持は解除し、注視点を基準天体へ、距離はその階層が収まる値へ寄せる。
+         惑星基準は駅軌道（約515k）と月軌道（約360k）の両方が入る距離にする */
+      if(typeof viewState !== 'undefined'){ viewState.mode = 'auto'; viewState.view = null; }
       cam.manualHold = false;
-      camDistTarget = v === 'station' ? 320 : (v === 'planet' ? 950000 : 170000000);
+      cam.follow = true;
+      camDistTarget = v === 'station' ? 320 : (v === 'planet' ? 1400000 : 170000000);
+      if(typeof refreshViewBar === 'function') refreshViewBar();
     }
     el.classList.remove('open');
     _lastFrameChipKey = '';
@@ -8830,7 +9838,7 @@ function buildDebugLog(){
     return es.length ? es.map(([k, v]) => '  ' + k + ' = ' + v).join('\n') : '(スカラー値なし)';
   };
   push('=== space-simulator debug log ===');
-  push('version: v0.6.2');
+  push('version: ' + BUILD_VERSION);
   push('exported: ' + new Date().toISOString());
   if(!S){ push('(ゲーム未開始)'); return lines.join('\n'); }
   push('shipTime: ' + formatShipTime(S.time) + ' (S.time=' + Math.round(S.time) + ') warp=' + S.warp);
@@ -8890,6 +9898,29 @@ document.addEventListener('visibilitychange', ()=>{
   /* rAF 再開時のギャップ検出と二重に数えないための目印（実際の追いつきは animate 側で行う） */
   if(document.hidden) lastT = performance.now();
 });
+/* 窓喪失・再計画の明示（台帳 2026-11-18 00:43）: 出発窓の再検証で窓が後ろへずれた事実は、
+   飛行側が日誌に残すだけでは船長が気づけない（HUD の「13分→3時間」の変化で察するしか
+   なかった）。表示層で waitUntil の後ろ倒しを検出し、目立つバナーで必ず知らせる。
+   飛行側の再検証・再計画そのものには一切触らない（読み取り専用の監視） */
+let _winWatchUntil = null, _winAlertTimer = null;
+function showWindowAlert(text){
+  const el = document.getElementById('window-alert');
+  if(!el) return;
+  el.textContent = text;
+  el.style.display = 'block';
+  el.onclick = () => { el.style.display = 'none'; if(_winAlertTimer){ clearTimeout(_winAlertTimer); _winAlertTimer = null; } };
+  if(_winAlertTimer) clearTimeout(_winAlertTimer);
+  _winAlertTimer = setTimeout(() => { el.style.display = 'none'; _winAlertTimer = null; }, 20000);
+}
+function checkWindowShiftNotice(){
+  const pe = S && S.planExec;
+  if(!pe || !pe.active || pe.phase !== 'waitwin'){ _winWatchUntil = null; return; }
+  const until = pe.waitUntil || 0;
+  if(_winWatchUntil != null && until > _winWatchUntil + 300){
+    showWindowAlert('🕐 出発窓が成立しなかったため、窓を後ろへずらしました。新しい出発は ' + fmtEtaShort(until) + '（あと ' + fmtDuration(Math.max(0, until - S.time)) + '）。このまま待機を続けます。');
+  }
+  _winWatchUntil = until;
+}
 function animate(now){
   requestAnimationFrame(animate);
   updateBgm();
@@ -8909,7 +9940,7 @@ function animate(now){
       if(S.trafficTimer<=0){ triggerTrafficAdvisory(); S.trafficTimer=5400+Math.random()*3600; }
     }
     if(!catchUpState) avoidanceWatch();
-    updatePortCraft(); syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker(); updateNpcLabels(); updateDestLabels(); refreshViewBar();
+    updatePortCraft(); syncMeshes(); updateCamera(); updateHUD(); updateTargetMarker(); updateNpcLabels(); updateDestLabels(); refreshViewBar(); checkWindowShiftNotice();
     uiTimer+=dt; panelTimer+=dt; galaxyTimer+=dt;
     if(uiTimer>0.2){ uiTimer=0; updateNextActionUI(); updatePlanStatusUI(); updateAvoidanceAlert(); updateContextUI(); updateTrafficAndChart(); checkContactEntries(); }
     if(panelTimer>0.25){ panelTimer=0; updatePanels(); }

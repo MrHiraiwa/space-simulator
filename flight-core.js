@@ -698,6 +698,41 @@ function captureOrbitStable72h(ship, target, starGM, planetsRaw){
   }
   return true;
 }
+/* 捕捉の発火幾何（#76 で単一化）: 推定器と実飛行が共用する「今ここで捕捉噴射を
+   撃ってよいか」の唯一の判定。到着の定義が推定と判定で食い違う事故（v0.7 実測）
+   を断つため、両者はこの関数を通してだけ捕捉を許可する。3 つの枝:
+     1) 捕捉半径フロア（capR）以遠で、動径速度がほぼゼロ（近点／遠点の通過時）。
+        旧規則は closing <= 0.05（接近が止んだ）だけで通したため、近点を高速で
+        通過した後の離行脚でも発火し、非束縛のフライバイを力任せの噴射で捕捉に
+        化けさせた（実測: 近点 5,075・相対速度 20.3 の通過の離行側、距離 9,122・
+        離行 11.6 で捕捉が発火し、約束の会合より 11.5 時間早い「到着」になった）。
+        動径速度は絶対値で見る（離行は捕捉の幾何ではない）。
+     2) 束縛軌道で遠点が capR 未満（軌道全体が捕捉帯の内側）なら随時。
+     3) 近点がフロア未満でも、捕捉後の軌道が安全帯に収まる束縛軌道なら可。
+   2) 3) は束縛（eOrb < 0）が前提なので、離行中でも「去り行く」ことにはならない。 */
+function captureGateAt(ship, target, planetsRaw, arrivalDist){
+  if(!target || !(target.gm > 0)) return false;
+  const info = relInfo(ship, target);
+  const capSr = surfaceRadius(target);
+  const capR = Math.min(capSr + impactMargin(capSr) + 4200, arrivalDist * 0.9);
+  if(info.dist >= capR && Math.abs(info.closing) <= 0.05) return true;
+  if(info.closing <= 0.05){
+    const eOrb = info.rel * info.rel / 2 - target.gm / Math.max(info.dist, 1);
+    if(eOrb < 0 && 2 * (-target.gm / (2 * eOrb)) - info.dist < capR) return true;
+    if(eOrb < 0 && info.dist >= capSr + impactMargin(capSr) + 800 && captureSettlesOk(ship, target, planetsRaw)) return true;
+  }
+  return false;
+}
+/* 到着の確定条件（#76 で単一化）: 捕捉後の状態が「安定な終了状態」か。
+   束縛軌道であり、近点が安全フロア（表面＋マージン＋800）を割らないこと。
+   推定器の捕捉後確認と実飛行の到着確定が共用する。捕捉噴射の完了をもって
+   到着とせず、この条件を滑空確認の末に満たした時だけ到着が成立する。 */
+function captureOrbitConfirmOk(ship, target){
+  const orb = orbitPeriapsis(ship, target);
+  if(!orb || !(orb.energy < 0)) return false;
+  const sr = surfaceRadius(target);
+  return orb.periapsis >= sr + impactMargin(sr) + 800;
+}
 function computeCapture(ship, target, planetsRaw){
   if(!target || !(target.gm > 0)) return null;
   const rx = ship.x - target.x, ry = ship.y - target.y, rz = ship.z - target.z;
@@ -1247,14 +1282,14 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
            捕捉前の接近擦過は到着系が処理済みの幾何で、捕捉軌道の安定性とは別。
            あわせて捕捉軌道そのものの近点・束縛も解析的に確認する（実飛行側と
            同じ規則: 近点が安全フロア未満・非束縛の軌道は安定な終了状態ではない）。 */
-        const orbC = orbitPeriapsis(s, t);
         /* 到着確認で遠点の上限は見ない（v0.6.4 修正）: 三体場の瞬時遠点は
            滑空の間にも上限の数 % を跨いで振動する（実測: 二体遠点 14,954 の
            軌道で瞬時距離が 15,528 まで伸びた）。遠点の統制は発火時の帯判定＋
            120 時間の数値確認が担っており、ここでは束縛・近点フロア・新たな
            衝突/擦過がないことだけを確認する（上限つきで確認すると、安定な
-           到着を「不成立」と誤判定し、位相によって計画が点滅した）。 */
-        const orbitOk = !!(orbC && orbC.energy < 0 && orbC.periapsis >= surfaceRadius(t) + impactMargin(surfaceRadius(t)) + 800);
+           到着を「不成立」と誤判定し、位相によって計画が点滅した）。
+           判定は実飛行と共用の captureOrbitConfirmOk（#76 で単一化）。 */
+        const orbitOk = captureOrbitConfirmOk(s, t);
         const okCap = info.dist <= arrivalDist * 3 && hitCount === capHitBase && crossCount === capCrossBase && orbitOk;
         job.result = Object.assign({ ok: okCap, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true;
       }
@@ -1271,21 +1306,9 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
            （帰還側の前提＝捕捉状態で揃える）。 */
         if(verifyPassCoast()){
           if(timeTotal - lastZoneFixT >= 20){ lastZoneFixT = timeTotal; applyDv(computeApproach(s, t, starGM, scale, pls)); }
-        } else if((() => {
-          /* 捕捉の発火条件は実飛行と同じ（半径が近点下限フロア以上で近点通過時。
-             軌道全体がフロア未満の束縛軌道は近点で可） */
-          const capSrE = surfaceRadius(t);
-          const capRE = Math.min(capSrE + impactMargin(capSrE) + 4200, arrivalDist * 0.9);
-          if(info.dist >= capRE && info.closing <= 0.05) return true;
-          if(info.closing <= 0.05){
-            const eOrbE = info.rel * info.rel / 2 - t.gm / Math.max(info.dist, 1);
-            if(eOrbE < 0 && 2 * (-t.gm / (2 * eOrbE)) - info.dist < capRE) return true;
-            /* 近点通過での捕捉（v0.6.4、実飛行と同一規則）: 近点がフロア未満
-               でも、捕捉後の軌道が安全帯に収まるなら近点で捕捉する */
-            if(eOrbE < 0 && info.dist >= capSrE + impactMargin(capSrE) + 800 && captureSettlesOk(s, t, pls)) return true;
-          }
-          return false;
-        })()){
+        } else if(captureGateAt(s, t, pls, arrivalDist)){
+          /* 捕捉の発火条件は実飛行と共用の captureGateAt（#76 で単一化）。
+             旧インライン判定は branch 1 が離行脚でも発火する欠陥を含んでいた */
           /* 捕捉は近点通過の瞬間に撃つ: 動径成分がほぼ消え、接線速度の帯調整
              だけで済むため最も安い（圏突入直後の捕捉は動径落下の殺しが高くつく）。 */
           const cap = computeCapture(s, t, pls);
@@ -1480,5 +1503,5 @@ function createPlanEstimateEnsembleJob(ship, target, starGM, closingScale, opts)
 }
 
 /* ==== /ORDER LOGIC ==== */
-return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, createPlanEstimateJob, createPlanEstimateEnsembleJob, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
+return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, captureGateAt, captureOrbitConfirmOk, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, createPlanEstimateJob, createPlanEstimateEnsembleJob, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
 }));
