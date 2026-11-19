@@ -2973,7 +2973,7 @@ function buildWaypoints(cfg, est, opts){
   wps.push(laneWp);
   if(wasDocked && depAnchor && depSep){
     const depEta = 110;
-    const off = { x: depSep.x * 700, y: depSep.y * 700, z: depSep.z * 700 };
+    const off = { x: depSep.x * 210, y: depSep.y * 210, z: depSep.z * 210 };
     wps.push({
       id: 'departFix', name: '出域フィックス', kind: 'depart', fix: true, eta: depEta, t: depEta,
       anchor: depAnchor, offset: off,
@@ -3942,7 +3942,7 @@ function confirmDepartureRest(ctx){
     depT: 0,
     depSep: depSep,
     depFix: null,
-    depFixDist0: 700,
+    depFixDist0: 210,
     fixes: fixes,
     departFix: departFix,
     iaf: iaf,
@@ -4143,7 +4143,7 @@ function setPlanPhase(pe, nextPhase){
   if(typeof updatePlanLineMesh === 'function') updatePlanLineMesh();
 }
 /* 港内操船（離舷・港内航行の操船補助噴射）の見込み Δv。実績は steerShipTo が dvSteer へ厳密に計上する */
-const HARBOR_STEER_DV = 11;
+const HARBOR_STEER_DV = 3;
 /* 港内操船の見込み（v0.6.4）: 推定が港内シミュレーションの実測値（dvHarbor）を
    持てばそれを使い、持たない推定（飛行中の再推定など）では従来の固定見込みに落とす */
 const harborDvFor = (est) => (est && est.dvHarbor != null) ? est.dvHarbor : HARBOR_STEER_DV;
@@ -4170,28 +4170,24 @@ function updateDepartureOps(simDt){
     pe.depSep = computeDepSep(anchor, pe.targetBody);
   }
   const distA = Math.hypot(S.ship.x - anchor.x, S.ship.y - anchor.y, S.ship.z - anchor.z);
+  /* 港内プロファイル（2026-11-19 出発モデル組み直し、推定器 simulateHarborExit
+     と同一則）: バース（錨から depSep 方向に約60）から同じ方向へ直線で離れ、
+     錨から 210 の出域フィックスで港内航行を終える。速度は残距離で緩み、
+     出域時の相対速度は約0.5。本航行の計画はこの状態を引き継ぐため、
+     横向きの速度をためたまま本航行へ入ることはない。 */
+  const remain = Math.max(0, 210 - distA);
+  const spd = Math.min(0.4 + pe.depT * 0.25, Math.max(0.5, Math.min(2.2, 0.5 + remain / 90)));
+  steerShipTo(anchor.vx + pe.depSep.x * spd, anchor.vy + pe.depSep.y * spd, anchor.vz + pe.depSep.z * spd, 3.0, simDt);
   if(pe.phase === 'undock'){
-    const spd = Math.min(3.0, 0.3 + pe.depT * 0.3);
-    steerShipTo(anchor.vx + pe.depSep.x * spd, anchor.vy + pe.depSep.y * spd, anchor.vz + pe.depSep.z * spd, 3.0, simDt);
-    if(pe.depT >= 5 && distA >= 130){
-      setPlanPhase(pe, 'harbor'); pe.depT = 0;
+    if(distA >= 130){
+      setPlanPhase(pe, 'harbor');
       logEvent('⚓ 三浦: 離舷完了。港内航行へ移行します。');
-      showOfficerPopup(HELM, '離舷完了。港内航行に入ります。制限速度を守ります。');
-      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、港内航行を許可。出域点へ進め。港内制限速度 10。');
+      showOfficerPopup(HELM, '離舷完了。港内航行に入ります。');
+      logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、港内航行を許可。出域点へ進め。');
     }
     return;
   }
-  const fixPos = pe.departFix ? resolveFixPos(pe.departFix) : [anchor.x + pe.depSep.x * 700, anchor.y + pe.depSep.y * 700, anchor.z + pe.depSep.z * 700];
-  const distToFix = fixPos ? Math.hypot(S.ship.x - fixPos[0], S.ship.y - fixPos[1], S.ship.z - fixPos[2]) : Infinity;
-  /* 港内速度プロファイル（v0.6.2）: 制限速度（10）は上限であって目標ではない。
-     一律 10 で出域すると、その速度ベクトルが本航行の相対幾何を壊し、初回
-     インターセプトが跳ね上がる（実測 11.6 → 21.7）。逆に一律 3 では港内
-     通過に時間がかかりすぎる。そこで「出域点から遠い間は制限速度近く、
-     近づくにつれて減速し、出域時は約 3」というプロファイルにする。
-     出域速度 ≈3 は推定器の開始状態モデル（depSep×3）と一致する。 */
-  const harborSpd = Math.max(3, Math.min(8, distToFix / 90));
-  steerShipTo(anchor.vx + pe.depSep.x * harborSpd, anchor.vy + pe.depSep.y * harborSpd, anchor.vz + pe.depSep.z * harborSpd, 3.0, simDt);
-  if(!pe.depTrafficNoted && distA >= 350){
+  if(!pe.depTrafficNoted && distA >= 100){
     pe.depTrafficNoted = true;
     const hold = (S.portCraft || []).find(c => c.cat === 'holding');
     logEvent('📡 あおば管制: 港内は混雑しています。' + (hold ? '沖待ちの' + hold.name + 'と接舷船に注意。' : '接舷船と沖待ち船に注意。') + '制限速度を維持せよ。');
@@ -4200,7 +4196,7 @@ function updateDepartureOps(simDt){
       setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。宙図を見れば、周りの船と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
     }
   }
-  if(distToFix <= 150 || distA > 950){
+  if(distA >= 210){
     setPlanPhase(pe, 'depart');
     logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出域を確認。航路管制へ移管する。良い航行を。');
     showOfficerPopup(HELM, '出域点に到達。ここから本航行に入ります。');
@@ -5408,7 +5404,7 @@ let trafficTrajGroup = null, trafficTrajRef = null, trafficTrajBuiltAt = -1e18, 
 let trafficTrajFrameKey = ''; /* #80: 基準天体が変わったら申告軌道も焼き直す */ /* 計画線を焼いた時点のフレーム基準点（慣性座標）。syncMeshes が現在基準との差分を毎フレーム補正する */
 /* ===== 2b描画トラック（台帳#58/#59/#61/#66/#54）: リボン・目的地軌道・ゴースト・港シンボル・レーン帯 =====
    いずれも表示専用。飛行・推定・判定の数値には一切触らない。 */
-let ribbonHalo = null, ribbonCore = null, ribbonPast = null, ribbonArrows = [], ribbonTicks = [], destArcLine = null, destArcArrows = [], destGhostGroup = null, destGhostSphere = null, destGhostRing = null, destMidChip = null, stationSymbol = null, laneBandMesh = null, laneGateMesh = null, tapPulseSprite = null;
+let ribbonHalo = null, ribbonCore = null, ribbonPast = null, ribbonArrows = [], ribbonTicks = [], destArcLine = null, destArcArrows = [], destGhostGroup = null, destGhostSphere = null, destGhostRing = null, destMidChip = null, stationSymbol = null, laneBandMesh = null, tapPulseSprite = null;
 let departChip = null, departRing = null, departChipKey = ''; /* #77: 出発窓待機中の出発点マーカー */
 let orbitGroup = null, orbitLines = [], orbitBuiltAt = -1e18, orbitRealAt = 0; const orbitOff = new Set(); /* #77: 全階層の軌道線。orbitOff はラベルタップで消した天体名の集合 */
 let tapPulse = null; /* {pos:[x,y,z] 絶対座標, t0: performance.now()} */
@@ -6363,8 +6359,6 @@ function buildCourseVizObjects(){
   bandGeo.setIndex([0, 1, 2, 1, 3, 2, 2, 3, 4, 3, 5, 4, 4, 5, 6, 5, 7, 6]);
   laneBandMesh = new THREE.Mesh(bandGeo, new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.10, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
   laneBandMesh.frustumCulled = false; laneBandMesh.renderOrder = 12; laneBandMesh.visible = false; sysGroup.add(laneBandMesh);
-  laneGateMesh = new THREE.Mesh(new THREE.TorusGeometry(26, 1.7, 8, 36), new THREE.MeshBasicMaterial({ color: 0x2dd4bf, transparent: true, opacity: 0.55, depthWrite: false }));
-  laneGateMesh.frustumCulled = false; laneGateMesh.renderOrder = 12; laneGateMesh.visible = false; sysGroup.add(laneGateMesh);
   tapPulseSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: wpRingTexture(false, false), color: 0xffd166, transparent: true, opacity: 0, depthWrite: false, depthTest: false }));
   tapPulseSprite.renderOrder = 21; tapPulseSprite.visible = false; sysGroup.add(tapPulseSprite);
 }
@@ -9245,30 +9239,26 @@ function updatePortCraft(){
       const d = Math.hypot(b.fx, b.fy);
       m.position.set(st.x + laneDirW.x * d + N.x * b.fz - ref.x, st.y + laneDirW.y * d + N.y * b.fz - ref.y, st.z + laneDirW.z * d + N.z * b.fz - ref.z);
     });
-    /* レーン帯（コリドー）と出域ゲート（レーン上の距離700の輪）も同じ世界方向で置く。
-       effW が無い（航路未決定）間は帯もゲートも出さない */
-    if(laneBandMesh && laneGateMesh && effW){
+    /* レーン帯（港内コリドー）: バース（錨から約60）から出域フィックス
+       （210）までの短い帯を、航路が決まっている間だけ同じ世界方向で置く。
+       物理的な「ゲート」の輪は廃止した（2026-11-19 本人裁定: 出域フィックス
+       は計画上の通過点であって、輪をくぐらせるものではない） */
+    if(laneBandMesh && effW){
       const dirW = laneDirW;
       let px = dirW.y * N.z - dirW.z * N.y, py = dirW.z * N.x - dirW.x * N.z, pz = dirW.x * N.y - dirW.y * N.x;
       let pm = Math.hypot(px, py, pz);
       if(pm < 1e-6){ px = dirW.y; py = dirW.z; pz = dirW.x; pm = Math.hypot(px, py, pz) || 1; }
       px /= pm; py /= pm; pz /= pm;
       const bp = laneBandMesh.geometry.attributes.position.array;
-      [120, 700, 1300, 2050].forEach((d, k) => {
+      [55, 105, 160, 210].forEach((d, k) => {
         const cx = st.x + dirW.x * d, cy = st.y + dirW.y * d, cz = st.z + dirW.z * d;
-        bp[k * 6] = cx - px * 24 - ref.x; bp[k * 6 + 1] = cy - py * 24 - ref.y; bp[k * 6 + 2] = cz - pz * 24 - ref.z;
-        bp[k * 6 + 3] = cx + px * 24 - ref.x; bp[k * 6 + 4] = cy + py * 24 - ref.y; bp[k * 6 + 5] = cz + pz * 24 - ref.z;
+        bp[k * 6] = cx - px * 12 - ref.x; bp[k * 6 + 1] = cy - py * 12 - ref.y; bp[k * 6 + 2] = cz - pz * 12 - ref.z;
+        bp[k * 6 + 3] = cx + px * 12 - ref.x; bp[k * 6 + 4] = cy + py * 12 - ref.y; bp[k * 6 + 5] = cz + pz * 12 - ref.z;
       });
       laneBandMesh.geometry.attributes.position.needsUpdate = true;
       laneBandMesh.visible = true;
       laneBandMesh.material.opacity = 0.13;
-      const gx = st.x + dirW.x * 700 - ref.x, gy = st.y + dirW.y * 700 - ref.y, gz = st.z + dirW.z * 700 - ref.z;
-      laneGateMesh.position.set(gx, gy, gz);
-      _lookTmp.set(gx + dirW.x, gy + dirW.y, gz + dirW.z);
-      laneGateMesh.lookAt(_lookTmp);
-      laneGateMesh.visible = true;
-      laneGateMesh.material.opacity = 0.6;
-    } else if(laneBandMesh && laneGateMesh){ laneBandMesh.visible = false; laneGateMesh.visible = false; }
+    } else if(laneBandMesh){ laneBandMesh.visible = false; }
   }
 }
 let laneBeaconMeshes = [];

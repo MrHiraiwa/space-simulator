@@ -967,7 +967,8 @@ function predictClosest(ship, target, starGM, tMax, pl, hMax){
 }
 /* 港内出発のシミュレーション（v0.6.4、課題2）: 実飛行の港内航行
    （updateDepartureOps）は「錨の速度＋depSep×プロファイル速度」への速度追従
-   操船で、出域点（錨＋depSep×700）への接近で出域する。したがって本航行の
+   操船で、出域フィックス（錨＋depSep×210、2026-11-19 に短縮）への到達で
+   出域する。したがって本航行の
    実開始状態（出域時の位置・速度）は錨と目標の幾何で決まる湧出状態であり、
    単純なモデル状態（depSep×900・+3.2）で代用すると位相によって誘導の解の
    族が変わり、実消費が推定を大きく上回る（実測 Δ=240: 推定の初回噴射 23.4・
@@ -984,7 +985,7 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw){
   const a = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   const h = 2;
-  let t = 0, depT = 0, dvHarbor = 0, phase = 'undock';
+  let t = 0, dvHarbor = 0;
   const steer = (tvx, tvy, tvz) => {
     const cx = tvx - s.vx, cy = tvy - s.vy, cz = tvz - s.vz;
     const mag = Math.hypot(cx, cy, cz);
@@ -994,23 +995,22 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw){
     s.vx += cx * f; s.vy += cy * f; s.vz += cz * f;
     dvHarbor += applied;
   };
-  while(t < 900){
+  /* 港内プロファイル（2026-11-19 組み直し、実飛行 updateDepartureOps と同一則）:
+     バースは錨中心から depSep 方向に約60の位置にあり、分離はそのまま同じ
+     方向への直線移動になる。錨中心から HARBOR_FIX_DIST (=210) の出域フィックス
+     まで、速度は「残距離で決まる上限（近くで緩む）」と「離舷直後の緩やかな
+     立ち上がり」の小さい方。出域時の相対速度は約0.5と小さく、本航行の計画は
+     この状態をそのまま引き継ぐ（横向きの速度をため込まない）。 */
+  while(t < 600){
     for(let i = 0; i < pls.length; i++) rk4StepState(pls[i], h, pls[i].isMoon ? accs[i] : sAcc);
     rk4StepState(a, h, accFull);
     rk4StepState(s, h, accFull);
-    t += h; depT += h;
+    t += h;
     const distA = Math.hypot(s.x - a.x, s.y - a.y, s.z - a.z);
-    if(phase === 'undock'){
-      const spd = Math.min(3.0, 0.3 + depT * 0.3);
-      steer(a.vx + depSep.x * spd, a.vy + depSep.y * spd, a.vz + depSep.z * spd);
-      if(depT >= 5 && distA >= 130){ phase = 'harbor'; depT = 0; }
-    } else {
-      const fx = a.x + depSep.x * 700, fy = a.y + depSep.y * 700, fz = a.z + depSep.z * 700;
-      const distToFix = Math.hypot(s.x - fx, s.y - fy, s.z - fz);
-      const harborSpd = Math.max(3, Math.min(8, distToFix / 90));
-      steer(a.vx + depSep.x * harborSpd, a.vy + depSep.y * harborSpd, a.vz + depSep.z * harborSpd);
-      if(distToFix <= 150 || distA > 950) break;
-    }
+    const remain = Math.max(0, 210 - distA);
+    const spd = Math.min(0.4 + t * 0.25, Math.max(0.5, Math.min(2.2, 0.5 + remain / 90)));
+    steer(a.vx + depSep.x * spd, a.vy + depSep.y * spd, a.vz + depSep.z * spd);
+    if(distA >= 210) break;
   }
   return { state: s, dvHarbor, time: t };
 }
@@ -1451,22 +1451,24 @@ function buildSystemPlanets(sys){
 }
 
 function computeDepSep(anchor, target){
+  /* 出発分離の方向（2026-11-19 出発モデル組み直し）: 旧モデルは「星から外向き
+     0.55＋進行方向 0.85＋目標方向 0.9」の混合で、位相によっては目的地と70°も
+     ずれた向きに離舷し、港内で横向きの速度をためて本航行の初手で軌道が横に
+     折れた。分離は港の形で決まる短い移動である: 自船バースのアーム方向
+     （モデル座標 berth_06 = (300, 38, 0) を、接舷位置の計算と同一の基底
+     R／T'／N で写した向き）へ、ステーションの構造を離れるまで進む。
+     目標は関与しない——向きは港の事実で、航路はその先で計画が決める。
+     target 引数は呼び出し互換のため残す。 */
   if(!anchor) return { x: 1, y: 0, z: 0 };
   const rp = Math.hypot(anchor.x, anchor.y, anchor.z) || 1;
-  const radial = { x: anchor.x / rp, y: anchor.y / rp, z: anchor.z / rp };
+  const R = { x: anchor.x / rp, y: anchor.y / rp, z: anchor.z / rp };
   const vp = Math.hypot(anchor.vx, anchor.vy, anchor.vz) || 1;
-  const prog = { x: anchor.vx / vp, y: anchor.vy / vp, z: anchor.vz / vp };
-  let sx = radial.x * 0.55 + prog.x * 0.85, sy = radial.y * 0.55 + prog.y * 0.85, sz = radial.z * 0.55 + prog.z * 0.85;
-  /* 出発レーンは目標の側へ寄せる（v0.6.2）: 港内出発は制限速度 10 でレーン
-     方向へ加速して終わる。その速度が目標と無関係だと、出発直後の相対幾何を
-     壊して本航行の初回噴射が高くつく（実測: 相対速度 2.25 → 7.93 に悪化し、
-     インターセプトが 11.6 → 21.7 に増えた）。レーン自体は港を出るための
-     もので、向きは管制が航路に合わせて選ぶ——目標方向へブレンドする。 */
-  if(target){
-    const tx = target.x - anchor.x, ty = target.y - anchor.y, tz = target.z - anchor.z;
-    const tm = Math.hypot(tx, ty, tz);
-    if(tm > 1){ sx += (tx / tm) * 0.9; sy += (ty / tm) * 0.9; sz += (tz / tm) * 0.9; }
-  }
+  const Tv = { x: anchor.vx / vp, y: anchor.vy / vp, z: anchor.vz / vp };
+  let N = { x: R.y * Tv.z - R.z * Tv.y, y: R.z * Tv.x - R.x * Tv.z, z: R.x * Tv.y - R.y * Tv.x };
+  const nm = Math.hypot(N.x, N.y, N.z) || 1;
+  N = { x: N.x / nm, y: N.y / nm, z: N.z / nm };
+  const T = { x: N.y * R.z - N.z * R.y, y: N.z * R.x - N.x * R.z, z: N.x * R.y - N.y * R.x };
+  const sx = R.x * 300 + T.x * 38, sy = R.y * 300 + T.y * 38, sz = R.z * 300 + T.z * 38;
   const sm = Math.hypot(sx, sy, sz) || 1;
   return { x: sx / sm, y: sy / sm, z: sz / sm };
 }
