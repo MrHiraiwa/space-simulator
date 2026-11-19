@@ -2884,6 +2884,9 @@ function toggleHoldMode(){
   updateOrderBar();
 }
 
+/* 天体の状態スナップショット（推定への受け渡し用: 位置と速度だけを複写する） */
+function snapBodyState(b){ return b ? { x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz } : null; }
+
 // ---------- 航宙計画パネル & 計画実行 ----------
 let planPanelState = null;
 let checklistTimer = null;
@@ -3707,7 +3710,7 @@ function openPlanPanel(cfg){
       planPanelState.windowScanSpan = waitSoFar;
       const shipState = (wasDocked && anchorSnap) ? { x: anchorSnap.x, y: anchorSnap.y, z: anchorSnap.z, vx: anchorSnap.vx, vy: anchorSnap.vy, vz: anchorSnap.vz } : shipSnap;
       const snapDepSep = wasDocked ? computeDepSep(anchorSnap, targetSnap) : null;
-      const estOpts = { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: snapDepSep };
+      const estOpts = { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: snapDepSep, depAnchor: (wasDocked && anchorSnap) ? snapBodyState(anchorSnap) : null };
       const nextStep = () => { renderVars(); renderChecklist(false); setTimeout(probeStep, 30); };
       pumpWinJob(createPlanEstimateJob(shipState, targetSnap, starGM, 1.0, estOpts), (estStd) => {
         if(!probeFeasible(estStd)){ nextStep(); return; }
@@ -3779,7 +3782,7 @@ function openPlanPanel(cfg){
       return;
     }
     const v = variants[estIdx++];
-    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null });
+    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null });
     const pumpEst = () => {
       if(!planPanelState || planPanelState.cfg !== cfg) return;
       if(stepJobBudget(job, 120)){
@@ -3962,6 +3965,17 @@ function confirmDepartureRest(ctx){
     planDoc: { routeName: cfg.routeName, course: courseLabel(v.id), legs: v.est.legs || [], rows: docRows, waypoints: finalWps, fixes: fixes, plannedTotal: v.est.dvTotal + harborDv, plannedTime: v.est.timeTotal, dvAtStart: S.dv, finalRel: v.est.finalRel },
     deviation: false,
     lastDevReport: -999,
+    /* 計画追従（2026-11-19 組み直し）: 巡航誘導は承認した計画のサンプル軌跡を
+       時刻で追う。trackT0 は本航行の開始時刻（接舷出発では出域時、非接舷では
+       コミット時）で、サンプルの時刻系の原点。trackDur はサンプルが覆う
+       本航行の所要（推定総時間から港内分を除いたもの）。 */
+    trackT0: null,
+    trackDur: (v.est.sampleTimes && v.est.sampleTimes.length > 1) ? Math.max(1, v.est.sampleTimes[v.est.sampleTimes.length - 1] - (v.est.harborTime || 0)) : Math.max(1, v.est.timeTotal - (v.est.harborTime || 0)),
+    trackTimes: (v.est.sampleTimes && v.est.sampleTimes.length > 1) ? v.est.sampleTimes.map(t => t - (v.est.harborTime || 0)) : null,
+    trackIdx: 0,
+    trackErr: null,
+    trackVelErr: null,
+    trackCorr: 0,
     phaseT: S.time,
     progressT: S.time,
     lastAutoOrderT: -999,
@@ -4014,7 +4028,7 @@ function startWindowDeparture(){
   const promisedLabel = (varDefs.find(d => d.id === promisedId) || varDefs[0]).label;
   let chosen = null;
   for(const vd of varDefs){
-    const e = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, vd.scale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depSep: depSepNow });
+    const e = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, vd.scale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depSep: depSepNow, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : (pe.depAnchor ? snapBodyState(pe.depAnchor) : null) });
     const irE = e.impactRisk;
     const irUnsafeE = !!(irE && irE.minDist < irE.surfaceR + (irE.body === (pe.targetBody && pe.targetBody.name) ? 0 : irE.margin));
     const hdE = S.docked ? harborDvFor(e) : 0;
@@ -4094,6 +4108,9 @@ function startWindowDeparture(){
   logEvent('🕐 出発窓に到達 — ' + pe.variantLabel + ' で自動出発します（再検証推定 Δv ' + (est.dvTotal + harborDv).toFixed(1) + (pe.waitPromisedDv ? '／窓提示時の推定 ' + (pe.waitPromisedDv + harborDv).toFixed(1) : '') + (chosen.vd.id !== promisedId ? '／窓提示時の ' + promisedLabel + '案は現在の状態では成立しないため、成立する最安の案へ切替' : '') + '）。');
   pe.startT = S.time;
   pe.lastEstMs = 0;
+  pe.trackT0 = null; pe.trackIdx = 0; pe.trackCorr = 0;
+  pe.trackTimes = (est.sampleTimes && est.sampleTimes.length > 1) ? est.sampleTimes.map(t => t - (est.harborTime || 0)) : null;
+  pe.trackDur = (est.sampleTimes && est.sampleTimes.length > 1) ? Math.max(1, est.sampleTimes[est.sampleTimes.length - 1] - (est.harborTime || 0)) : Math.max(1, est.timeTotal - (est.harborTime || 0));
   setPlanPhase(pe, wasDocked ? 'undock' : 'depart');
   updatePlanStatusUI();
   updatePlanLineMesh();
@@ -4237,6 +4254,75 @@ function trackApproachProgress(pe, info){
     }
   }
 }
+/* 計画追従（2026-11-19 組み直し）: 巡航誘導は「現在地から目標への解き直し」を
+   追わない。承認した計画のサンプル軌跡を時刻で参照し、計画どおりの位置・速度に
+   いる間は噴射せず滑空する。ずれた場合だけ、先の計画状態へ戻る小さな修正噴射
+   （上限つき）を出す。大きく外れたら追わず、監視側の逸脱判定（判断ポイント）に
+   任せる。これにより、同じ計画は同じように飛び、消費と所要が再現性を持つ。 */
+function planTrackStep(pe, info){
+  const sm = S.planFullSamples, tt = pe.trackTimes;
+  if(!sm || sm.length < 2 || !tt || pe.trackT0 == null){
+    issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+    return;
+  }
+  const el = S.time - pe.trackT0;
+  if(el >= (pe.trackDur || Infinity)){
+    /* 計画の時刻範囲を超えても巡航が続くなら、無誘導で放置せず従来の接近誘導で
+       目標へ寄せる（終端の到着判定が拾う）。計画追従は計画の範囲内だけの責務 */
+    issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+    return;
+  }
+  let i = pe.trackIdx || 0;
+  while(i < sm.length - 2 && tt[i + 1] < el) i++;
+  pe.trackIdx = i;
+  const segT = Math.max(1, (tt[i + 1] != null ? tt[i + 1] : tt[i] + 1) - tt[i]);
+  const f = Math.min(1, Math.max(0, (el - tt[i]) / segT));
+  const rx = sm[i][0] + (sm[i + 1][0] - sm[i][0]) * f;
+  const ry = sm[i][1] + (sm[i + 1][1] - sm[i][1]) * f;
+  const rz = sm[i][2] + (sm[i + 1][2] - sm[i][2]) * f;
+  const rvx = (sm[i + 1][0] - sm[i][0]) / segT, rvy = (sm[i + 1][1] - sm[i][1]) / segT, rvz = (sm[i + 1][2] - sm[i][2]) / segT;
+  const posErr = Math.hypot(S.ship.x - rx, S.ship.y - ry, S.ship.z - rz);
+  const velErr = Math.hypot(S.ship.vx - rvx, S.ship.vy - rvy, S.ship.vz - rvz);
+  pe.trackErr = posErr; pe.trackVelErr = velErr;
+  /* 参照の不確かさ（弦と曲線の差）: サンプル間隔が粗い区間では、計画の曲線と
+     サンプル間を直線で結んだ参照との差が、実誤差なしでも大きく出る。隣接
+     セグメントの速度差 ΔV から、その区間で説明できる見かけの誤差の上限を
+     見積もり、判定と修正から差し引く（U_pos ≈ ΔV·T/8、U_vel ≈ ΔV/2）。 */
+  let uPos = 0, uVel = 0;
+  if(i > 0){
+    const segP = Math.max(1, tt[i] - tt[i - 1]);
+    const dvxS = (sm[i][0] - sm[i - 1][0]) / segP - rvx, dvyS = (sm[i][1] - sm[i - 1][1]) / segP - rvy, dvzS = (sm[i][2] - sm[i - 1][2]) / segP - rvz;
+    const dV = Math.hypot(dvxS, dvyS, dvzS);
+    uPos = dV * segT / 8;
+    uVel = dV / 2;
+  }
+  pe.trackU = uPos;
+  if(posErr < Math.max(200, uPos) && velErr < Math.max(0.15, uVel)) return; /* 計画どおり（参照の粗さの範囲内）: 滑空する */
+  if(posErr > Math.max(15000, 4 * uPos)){
+    /* 大きく外れたら追従修正では戻れない: 従来の接近誘導で復帰を試み、
+       健全性は監視側の逸脱判定（判断ポイント）が担保する */
+    issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+    return;
+  }
+  const L = Math.min(1800, Math.max(300, ((pe.trackDur || el + 1800) - el) / 6));
+  /* 修正噴射の目標速度 = 参照の現在速度＋現在の位置ずれを L 秒で詰める成分。
+     位置ずれは「現在の参照点」に対して測る（2026-11-19 修正: 当初は L 秒先の
+     参照点との差に参照速度を加えており、計画どおり飛んでいる時でも
+     dv ≈ 参照速度そのもの（20〜30）になる二重計上だった。実測では修正の
+     上限 2.5 が毎チェック「計画の進行方向への加速」として発射され続け、
+     速度ずれが +2.5/分で増え続けた）。 */
+  const pull = posErr > 0 ? Math.max(0, posErr - (pe.trackU || 0)) / posErr : 0;
+  let dvx = rvx + (rx - S.ship.x) / L * pull - S.ship.vx;
+  let dvy = rvy + (ry - S.ship.y) / L * pull - S.ship.vy;
+  let dvz = rvz + (rz - S.ship.z) / L * pull - S.ship.vz;
+  const mag = Math.hypot(dvx, dvy, dvz);
+  if(mag < 0.08) return;
+  const cap = 2.5, sc = mag > cap ? cap / mag : 1;
+  dvx *= sc; dvy *= sc; dvz *= sc;
+  const ok = issueOrder('vector', { isAuto: true, silent: true, orderName: '計画追従修正', dv: { dvx, dvy, dvz, cost: Math.hypot(dvx, dvy, dvz) } });
+  if(ok) pe.trackCorr = (pe.trackCorr || 0) + 1;
+}
+
 function updatePlanExecution(simDt){
   /* 出発窓の待機（v0.6.4、台帳#49）: 接舷中でも捕捉軌道上でも、窓の時刻までは
      誘導も再推定も走らせず、時刻が来たら再検証のうえ自動出発する */
@@ -4279,7 +4365,7 @@ function updatePlanExecution(simDt){
        判定規則: 双子（実世界と同じ積分器）の分岐が成立し安全なら計画は健全。
        逸脱の加算は「両分岐とも不成立」の合意がある場合と、安全側の擦過・
        交差予測がある場合だけに行う。分岐が割れただけでは止めない。 */
-    const est = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, pe.closingScale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets });
+    const est = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, pe.closingScale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depAnchor: pe.depAnchor ? snapBodyState(pe.depAnchor) : null });
     pe.lastEstDur = performance.now() - estT0;
     /* 逸脱判定の安全基準: 目標天体への接近通過は到着系（安全確認＋捕捉＋回避）が
        末端の安全を担うため、目標天体については「表面と実際に交差する予測」だけを
@@ -4304,8 +4390,10 @@ function updatePlanExecution(simDt){
       pe.badEst = 0;
       pe.progressT = S.time; /* 健全な再推定＝計画が完走見込みのまま進んでいる証跡 */
       pe.remDv = est.dvTotal; pe.remTime = est.timeTotal;
-      S.planSamples = est.samples;
-      updatePlanLineMesh();
+      /* 再推定は監視専用（2026-11-19 組み直し）: 残量・所要の予測は更新するが、
+         承認した計画のサンプル（航路表示と追従の基準）は差し替えない。
+         旧実装は健全な再推定のたびに S.planSamples を新しい解へ差し替え、
+         承認したはずの航路が飛行中に静かに書き換わっていた。 */
     } else if(!pe.paused && (pe.phase === 'cruise' || pe.phase === 'depart') && (bothBad || irUnsafe || budgetBad)){
       pe.progressT = S.time; /* 完走した再推定（不良判定でも）＝誘導系が生きている証跡。逸脱の扱いは badEst 側が担う */
       pe.badEst = (pe.badEst || 0) + 1;
@@ -4394,6 +4482,37 @@ function updatePlanExecution(simDt){
   if(pe.paused || pe.manualModified || S.activeBurn) return;
 
   const info = relInfo(S.ship, pe.targetBody);
+  /* 計画追従の時計: 本航行（depart 以降）に入った最初の更新で原点を置き、
+     承認計画のサンプル時刻列を実体化する */
+  if(pe.trackT0 == null && (pe.phase === 'depart' || pe.phase === 'cruise') && S.planFullSamples && S.planFullSamples.length > 1){
+    pe.trackT0 = S.time;
+    /* 基準の取り直し（2026-11-19）: 会議で承認された推定は「会議時点の出域状態」
+       から積まれている。実際の出域はその後に起きるため、世界座標のサンプル列は
+       実際の出発と時刻・位相がずれたままになる（実測: 最初の追従評価で既に
+       位置 37,732・速度 98.5 の乖離）。窓出発の再検証と同じく、本航行の開始時に
+       現在の実状態から推定を積み直し、追従の基準（サンプル列と初回噴射）を
+       実際の出発に合わせる。計画文書の約束（Δv・所要）は会議のものを保持する。 */
+    try {
+      const est2 = computePlanEstimateEnsemble(S.ship, pe.targetBody, S.sys.starGM, pe.closingScale, { arrivalDist: pe.arrivalDist, needDock: pe.needDock, planets: S.planets, depAnchor: pe.depAnchor ? snapBodyState(pe.depAnchor) : null });
+      if(est2 && est2.ok && est2.samples && est2.samples.length > 1){
+        S.planFullSamples = est2.samples;
+        S.planSamples = est2.samples;
+        pe.trackTimes = (est2.sampleTimes && est2.sampleTimes.length > 1) ? est2.sampleTimes.map(t => t - (est2.harborTime || 0)) : null;
+        pe.trackDur = (est2.sampleTimes && est2.sampleTimes.length > 1) ? Math.max(1, est2.sampleTimes[est2.sampleTimes.length - 1] - (est2.harborTime || 0)) : Math.max(1, est2.timeTotal - (est2.harborTime || 0));
+        if(est2.firstBurnVec && est2.firstBurnT != null && est2.firstBurnT <= 1800){
+          pe.departBurn = { dvx: est2.firstBurnVec.dvx, dvy: est2.firstBurnVec.dvy, dvz: est2.firstBurnVec.dvz, cost: est2.firstBurnVec.cost, atT: est2.firstBurnT };
+          pe.startT = S.time; /* 噴射時刻の原点も積み直しに合わせる */
+        }
+        updatePlanLineMesh();
+      }
+    } catch(e){ /* 積み直しに失敗したら会議の基準のまま飛ぶ */ }
+    if(!pe.trackTimes){
+      try {
+        const tf = courseSampleTimes({ samples: S.planFullSamples, targetBody: pe.targetBody }, pe.trackDur || (pe.planDoc ? pe.planDoc.plannedTime : 0));
+        pe.trackTimes = S.planFullSamples.map((_, i) => tf(i));
+      } catch(e){ pe.trackTimes = null; }
+    }
+  }
   if(pe.legType === 'simple'){
     if(info.dist <= pe.arrivalDist || (pe.phase === 'final' && info.dist <= Math.max(pe.arrivalDist * 3, 300) && info.rel <= 4) || (pe.captureDone && info.dist <= pe.arrivalDist * 1.5) || (!pe.captureDone && pe.targetBody.gm > 0 && pe.arrivalDist > 1000 && info.dist <= pe.arrivalDist * 1.5)){
       /* 捕捉待ちの間は到着判定の入口を 1.5 倍に広げる（v0.6.2）: 高ワープ等で
@@ -4509,9 +4628,11 @@ function updatePlanExecution(simDt){
     } else if(pe.phase === 'cruise'){
       pe.checkTimer -= simDt;
       if(pe.checkTimer <= 0){
-        pe.checkTimer = planCadenceFor(S.ship, info.dist, S.planets);
+        /* 計画追従の評価は短い固定間隔（60秒）: 速度のずれは時間で位置のずれに
+           変わるため、距離比例の長い間隔（planCadenceFor）では計画に留まれない */
+        pe.checkTimer = pe.trackTimes ? 60 : planCadenceFor(S.ship, info.dist, S.planets);
         pe.progressT = S.time; /* 誘導系が命令を評価した＝生きている証跡（停滞判定用） */
-        issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+        planTrackStep(pe, info);
       }
       /* 終端フェーズへの移行（v0.6.5、課題1）: 推定器は質量なし目標への単純レグで
          25,000 以内を final（速度一致プロファイル）として見積もり、到着も
@@ -4551,9 +4672,9 @@ function updatePlanExecution(simDt){
     // （遷移軌道に乗っている間は噴射せず滑空する）。
     pe.checkTimer -= simDt;
     if(pe.checkTimer <= 0 && info.dist >= 75){
-      pe.checkTimer = planCadenceFor(S.ship, info.dist, S.planets);
+      pe.checkTimer = pe.trackTimes ? 60 : planCadenceFor(S.ship, info.dist, S.planets);
       pe.progressT = S.time; /* 誘導系が命令を評価した＝生きている証跡（停滞判定用） */
-      issueOrder('approach', { isAuto: true, closingScale: pe.closingScale, silent: true, ctx: (pe.holdCtx || (pe.holdCtx = { patienceLeft: 30 })) });
+      planTrackStep(pe, info);
     }
     if(info.dist < 75 || (info.dist < 150 && info.rel > V_IAF)){
       setPlanPhase(pe, 'brake');
@@ -8008,7 +8129,7 @@ function convRunCalc(node){
   /* estimate:replan はこの会話専用の実推定（ジョブで刻む） */
   (node.stages || []).forEach(st => {
     if(st.task === 'estimate:replan' && !cs.devEst && !cs.devJob && S && S.planExec){
-      cs.devJob = createPlanEstimateEnsembleJob(S.ship, S.planExec.targetBody, S.sys.starGM, S.planExec.closingScale || 1.0, { arrivalDist: S.planExec.arrivalDist, needDock: S.planExec.needDock, planets: S.planets });
+      cs.devJob = createPlanEstimateEnsembleJob(S.ship, S.planExec.targetBody, S.sys.starGM, S.planExec.closingScale || 1.0, { arrivalDist: S.planExec.arrivalDist, needDock: S.planExec.needDock, planets: S.planets, depAnchor: S.planExec.depAnchor ? snapBodyState(S.planExec.depAnchor) : null });
     }
   });
   const iv = setInterval(() => {

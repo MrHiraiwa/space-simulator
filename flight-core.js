@@ -1021,6 +1021,8 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   // flown plan will actually spend (approximately, honestly derived).
   const o = opts || {};
   const arrivalDist = o.arrivalDist != null ? o.arrivalDist : 12;
+  /* 出発母港のスナップショット（2026-11-19）: 初回噴射のクリアランス判定に使う */
+  const depAnchor = o.depAnchor ? { x: o.depAnchor.x, y: o.depAnchor.y, z: o.depAnchor.z, vx: o.depAnchor.vx, vy: o.depAnchor.vy, vz: o.depAnchor.vz } : null;
   const needDock = o.needDock !== false;
   const scale = closingScale || 1.0;
   const kScale = typeof SCALE_K !== 'undefined' ? SCALE_K : 386700;
@@ -1072,6 +1074,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   let dvTotal = 0, dvCruise = 0, dvGravityComp = 0, timeTotal = 0, nextSampleT = sampleStride;
   timeTotal += harborTime; /* 港内航行の所要時間も計画の所要時間に含める（v0.6.4） */
   const samples = [[s.x, s.y, s.z]];
+  /* サンプルの実時刻（2026-11-19）: サンプルはシミュレーションの刻み境界で
+     採取され、刻み幅は巡航で最大約6時間まで粗くなるため、採取時刻は等間隔に
+     ならない。従来は採取時刻を保持せず、利用側（航路表示・計画追従）が等間隔
+     前提で再構成していたため、基準軌道の位相が実軌道と系統的にずれていた。
+     採取した timeTotal をそのまま対で保持する（間引きも対で同じ規則）。 */
+  const sampleTimes = [timeTotal];
   let established = false;
   let phase = 'cruise', checkTimer = 0, actCd = 0;
   let capDone = false, capT = 0; /* 到着時の捕捉（安定な終了状態）の実施と確認 */
@@ -1153,8 +1161,73 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       }
     }
   };
+  /* 初回噴射の母港クリアランス（2026-11-19）: 推定器の誘導は出発母港
+     （ステーション）を障害物として知らないため、目標が母港の背後に回る位相
+     では初回噴射が母港を貫く航路を選びうる（実飛行では衝突として裁定され、
+     出発直後に計画ごと失われる事故を実測: 最接近 28.5 < 衝突半径 40）。
+     初回噴射の適用前に、噴射後の滑空が母港から安全距離（KEEP）を保つか
+     予測で確認し、割り込む場合は噴射後の速度ベクトルを母港から離す向きへ
+     最小限だけ回して回避する。大きさ（Δv コスト）は変えないため、推定の
+     収支はそのまま実飛行に一致する。 */
+  const departClearBurn = (d) => {
+    const KEEP = 110, HORIZON = 900;
+    if(Math.hypot(depAnchor.x - s.x, depAnchor.y - s.y, depAnchor.z - s.z) > 3000) return d;
+    const acc = fullAccFn(starGM, pls);
+    /* 錨を噴射時刻（timeTotal）まで進めた状態を基準にする */
+    const pa0 = { x: depAnchor.x, y: depAnchor.y, z: depAnchor.z, vx: depAnchor.vx, vy: depAnchor.vy, vz: depAnchor.vz };
+    { let tA = 0; while(tA < timeTotal){ const hh = Math.min(20, timeTotal - tA); rk4StepState(pa0, hh, acc); tA += hh; } }
+    const probe = (dvx, dvy, dvz) => {
+      const ps = { x: s.x, y: s.y, z: s.z, vx: s.vx + dvx, vy: s.vy + dvy, vz: s.vz + dvz };
+      const pa = { x: pa0.x, y: pa0.y, z: pa0.z, vx: pa0.vx, vy: pa0.vy, vz: pa0.vz };
+      let minD = Math.hypot(ps.x - pa.x, ps.y - pa.y, ps.z - pa.z);
+      let tE = 0;
+      while(tE < HORIZON){
+        rk4StepState(ps, 15, acc); rk4StepState(pa, 15, acc); tE += 15;
+        const dd = Math.hypot(ps.x - pa.x, ps.y - pa.y, ps.z - pa.z);
+        if(dd < minD) minD = dd;
+      }
+      return minD;
+    };
+    if(probe(d.dvx, d.dvy, d.dvz) >= KEEP) return d;
+    /* 回転軸: （錨方向）×（噴射後速度）。この軸回りの回転が最接近を最も素直に広げる */
+    const rx = pa0.x - s.x, ry = pa0.y - s.y, rz = pa0.z - s.z;
+    const wx = s.vx + d.dvx, wy = s.vy + d.dvy, wz = s.vz + d.dvz;
+    let nx = ry * wz - rz * wy, ny = rz * wx - rx * wz, nz = rx * wy - ry * wx;
+    let nm = Math.hypot(nx, ny, nz);
+    if(nm < 1e-9){
+      const axv = Math.abs(wx) < 0.9 ? [1, 0, 0] : [0, 1, 0];
+      nx = axv[1] * wz - axv[2] * wy; ny = axv[2] * wx - axv[0] * wz; nz = axv[0] * wy - axv[1] * wx;
+      nm = Math.hypot(nx, ny, nz) || 1;
+    }
+    nx /= nm; ny /= nm; nz /= nm;
+    const rot = (vx, vy, vz, th) => {
+      const c = Math.cos(th), sn = Math.sin(th), ic = 1 - c;
+      const dot = nx * vx + ny * vy + nz * vz;
+      return [
+        vx * c + (ny * vz - nz * vy) * sn + nx * dot * ic,
+        vy * c + (nz * vx - nx * vz) * sn + ny * dot * ic,
+        vz * c + (nx * vy - ny * vx) * sn + nz * dot * ic
+      ];
+    };
+    let best = null, bestMin = -Infinity;
+    for(const th of [0.03, 0.06, 0.10, 0.15, 0.21, 0.28, 0.36]){
+      for(const sg of [1, -1]){
+        const rv = rot(wx, wy, wz, sg * th);
+        let cvx = rv[0] - s.vx, cvy = rv[1] - s.vy, cvz = rv[2] - s.vz;
+        const cm = Math.hypot(cvx, cvy, cvz);
+        if(cm < 1e-9) continue;
+        const f = d.cost / cm;
+        cvx *= f; cvy *= f; cvz *= f;
+        const md = probe(cvx, cvy, cvz);
+        if(md > bestMin){ bestMin = md; best = { dvx: cvx, dvy: cvy, dvz: cvz, cost: d.cost }; }
+        if(md >= KEEP) return best;
+      }
+    }
+    return best || d;
+  };
   const applyDv = d => {
     if(!d) return;
+    if(firstBurn === null && depAnchor && d.cost > 0.001) d = departClearBurn(d);
     s.vx += d.dvx; s.vy += d.dvy; s.vz += d.dvz;
     dvTotal += d.cost;
     if(phase === 'cruise') dvCruise += d.cost;
@@ -1170,7 +1243,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const seen = order.filter(p => phaseT0[p] !== undefined);
     return seen.map((p, i) => ({ phase: p, t0: phaseT0[p], t1: (i + 1 < seen.length ? phaseT0[seen[i + 1]] : timeTotal), dv: phaseDv[p] || 0 }));
   };
-  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime });
+  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, sampleTimes });
   let planetCross = false, surfaceHit = false, bestRisk = null, bestAlt = Infinity;
   let hitCount = 0, crossCount = 0, capHitBase = 0, capCrossBase = 0;
   /* 推定の暴走ガード（v0.6.1 #5）: シミュレーション上の艦が天体に捕捉される軌道に入ると、
@@ -1396,10 +1469,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     }
     if(timeTotal >= nextSampleT){
       samples.push([s.x, s.y, s.z]);
+      sampleTimes.push(timeTotal);
       if(samples.length > 400){
         let j = 0;
-        for(let i = 0; i < samples.length; i += 2) samples[j++] = samples[i];
+        for(let i = 0; i < samples.length; i += 2){ samples[j] = samples[i]; sampleTimes[j] = sampleTimes[i]; j++; }
         samples.length = j;
+        sampleTimes.length = j;
         sampleStride *= 2;
       }
       nextSampleT += sampleStride;
