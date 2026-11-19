@@ -1193,6 +1193,7 @@
     <p class="start-pitch" style="font-size:12px">世界の船は、あなたが来る前から運航しています。開始は名簿から：席を選んで、その運航を引き継いでください。新任の席では教導士官の案内で処女航宙から始められます。自分の艦長を新しく登録する入口も名簿の末尾にあります。</p>
     <button id="btn-sortie" class="primary">📋 はじめる — 名簿から席に就く</button>
     <button id="btn-continue" class="primary" style="display:none">▶ つづきから</button>
+    <p id="start-load-status" style="font-size:12px;color:var(--muted);min-height:16px;margin:8px 0 0"></p>
     <p id="continue-info" class="start-pitch" style="display:none;font-size:12px"></p>
     <div id="save-overwrite-confirm" style="display:none">
       <p class="start-pitch" style="font-size:12px;margin:0 0 6px">航宙途中のセーブがあります。新しく始めると、このセーブは上書きされます。よろしいですか？</p>
@@ -5298,6 +5299,30 @@ function loadModel(id){
   return _modelCache[id];
 }
 ModelLib.load = loadModel;
+/* 起動直後から全モデルを先読みする（タイトル画面の裏で進める）。シーン構築は
+   キャッシュ済みのこの Promise を使うため、仮メッシュ（青い旧ステーション等）が
+   一瞬見える差し替えフラッシュが起きない。失敗したモデルは従来どおり仮メッシュで
+   代替する。全件 settle か 30 秒のどちらか早い方で開始ボタンを解放し、
+   読み込み待ちで詰まらせない（2026-11-19 本人指摘：最初に旧モデルが一瞬見える）。 */
+(() => {
+  const ids = Object.keys(MODEL_DEFS);
+  let done = 0, released = false;
+  const statusEl = document.getElementById('start-load-status');
+  const btns = ['btn-sortie', 'btn-continue'].map(id => document.getElementById(id)).filter(Boolean);
+  btns.forEach(b => { b.disabled = true; });
+  const note = () => { if(statusEl) statusEl.textContent = '🌌 世界を読み込んでいます…（モデル ' + done + '/' + ids.length + '）'; };
+  const release = () => {
+    if(released) return; released = true;
+    btns.forEach(b => { b.disabled = false; });
+    if(statusEl) statusEl.textContent = '✅ 準備ができました';
+  };
+  note();
+  const timer = setTimeout(release, 30000);
+  Promise.allSettled(ids.map(id => loadModel(id).then(
+    () => { done++; note(); },
+    () => { done++; note(); }
+  ))).then(() => { clearTimeout(timer); release(); });
+})();
 /* 仮メッシュと同じ作法の噴射炎コーン（軸はローカル -Z が後方） */
 function makeModelFlame(r, len, color){
   const fl = new THREE.Mesh(
