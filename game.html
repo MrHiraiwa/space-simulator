@@ -3813,7 +3813,6 @@ function openPlanPanel(cfg){
 function closePlanPanel(){
   clearInterval(checklistTimer);
   document.getElementById('plan-panel').classList.remove('open');
-  document.getElementById('chart-panel').classList.remove('compact');
   document.getElementById('plan-levers').style.display = '';
   document.getElementById('btn-depart').style.display = '';
   planPanelState = null;
@@ -10208,7 +10207,7 @@ function applyDockCollapsed(){
 /* 同時に開くタスクは1つまで（タスクマネージャ方式）。開く操作は他を最小化するが、状態は保持される */
 function closeOtherTasks(except){
   if(except !== 'plan'){ const pp = document.getElementById('plan-panel'); if(pp && pp.classList.contains('open')) closePlanPanel(); }
-  if(except !== 'chart' && chartState.open){ chartState.open = false; document.getElementById('chart-panel').classList.remove('open'); }
+  if(except !== 'chart' && chartState.open){ chartState.open = false; const cp = document.getElementById('chart-panel'); if(cp) cp.classList.remove('open'); }
   if(except !== 'log'){ const lp = document.getElementById('log-panel'); if(lp) lp.classList.remove('open'); }
   if(except !== 'traffic'){ const tp = document.getElementById('traffic-panel'); if(tp) tp.classList.remove('open'); }
 }
