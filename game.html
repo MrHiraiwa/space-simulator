@@ -125,7 +125,7 @@
   #next-action.danger{border-color:rgba(255,99,120,0.8);color:#fecdd3}
   #next-action.good{border-color:rgba(71,229,161,0.75);color:#a7f3d0}
 
-  /* ===== 航海計画進捗 (#plan-status) ===== */
+  /* ===== 航宙計画進捗 (#plan-status) ===== */
   #plan-status{
     display:none;
     background:rgba(8,15,34,0.86);
@@ -335,11 +335,17 @@
   .dock-actions{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
   /* 待機（時間を進める）: プレイヤー向けのシステム操作。作中の技術ではないので、船内UIとは見た目を区別する */
   .ff-bar{
-    display:inline-flex;align-items:center;gap:2px;max-width:calc(100vw - 32px);box-sizing:border-box;
+    display:inline-flex;align-items:center;flex-wrap:wrap;gap:2px;max-width:calc(100vw - 32px);box-sizing:border-box;
     background:rgba(43,36,74,0.85);border:1px dashed rgba(196,181,253,0.6);border-radius:999px;padding:3px 5px;
     font-size:11px;
   }
   .ff-bar .ff-label{color:#c4b5fd;font-weight:700;font-size:10px;white-space:nowrap}
+  #debug-panel{
+    display:none;align-items:center;gap:2px;max-width:calc(100vw - 32px);box-sizing:border-box;
+    background:rgba(43,36,74,0.85);border:1px dashed rgba(196,181,253,0.6);border-radius:999px;padding:3px 5px;
+    font-size:11px;margin-top:4px;
+  }
+  #debug-panel .ff-label{color:#c4b5fd;font-weight:700;font-size:10px;white-space:nowrap}
   .ship-sec{font-size:12px;font-weight:700;margin:12px 0 6px;color:var(--accent2)}
   .ship-line{font-size:12px;background:rgba(6,11,24,0.72);border:1px solid var(--line);border-radius:8px;padding:7px 9px;margin-top:6px;line-height:1.5;min-height:20px}
   .ship-line .who{font-weight:700;color:var(--accent)}
@@ -360,7 +366,7 @@
   .dock-foot{
     display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;
   }
-  /* 管制テロップ: 3Dビューの画面端に1行だけ重ねる（履歴は航海日誌に残る） */
+  /* 管制テロップ: 3Dビューの画面端に1行だけ重ねる（履歴は航宙日誌に残る） */
   #status-msg{
     flex:1;min-width:0;
     background:rgba(6,10,24,0.55);border:1px solid var(--line);border-radius:999px;
@@ -413,7 +419,7 @@
   .view-switch .knob{position:absolute;top:2px;left:2px;width:13px;height:13px;border-radius:50%;background:#94a3b8;transition:left 0.15s,background 0.15s}
   .view-switch.on{background:rgba(14,116,144,0.75);border-color:rgba(56,189,248,0.6)}
   .view-switch.on .knob{left:17px;background:#e0f2fe}
-  #view-picker{position:absolute;left:0;bottom:calc(100% + 8px);z-index:130;width:min(430px,94vw);background:rgba(9,15,32,0.96);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6)}
+  #view-picker{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);z-index:130;width:min(430px,94vw);background:rgba(9,15,32,0.96);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6)}
   #view-picker .vp-head{font-size:12px;font-weight:700;color:#fff;margin-bottom:2px}
   #view-picker .vp-sub{display:block;font-size:10.5px;font-weight:400;color:var(--muted);margin-top:1px}
   .vp-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
@@ -526,7 +532,7 @@
     100%{opacity:0;transform:translate(-50%,-60%) scale(0.95)}
   }
 
-  /* ===== 航海計画パネル (#plan-panel) & モーダル共通 ===== */
+  /* ===== 航宙計画パネル (#plan-panel) & モーダル共通 ===== */
   #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
@@ -569,7 +575,7 @@
   /* タスク共存時のコンパクト形: 後から開いたタスクは下部シートになり、先のタスクが見えたままになる */
   #plan-panel.compact,#chart-panel.compact{align-items:flex-end;padding:0;background:rgba(3,6,16,0.25)}
   #plan-panel.compact .modal-box,#chart-panel.compact .modal-box{width:100%;max-height:54vh;border-radius:16px 16px 0 0;overflow-y:auto}
-  /* 海図はビューの上に重なる情報面として、背景を少し透かす */
+  /* 宙図はビューの上に重なる情報面として、背景を少し透かす */
   #chart-panel{background:rgba(3,6,16,0.55)}
   #chart-panel .modal-box{background:rgba(9,15,32,0.88)}
   .modal-box{
@@ -604,7 +610,7 @@
   .chk-item.done .chk-text{color:#e2e8f0}
   .plan-note{font-size:11px;color:var(--muted);margin-bottom:12px}
 
-  /* ===== 航海計画＝運航文書（航路・噴射計画・予算／レバー） ===== */
+  /* ===== 航宙計画＝運航文書（航路・噴射計画・予算／レバー） ===== */
   #plan-levers{display:flex;flex-wrap:wrap;gap:6px 14px;margin:10px 0 2px;font-size:11px;color:var(--muted);align-items:center}
   #plan-levers .lever-group{display:inline-flex;gap:4px;align-items:center}
   #plan-levers button{font-size:11px;padding:3px 9px;border-radius:999px}
@@ -897,19 +903,23 @@
         <div class="dock-actions">
           <div class="ff-bar" role="group" aria-label="待機（時間を進める）">
             <span class="ff-label">⏳ 待機（時間を進める）</span>
+            <button id="btn-debug-skip" title="次の判断イベント／到着まで進める">⏩ 次の判断まで</button>
+            <button id="btn-debug-toggle" title="デバッグ用パネルを開く（速度設定・ログ出力はデバッグ用、台帳#32）">🐛 デバッグ</button>
+            <span class="ff-now" id="ff-now">等速で見守り中</span>
+            <span style="color:var(--muted);margin:0 3px"><b id="clock">1日目 00:00</b></span>
+          </div>
+          <div id="debug-panel" style="display:none" role="group" aria-label="デバッグ用パネル">
+            <span class="ff-label">🐛 デバッグ用（速度設定・ログ出力）</span>
             <button data-warp="1" class="active">等速</button>
             <button data-warp="3">×3</button>
             <button data-warp="8">×8</button>
             <button data-warp="0">⏸</button>
-            <button id="btn-debug-skip" title="デバッグ用：次の判断イベント／到着まで一気に進める（台帳#32）">⏩ 次の判断まで</button>
-            <button id="btn-debug-log" title="デバッグ用：自船状態・計画・航海日誌をテキスト出力する">🐛 ログ出力</button>
-            <span class="ff-now" id="ff-now">等速で見守り中</span>
-            <span style="color:var(--muted);margin:0 3px"><b id="clock">1日目 00:00</b></span>
+            <button id="btn-debug-log" title="デバッグ用：自船状態・計画・航宙日誌をテキスト出力する">🐛 ログ出力</button>
           </div>
-          <button id="btn-plan" class="teal task-chip" data-n="">🗺 航海計画</button>
+          <button id="btn-plan" class="teal task-chip" data-n="">🗺 航宙計画</button>
           <button id="btn-talk" class="teal task-chip" data-n="" title="クルーに話しかける（相手は会話面で選ぶ）">🗣 話しかける</button>
           <span id="mode-toggle" role="group" aria-label="表示モード切替"><button id="btn-mode-nav">🧭 航行</button><button id="btn-ship">🚶 船内</button></span>
-          <button id="btn-chart" class="teal task-chip" data-n="">🧭 海図</button>
+          <button id="btn-chart" class="teal task-chip" data-n="">🧭 宙図</button>
           <button id="btn-task-traffic" class="task-chip" data-n="">📡 交通</button>
           <button id="btn-task-log" class="task-chip" data-n="">📜 日誌</button>
           <button id="btn-codex" class="task-chip" data-n="">📚 資料</button>
@@ -946,7 +956,7 @@
       <button data-tab="officers">👥 部下</button>
       <button data-tab="ship">🚶 船内</button>
       <button data-tab="traffic">📡 交通</button>
-      <button data-tab="log">📜 航海日誌</button>
+      <button data-tab="log">📜 航宙日誌</button>
     </div>
     <div class="drawer-body">
       <div class="tab-pane active" id="tab-galaxy">
@@ -1005,13 +1015,13 @@
   </aside>
 </div>
 
-<!-- 航海計画パネル (#plan-panel) -->
-<!-- 海図パネル (#chart-panel) -->
+<!-- 航宙計画パネル (#plan-panel) -->
+<!-- 宙図パネル (#chart-panel) -->
 <div id="chart-panel">
   <div class="modal-box" style="text-align:left;max-width:560px">
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
       <div>
-        <div style="font-size:11px;color:var(--accent);font-weight:700">海図 — 航行AI <span id="chart-ai-name">イオ</span> が表示を管理</div>
+        <div style="font-size:11px;color:var(--accent);font-weight:700">宙図 — 航行AI <span id="chart-ai-name">イオ</span> が表示を管理</div>
         <div style="font-size:15px;font-weight:800">表示範囲：<span id="chart-range-name">広域</span>（<span id="chart-mode-name">自動</span>）</div>
       </div>
       <div style="display:flex;align-items:center;gap:6px">
@@ -1038,7 +1048,7 @@
   <div class="modal-box">
     <div class="plan-head">
       <div>
-        <div id="plan-ai-head" style="font-size:11px;color:var(--accent);font-weight:700">航行AI イオ — 航海計画提案（提示：航法士官 三浦 葵）</div>
+        <div id="plan-ai-head" style="font-size:11px;color:var(--accent);font-weight:700">航行AI イオ — 航宙計画提案（提示：航法士官 三浦 葵）</div>
         <div class="plan-route-name" id="plan-route-name">標準航路 ソル内周回路 R1</div>
       </div>
       <button id="btn-plan-close" style="padding:4px 10px;font-size:12px">✕</button>
@@ -1100,7 +1110,7 @@
     <div class="cr-sec">特性（2つまで）</div>
     <div class="cr-opts" id="cr-traits"></div>
     <div class="cr-sec">航行AIの名前</div>
-    <p class="cr-note" style="margin:0 0 6px">あなたが乗り組む船の航行AIです。計画の提案や報告、海図の管理を担当します。名前は船ごとに付けるものです（候補から選ぶか、自由に入力）。</p>
+    <p class="cr-note" style="margin:0 0 6px">あなたが乗り組む船の航行AIです。計画の提案や報告、宙図の管理を担当します。名前は船ごとに付けるものです（候補から選ぶか、自由に入力）。</p>
     <div class="cr-opts" id="cr-ainames"></div>
     <input id="cr-ainame" type="text" maxlength="8" value="イオ" style="margin-top:6px;width:100%;box-sizing:border-box;background:rgba(6,11,24,0.85);border:1px solid var(--line-bright);border-radius:9px;color:#fff;font-size:14px;padding:8px 10px">
     <div class="modal-actions" style="margin-top:16px">
@@ -1116,7 +1126,7 @@
   <div class="modal-box" style="text-align:left">
     <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">名簿 — 席に就く（プロトタイプ）</div>
     <h2 style="margin:4px 0 8px;font-size:19px">誰の席に就きますか</h2>
-    <p class="roster-note">選ぶのは「人」です。席に就くと、その人が運航していた便と交代して、運行を引き継ぎます（プロトタイプ：全席とも処女航海 M0 から開始します）。</p>
+    <p class="roster-note">選ぶのは「人」です。席に就くと、その人が運航していた便と交代して、運行を引き継ぎます（プロトタイプ：全席とも処女航宙 M0 から開始します）。</p>
     <div id="roster-list"></div>
     <div class="modal-actions"><button id="btn-roster-create">＋ 新しい艦長を登録する</button><button id="btn-roster-close">閉じる</button></div>
   </div>
@@ -1147,8 +1157,8 @@
         <p>恒星間の移動はワープによります。<b>ワープ航行中は無線が一切届きません</b>（船は通常の座標を持ちません）。星系に到着すると、溜まっていた知らせが接舷の前にまとめて届きます。</p>
         <p>ワープ通信は存在しますが、<b>送り手と受け手が互いの現在の座標を正確に把握していること</b>が条件です。惑星やステーション、公開座標のリレービーコンなど定点の施設同士は通信できます。航行中の船へは、提出された飛行計画の予測位置宛てにしか届きません（計画から外れると届かなくなります）。ワープ中の船は座標を持たないため、どうしても届きません。</p>
       </details>
-      <details class="codex-entry"><summary>🧭 海図と基準フレーム</summary>
-        <p>地図は「何を基準に見るか」で姿が変わります。接舷中や港の近くでは<b>港（ステーション）基準</b>で、自船は港に対して止まって見え、惑星が背景を流れます。広域の海図は<b>恒星（ソル）基準</b>で、天体の周回が見えます。各ビューには基準名のラベルがあり、タップで手動切替できます（手動で選ぶと、AUTOに戻すまで保たれます）。基準の切り替え自体が、状況を理解する手段です。</p>
+      <details class="codex-entry"><summary>🧭 宙図と基準フレーム</summary>
+        <p>地図は「何を基準に見るか」で姿が変わります。基準は<b>惑星（つむぎ）基準</b>と<b>恒星（ソル）基準</b>の2つです。惑星の周りでは惑星基準で、港も月も惑星を中心に回って見えます（港へ寄るのは視点の役割です）。宙域を離れる広域では恒星基準で、天体の周回が見えます。各ビューには基準名のラベルがあり、タップで手動切替できます（手動で選ぶと、AUTOに戻すまで保たれます）。基準の切り替え自体が、状況を理解する手段です。</p>
       </details>
       <details class="codex-entry"><summary>🛰 施設の区分</summary>
         <p>ステーションは必ず<b>母惑星を周回</b>します。恒星を直接周回する居住施設は「コロニー」という別区分です。資源惑星の周りには<b>資源衛星</b>（採掘プラットフォームなど）が置かれます。港には軌道ステーション・地表港・造船所などの種別があり、地表港へ降りられるのは降下可能な船級だけです（軌道⇄地表は定期シャトルがつなぎます）。</p>
@@ -1179,13 +1189,13 @@
   <div class="start-card-wrap">
     <div class="logo-badge">3D ORBITAL FLEET SIMULATOR v0.8</div>
     <h1 class="start-title">宇宙艦隊シミュレーター</h1>
-    <p class="start-pitch"><b>船長は、操縦しない。判断する。</b>——船長として航海計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航海から始められます。</p>
-    <p class="start-pitch" style="font-size:12px">世界の船は、あなたが来る前から運航しています。開始は名簿から：席を選んで、その運航を引き継いでください。新任の席では教導士官の案内で処女航海から始められます。自分の艦長を新しく登録する入口も名簿の末尾にあります。</p>
+    <p class="start-pitch"><b>船長は、操縦しない。判断する。</b>——船長として航宙計画を承認し、クルーに命令を下して3次元宇宙を航行する運航シミュレーション。教導士官の案内で処女航宙から始められます。</p>
+    <p class="start-pitch" style="font-size:12px">世界の船は、あなたが来る前から運航しています。開始は名簿から：席を選んで、その運航を引き継いでください。新任の席では教導士官の案内で処女航宙から始められます。自分の艦長を新しく登録する入口も名簿の末尾にあります。</p>
     <button id="btn-sortie" class="primary">📋 はじめる — 名簿から席に就く</button>
     <button id="btn-continue" class="primary" style="display:none">▶ つづきから</button>
     <p id="continue-info" class="start-pitch" style="display:none;font-size:12px"></p>
     <div id="save-overwrite-confirm" style="display:none">
-      <p class="start-pitch" style="font-size:12px;margin:0 0 6px">航海途中のセーブがあります。新しく始めると、このセーブは上書きされます。よろしいですか？</p>
+      <p class="start-pitch" style="font-size:12px;margin:0 0 6px">航宙途中のセーブがあります。新しく始めると、このセーブは上書きされます。よろしいですか？</p>
       <button id="btn-overwrite-yes" class="amber">セーブを消して新しく始める</button>
       <button id="btn-overwrite-no">キャンセル</button>
     </div>
@@ -1380,7 +1390,7 @@ function defaultCaptainProfile(){
 function loadCaptainProfile(){ try { const raw = localStorage.getItem('ss_captain_v1'); return raw ? JSON.parse(raw) : null; } catch(e){ return null; } }
 function saveCaptainProfile(p){ try { localStorage.setItem('ss_captain_v1', JSON.stringify(p)); } catch(e){} }
 
-// ---------- 航海途中セーブ／ロード（台帳#26、v0.6.3） ----------
+// ---------- 航宙途中セーブ／ロード（台帳#26、v0.6.3） ----------
 /* 設計: セーブ形式は将来のサーバ同期データモデルそのまま——世界状態＋命令（計画）
    ＋共有時計。物理は決定的（惑星=恒星重力のみの積分／衛星・ステーション・船・NPC=
    全重力）なので、保存した状態・計画・時刻があれば、どのクライアントでも同じ
@@ -1454,10 +1464,10 @@ function cloneBodyForSave(b){
   return o;
 }
 function saveMissionLabel(){
-  if(!S) return '航海';
-  if(S.prologue) return '処女航海（Mission 0）';
+  if(!S) return '航宙';
+  if(S.prologue) return '処女航宙（Mission 0）';
   const m = MISSIONS[currentMissionIdx];
-  return m ? ('Mission ' + m.id + '：' + m.title) : '航海';
+  return m ? ('Mission ' + m.id + '：' + m.title) : '航宙';
 }
 function buildSaveData(){
   const reg = new Map(); const bodies = {};
@@ -1595,7 +1605,7 @@ function loadGame(){
       chartIntroShown = !!save.introFlags.chart;
       depExplainedShown = !!save.introFlags.dep;
     }
-    /* 航海日誌の復元 */
+    /* 航宙日誌の復元 */
     if(logEl){
       logEl.innerHTML = '';
       for(const line of (save.log || [])){
@@ -1613,7 +1623,7 @@ function loadGame(){
     if(!scene) initThree();
     buildSystemMeshes();
     if(typeof evalChartAuto === 'function') evalChartAuto(true);
-    if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; if(S.docked) frameState.ref = 'station'; }
+    if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; if(S.docked) frameState.ref = 'planet'; }
     if(typeof chartState !== 'undefined'){ chartState.mode = 'auto'; if(S.docked) chartState.range = 'port'; }
     frameCamOnShip();
     setWarp(S.warp || 1);
@@ -1628,11 +1638,11 @@ function loadGame(){
     updatePlanLineMesh();
     if(typeof updateFrameChips === 'function') updateFrameChips();
     hideSaveConfirm();
-    /* 処女航海の導入だけは一時状態（ブリーフィング）を含むため、チュートリアル
+    /* 処女航宙の導入だけは一時状態（ブリーフィング）を含むため、チュートリアル
        未構築のセーブでは導入から再導出する（安全側の再導出） */
     if(S.prologue && !S.tutorial) initPrologueFlow();
     if(save.rm && S.missionEnded) restoreResultModal(save.rm);
-    logEvent('📂 セーブデータから航海を再開しました（' + (save.label || '航海') + '／船内時刻 ' + formatShipTime(S.time) + '）。');
+    logEvent('📂 セーブデータから航宙を再開しました（' + (save.label || '航宙') + '／船内時刻 ' + formatShipTime(S.time) + '）。');
     /* 離席ぶんの追いつきは既存機構をそのまま使う（接舷中・接舷作業中は保存した
        状態そのものから再開する。位置も状態の一部として保存してあるため、
        時刻だけを進めると不整合になる） */
@@ -1662,7 +1672,7 @@ function refreshSaveUI(){
     btn.style.display = '';
     if(info){
       const d = new Date(save.savedAt || Date.now());
-      info.textContent = '前回の航海： ' + (save.label || '航海') + ' ／ 船内時刻 ' + formatShipTime(save.shipTime || 0) + ' ／ 保存 ' + d.toLocaleString('ja-JP');
+      info.textContent = '前回の航宙： ' + (save.label || '航宙') + ' ／ 船内時刻 ' + formatShipTime(save.shipTime || 0) + ' ／ 保存 ' + d.toLocaleString('ja-JP');
       info.style.display = '';
     }
   } else {
@@ -1760,7 +1770,7 @@ function applyCaptain(){
     }
     if(captainProfile.abilities && captainProfile.abilities.pop) S.res.pol = Math.min(100, S.res.pol + captainProfile.abilities.pop * 2);
     const ph = document.getElementById('plan-ai-head');
-    if(ph) ph.textContent = '航行AI ' + (captainProfile.aiName || 'イオ') + ' — 航海計画提案（提示：航法士官 三浦 葵）';
+    if(ph) ph.textContent = '航行AI ' + (captainProfile.aiName || 'イオ') + ' — 航宙計画提案（提示：航法士官 三浦 葵）';
     const pn = document.getElementById('plan-note');
     if(pn) pn.textContent = '※ 見積もりは惑星重力を含む実シミュレーション（実際に飛ぶ計画ポリシー）で計算しています。出航後は航行AI' + (captainProfile.aiName || 'イオ') + 'とクルーが計画に沿って運航し、船長は承認・監視・例外判断を行います。';
   }
@@ -1864,17 +1874,17 @@ function finishCreation(){
 // ---------- ミッション & 昇進定義 ----------
 const MISSIONS = [
   { id:1, title:'補給訓練：補給船「あけぼの」と接舷せよ',
-    obj:'訓練任務：物資を受け取るため、航海計画を承認して補給船「あけぼの」へ進入コースから接舷せよ。',
+    obj:'訓練任務：物資を受け取るため、航宙計画を承認して補給船「あけぼの」へ進入コースから接舷せよ。',
     startSys:'sol', reqSys:null, timeLimit:0, merit:120,
     startQuote:'船長、最初の実務訓練です。心もとない物資を補給するため、軌道上で待つ補給船「あけぼの」と合流して荷物を受け取りましょう。' },
   { id:2, title:'外縁へ出てワープし、ケンタウリ系の目標船と合流せよ',
     obj:'外縁（恒星距離 約1.3億以上）へ進み、「指揮＞銀河」からケンタウリ系へワープ後、目標船と接舷せよ。',
     startSys:'sol', reqSys:'centauri', timeLimit:0, merit:200,
-    startQuote:'ソル系外縁（恒星距離 約1.3億以上）からケンタウリ系へワープします。ワープ後、現地の目標船へ航海計画を立てて接舷してください！' },
+    startQuote:'ソル系外縁（恒星距離 約1.3億以上）からケンタウリ系へワープします。ワープ後、現地の目標船へ航宙計画を立てて接舷してください！' },
   { id:3, title:'制限時間内に補給を届けよ',
     obj:'420秒以内にシリウス系の目標船と接舷し、前線への補給を完了せよ。',
     startSys:'sirius', reqSys:'sirius', timeLimit:420, merit:280,
-    startQuote:'時間との戦いです！420秒以内に目標船へ到達してください。航海計画では「最速」案を選び、迷わず出航しましょう！' }
+    startQuote:'時間との戦いです！420秒以内に目標船へ到達してください。航宙計画では「最速」案を選び、迷わず出航しましょう！' }
 ];
 const RANKS = [
   { name:'少尉', min:0 },
@@ -2305,7 +2315,7 @@ function startPrologue(){
   { const bp = stationBerthPoint(S.station);
     S.ship.x = bp.x; S.ship.y = bp.y; S.ship.z = bp.z;
     S.ship.vx = bp.vx; S.ship.vy = bp.vy; S.ship.vz = bp.vz; }
-  if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; frameState.ref = 'station'; }
+  if(typeof frameState !== 'undefined'){ frameState.mode = 'auto'; frameState.ref = 'planet'; }
   if(typeof chartState !== 'undefined'){ chartState.mode = 'auto'; chartState.range = 'port'; chartState.lastAutoT = -99; }
   cam.dist = typeof camDistForRange === 'function' ? camDistForRange('port') : 240;
   camDistTarget = null;
@@ -2317,7 +2327,7 @@ function startPrologue(){
   document.getElementById('result-modal').classList.remove('open');
   document.getElementById('assist-left').textContent = S.assistUses;
   document.getElementById('btn-assist').disabled = false;
-  logEvent('🎖️ ' + (S.captain ? S.captain.name : '') + '船長、' + SHIP_NAME + 'に着任。ステーション「あおば」に接舷中（処女航海）。');
+  logEvent('🎖️ ' + (S.captain ? S.captain.name : '') + '船長、' + SHIP_NAME + 'に着任。ステーション「あおば」に接舷中（処女航宙）。');
   setStatusMsg(SHIP_NAME + ' 着任式。教導士官の案内を確認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
   initPrologueFlow();
@@ -2344,7 +2354,7 @@ function startMission(idx){
   document.getElementById('assist-left').textContent = S.assistUses;
   document.getElementById('btn-assist').disabled = false;
   logEvent('🚀 ミッション'+m.id+'「'+m.title+'」開始（'+cfg.label+'）。');
-  setStatusMsg('航海計画を確認し、出航を承認してください。');
+  setStatusMsg('航宙計画を確認し、出航を承認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
   if(idx === 0 && selectedScenario === 'captain'){
     initMission1Tutorial();
@@ -2360,10 +2370,10 @@ function startMission(idx){
 
 function updateMissionBanner(){
   if(S && S.prologue){
-    document.getElementById('mb-num').textContent = 'MISSION 0 / 処女航海';
+    document.getElementById('mb-num').textContent = 'MISSION 0 / 処女航宙';
     document.getElementById('mb-sys').textContent = '📍 ソル系';
-    document.getElementById('mb-title').textContent = '処女航海：輸送船「さくら」慣熟航行';
-    document.getElementById('mb-obj').textContent = '教導士官 榊原少佐の案内で、航海計画の承認・カメラ・航行中の待機・帰投を体験しよう。';
+    document.getElementById('mb-title').textContent = '処女航宙：輸送船「さくら」慣熟航行';
+    document.getElementById('mb-obj').textContent = '教導士官 榊原少佐の案内で、航宙計画の承認・カメラ・航行中の待機・帰投を体験しよう。';
     document.getElementById('mission-timer').style.display = 'none';
     return;
   }
@@ -2553,7 +2563,7 @@ function physics(simDt){
                   if(pc && isFinite(pc.minDist)) msg += 'このまま滑空すると約 ' + fmtDuration(pc.tMin || 0) + ' 後に ' + (S.target.name || '目標') + ' へ最接近（約 ' + Math.round(pc.minDist).toLocaleString() + '）します。';
                 }
               } catch(e) {}
-              msg += '航海計画を開くと、現在の状態からの再計画案（Δv と所要時間つき）が提示されます。';
+              msg += '航宙計画を開くと、現在の状態からの再計画案（Δv と所要時間つき）が提示されます。';
               showOfficerPopup(GUIDE, msg);
               logEvent('⚠️ 推進剤不足： 残り Δv ' + S.dv.toFixed(1) + '。再計画の提示が可能です。');
             }, 1500);
@@ -2839,10 +2849,10 @@ function completePrologue(){
   const prevMerit = meritTotal;
   meritTotal += 30;
   playSfx('success');
-  triggerCelebration('処女航海 完了！');
-  logEvent('🎖️ 処女航海完了！功績 +30 pt 獲得。');
-  showOfficerPopup(GUIDE, '処女航海、見事でした！功績が認められました。さて、次は実務です。');
-  openResultModal(true, '処女航海 完了！', '観光航路とステーション「あおば」への帰投を完遂しました。功績 +30 pt 獲得！', prevMerit);
+  triggerCelebration('処女航宙 完了！');
+  logEvent('🎖️ 処女航宙完了！功績 +30 pt 獲得。');
+  showOfficerPopup(GUIDE, '処女航宙、見事でした！功績が認められました。さて、次は実務です。');
+  openResultModal(true, '処女航宙 完了！', '観光航路とステーション「あおば」への帰投を完遂しました。功績 +30 pt 獲得！', prevMerit);
   updatePanels();
 }
 
@@ -2862,7 +2872,7 @@ function checkMissionConditions(simDt){
     if(dvEmptyTimer > 4.5){
       S.failed=true; S.missionEnded=true;
       playSfx('fail');
-      showOfficerPopup(GUIDE, '推進剤（Δv）が完全に枯渇しました…。次は省燃料の航海計画で、余裕を持って臨みましょう。');
+      showOfficerPopup(GUIDE, '推進剤（Δv）が完全に枯渇しました…。次は省燃料の航宙計画で、余裕を持って臨みましょう。');
       openResultModal(false, 'Δv 枯渇・到達不能', '推進剤を使い切り、目標船に到達できなくなりました。');
     }
   } else {
@@ -2938,13 +2948,13 @@ function toggleHoldMode(){
   updateOrderBar();
 }
 
-// ---------- 航海計画パネル & 計画実行 ----------
+// ---------- 航宙計画パネル & 計画実行 ----------
 let planPanelState = null;
 let checklistTimer = null;
 
 function openMissionPlanPanel(){
   if(!S) return;
-  // タスクは共存できる: 海図が開いていれば計画はコンパクトな下部シートで重なる（閉じれば元の配置に戻る）
+  // タスクは共存できる: 宙図が開いていれば計画はコンパクトな下部シートで重なる（閉じれば元の配置に戻る）
   document.getElementById('plan-panel').classList.toggle('compact', chartState.open);
   const m = getMission();
   openPlanPanel({
@@ -2959,7 +2969,7 @@ function openMissionPlanPanel(){
   });
 }
 
-/* ---- 航海計画＝運航文書: 航路（航路点）・噴射計画（区間）・推進剤予算を検証可能にする ---- */
+/* ---- 航宙計画＝運航文書: 航路（航路点）・噴射計画（区間）・推進剤予算を検証可能にする ---- */
 function fmtDayClock(t){
   const d = Math.floor(t / 86400) + 1;
   const hh = String(Math.floor(t / 3600) % 24).padStart(2, '0');
@@ -3399,7 +3409,7 @@ function openPlanPanel(cfg){
     document.getElementById('plan-levers').style.display = 'none';
     document.getElementById('btn-depart').style.display = 'none';
   }
-  // タスク共存: 海図が開いていれば計画パネルはコンパクトな下部シートで重なる
+  // タスク共存: 宙図が開いていれば計画パネルはコンパクトな下部シートで重なる
   document.getElementById('plan-panel').classList.toggle('compact', chartState.open);
   document.getElementById('plan-route-name').textContent = cfg.routeName;
   { const trk = trackData(S.captain ? S.captain.track : 'transport');
@@ -3505,7 +3515,7 @@ function openPlanPanel(cfg){
     const all = [
       { who:'機関', text:'機関、全系統正常' },
       { who:'推進剤', text:'三浦「推進剤 Δv 残量 '+S.dv.toFixed(1)+'／計画消費 '+estDv.toFixed(1)+'、'+(S.dv>=estDv?'余裕あり':'残量注意')+'」' },
-      { who:'航路計画', text:'三浦「'+aiName()+'の航海計画、受領。針路設定完了」' },
+      { who:'航路計画', text:'三浦「'+aiName()+'の航宙計画、受領。針路設定完了」' },
       { who:'管制許可', text:'あおば管制「『'+SHIP_CALLSIGN+'』、出航を許可する」' }
     ];
     return cfg.shortChecklist ? [all[1], all[3]] : all;
@@ -4037,7 +4047,7 @@ function confirmDepartureRest(ctx){
   }
   if(S.tutorial && S.tutorial.onDeparted) S.tutorial.onDeparted();
   updatePlanStatusUI();
-  /* 航路ラインは出発の瞬間から海図・3Dに明示する（初回再計算まで待たない） */
+  /* 航路ラインは出発の瞬間から宙図・3Dに明示する（初回再計算まで待たない） */
   updatePlanLineMesh();
   saveGame('depart');
   bgmDepart();
@@ -4252,7 +4262,7 @@ function updateDepartureOps(simDt){
     logEvent('📡 あおば管制: 港内は混雑しています。' + (hold ? '沖待ちの' + hold.name + 'と接舷船に注意。' : '接舷船と沖待ち船に注意。') + '制限速度を維持せよ。');
     if(S.prologue && !chartIntroShown){
       chartIntroShown = true;
-      setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。海図を見れば、周りの船と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
+      setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '港の中は交通が多いでしょう。宙図を見れば、周りの船と一緒に自分の位置が分かります。表示範囲は普段、航行AIの'+aiName()+'が状況に合わせて切り替えてくれます。'); }, 1500);
     }
   }
   if(distToFix <= 150 || distA > 950){
@@ -4320,7 +4330,7 @@ function updatePlanExecution(simDt){
      （ケイデンス最低 3,600 秒・実時間ゲート無効）は、推定器が同じ滑空を不成立と
      判定し続ける位相窓（数千秒幅）を船内時だけで密にサンプリングし、誘導の
      approach 噴射が状態を変える前に badEst が 2 に達して、誘導では到達可能な
-     航程まで逸脱停止させる事故を起こした（実測: 処女航海 std 案。実時間駆動では
+     航程まで逸脱停止させる事故を起こした（実測: 処女航宙 std 案。実時間駆動では
      到着した同じ出発が、追いつき駆動では t≈10,800 で停止し、お伺いの再計画も
      同じ位相で不成立となり座礁）。現在の追いつきはフレーム分割で実時間が流れる
      ため、実時間ゲートを適用しても再推定が止まることはなく、実時間飛行と同じ
@@ -4334,7 +4344,7 @@ function updatePlanExecution(simDt){
     /* 再推定はアンサンブル（RK4＋実飛行積分器の双子）で行う（v0.6.4 課題2）:
        単独 RK4 の見積もりは分岐感受性が高く、実飛行（オイラー世界）が完走
        できる航程でも ok:false を返し続ける位相があり、逸脱停止が誤発火して
-       計画が宙に浮いた（実測: 処女航海 std が出発直後に停止し 7.6 日漂流）。
+       計画が宙に浮いた（実測: 処女航宙 std が出発直後に停止し 7.6 日漂流）。
        判定規則: 双子（実世界と同じ積分器）の分岐が成立し安全なら計画は健全。
        逸脱の加算は「両分岐とも不成立」の合意がある場合と、安全側の擦過・
        交差予測がある場合だけに行う。分岐が割れただけでは止めない。 */
@@ -4760,7 +4770,7 @@ let camAzAccum = 0;
 /* 港シーン（着任式）は専用モーダルでなく、ゲーム内の会話UI（話者・台詞・送りの
    文法）で表示する。台詞・内容は従来のモーダル版と同一で、器だけを会話に統一した。
    ページ列は船長プロフィール等で動的に決まるため、会話定義をその場で組み立てて
-   登録し、終了後に処女航海の教導（startPrologueSteps）へつなぐ */
+   登録し、終了後に処女航宙の教導（startPrologueSteps）へつなぐ */
 function initPrologueFlow(){
   const cap = S.captain || defaultCaptainProfile();
   const tr = trackData(cap.track);
@@ -4774,7 +4784,7 @@ function initPrologueFlow(){
     n03: { type: 'say', who: 'sakurabara_rin', next: 'n04', text: 'まず、クルーを紹介します。本日付で着任した、船長の部下たちです。' },
     n04: { type: 'grounds', who: 'sakurabara_rin', title: 'クルー紹介', rows: offRows, next: 'n05' },
     n05: { type: 'say', who: 'miura_aoi', next: 'n06', text: 'そして、船長が乗り組む船です。' + tr.shipClass + '「' + tr.shipName + '」。' + tr.desc + '操船は私たち航法と船載AI「'+aiName()+'」が行います。船長の仕事は判断と責任です。' },
-    n06: { type: 'say', who: 'sakurabara_rin', next: 'end', text: 'このあと船橋で、惑星「つむぎ」を回る衛星「こよみ」への観光航行——処女航海の計画を承認していただきます。失敗のない航行ですから、気楽にどうぞ。では船橋へ。' }
+    n06: { type: 'say', who: 'sakurabara_rin', next: 'end', text: 'このあと船橋で、惑星「つむぎ」を回る衛星「こよみ」への観光航行——処女航宙の計画を承認していただきます。失敗のない航行ですから、気楽にどうぞ。では船橋へ。' }
   } };
   const started = startConversation('port_scene_m0');
   if(started && convState) convState.afterEnd = () => { startPrologueSteps(); };
@@ -4795,9 +4805,9 @@ function buildPrologueTutorial(hab){
     },
     steps: [
       {
-        title: 'A1: 観光航海計画の承認',
+        title: 'A1: 観光航宙計画の承認',
         short: '航法の三浦に話しかけて観光航路を承認しよう',
-        desc: '榊原「まず航海計画を立てます。航行AI『'+aiName()+'』が計算し、航法士官が提案しますから、船長は承認するだけです。操作はクルーに話しかけることから始まります。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
+        desc: '榊原「まず航宙計画を立てます。航行AI『'+aiName()+'』が計算し、航法士官が提案しますから、船長は承認するだけです。操作はクルーに話しかけることから始まります。この航路はみんなのものです。民間船も軍艦も同じコースを飛びます」',
         hl: '#btn-talk',
         autoAction: () => {
           queueTalkToNavigator();
@@ -4813,9 +4823,9 @@ function buildPrologueTutorial(hab){
       },
       {
         title: 'A3: 待機（時間を進める）',
-        short: '「待機」で時間を進めてみよう（×3以上）',
-        desc: '榊原「この航程は到着まで、船長に判断いただくことは何もありません。何かあれば当直がお呼びしますから、船長はお休みください」【システム】「待機」で次の報告まで時間を進められます（×3以上に上げてみましょう）。時間送りは試作版だけの便宜機能です',
-        hl: '[data-warp="3"]',
+        short: '「次の判断まで」で時間を進めてみよう',
+        desc: '榊原「この航程は到着まで、船長に判断いただくことは何もありません。何かあれば当直がお呼びしますから、船長はお休みください」【システム】「次の判断まで」を押すと、次の報告の時点まで時間を進められます',
+        hl: '#btn-debug-skip',
         autoAction: () => { setWarp(3); }
       },
       {
@@ -4838,7 +4848,7 @@ function buildPrologueTutorial(hab){
       {
         title: 'B2: ステーション「あおば」へ帰投',
         short: 'ステーションへの帰投を見守ろう',
-        desc: '榊原「ステーションへ向けて帰投中です。距離90以内に入れば処女航海完了です」',
+        desc: '榊原「ステーションへ向けて帰投中です。距離90以内に入れば処女航宙完了です」',
         hl: null,
         autoAction: () => { setWarp(8); }
       }
@@ -4850,7 +4860,7 @@ function startPrologueSteps(){
   const hab = S.planets.find(p => p.isMoon) || S.planets[1] || S.planets[0]; // ソル系 つむぎ周回 衛星「こよみ」
   S.tutorial = buildPrologueTutorial(hab);
   S.target = hab;
-  showOfficerPopup(GUIDE, 'まず航海計画を立てます。航法の三浦に話しかけてください。案を用意しています。');
+  showOfficerPopup(GUIDE, 'まず航宙計画を立てます。航法の三浦に話しかけてください。案を用意しています。');
   renderTutorialUI();
   /* 界面憲法: パネルは自動で開かない。計画会議は船長が三浦に話しかけて始める */
 }
@@ -4861,7 +4871,7 @@ function buildM1Tutorial(){
     step: 0,
     stuckTime: 0,
     skipped: false,
-    nextActionText: '教導士官のブリーフィングを確認して「航海計画」を開こう',
+    nextActionText: '教導士官のブリーフィングを確認して「航宙計画」を開こう',
     onPlanOpened: () => {
       showOfficerPopup(GUIDE, 'Δv（デルタブイ）は「あとどれだけ噴射できるか。燃料の残量みたいなもの」です。案が決まれば、出航の号令をお願いします。');
     },
@@ -4879,13 +4889,13 @@ function buildM1Tutorial(){
     steps: [
       {
         title: '0. 任務ブリーフィング',
-        short: 'ブリーフィングを確認して「航海計画」を開こう',
+        short: 'ブリーフィングを確認して「航宙計画」を開こう',
         desc: trackData(S.captain ? S.captain.track : 'transport').jobLine + 'ランデブー＝「相手と同じ場所に、同じ速さで並ぶこと」、ドッキング（接舷）＝「くっついて、補給や荷物の受け渡しをすること」。',
         hl: '#btn-plan',
         autoAction: () => { S.tutorial.step = 1; openMissionPlanPanel(); }
       },
       {
-        title: '1. 航海計画の承認',
+        title: '1. 航宙計画の承認',
         short: '計画を確認して「出航用意よし — 出航」を押そう',
         desc: '航行AI『'+aiName()+'』が計算し、航法士官が提示した計画を確認し、「出航用意よし — 出航」を押してください。復唱＝「命令を繰り返して、間違いがないか確認すること」です。',
         hl: '#btn-depart',
@@ -6422,7 +6432,7 @@ function courseFlownPath(cd){
    巡航以降は自船に最も近いサンプルから先だけを引く（線が自船の後ろに残らない）。
    #77 例外: 出発窓待機中はまだ飛んでいないので、申告航路は現在位置でなく出発点（サンプル先頭）を
    起点に描く。現在位置との接続は待機軌道線と出発点マーカーが担う（現在位置から無理に線を引くと
-   再計画のたびに鋭い折れ＝継ぎ目が海図に残った） */
+   再計画のたびに鋭い折れ＝継ぎ目が宙図に残った） */
 function courseDisplayPath(cd){
   if(!cd || !cd.samples || cd.samples.length < 2 || !S || !S.ship) return null;
   const smp = cd.samples;
@@ -6542,7 +6552,7 @@ function updateCourseRibbon(ref){
   buildRibbonStrip(ribbonCore, fp, (d, t) => Math.max(0.4, d * 0.0032) * taper(t), t => [0.16 + 0.16 * t, 0.80 - 0.10 * t, 0.72 + 0.24 * t]);
   placeArrowsAlongPath(ribbonArrows, fp, [0.14, 0.30, 0.46, 0.62, 0.78, 0.92], d => Math.max(2.5, d * 0.016));
   /* #75: 飛行済み区間は沈んだ色の別帯で示し、「計画のどこまでを消化したか」と
-     「これから飛ぶ航路」を海図上で区別する */
+     「これから飛ぶ航路」を宙図上で区別する */
   if(ribbonPast){
     const flown = courseFlownPath(cdD);
     if(flown && flown.length >= 2){
@@ -7429,7 +7439,7 @@ function syncMeshes(){
   updateOrbitLines(ref); /* #77: 全階層の軌道線 */
   updateDepartureMarker(ref); /* #77: 待機中の出発点 */
   /* #75: 再推定・再計画でサンプル列が差し替わったら、ウェイポイントのチップも
-     その場で焼き直す（古い計画のチップが海図に残り続けるのを防ぐ） */
+     その場で焼き直す（古い計画のチップが宙図に残り続けるのを防ぐ） */
   if(S.planSamples !== _lastPlanSamplesRef){ _lastPlanSamplesRef = S.planSamples; if(typeof updatePlanLineMesh === 'function') updatePlanLineMesh(); }
 
   // 進入コース描画
@@ -7724,7 +7734,7 @@ function planGroundsText(pe){
    plan_diff 接続／束縛解決／calc の実推定接続／報告到達の保証（tier 2/3 は
    関係値によらず必ず届く。rel 条件は口調バリアントの選択にだけ使う）。
    会話は単一の会話面（#msg-card）の舞台で開き、世界の時計は止めない（選択しようが
-   しなかろうが、見逃そうが、航海は進む）。舞台には現在の話者と発言だけを載せ、
+   しなかろうが、見逃そうが、航宙は進む）。舞台には現在の話者と発言だけを載せ、
    全記録は日誌へ送る。選択肢が開いている間は判断ホールド（#67）の対象になる
    （decisionOpenNow が convState を見る）。 */
 const CONV_SCOPES = { standard: '標準の委任（定型は自律実施＋事後報告）', narrow: '狭い委任（小さな補正も毎回お伺い）', with_window: '窓の採用まで含む委任' };
@@ -8263,7 +8273,7 @@ function closeTalkPicker(){
 /* 話しかけ先は「現在の依頼が集めたクルー」。クルーは船長や船に固定の仲間ではなく、
    依頼ごとに船と一緒に集まる編成で、船長はその船とクルーのところへ行く側。
    M0 の依頼では航法＝三浦・補給＝高橋・教導＝榊原。編成ロジックの本実装は第3段で、
-   ここは現在の航海の編成を返すプロトタイプ */
+   ここは現在の航宙の編成を返すプロトタイプ */
 function currentCrewAssignments(){
   return [
     { key: 'nav', person: convPerson('miura_aoi'), role: '航法', desc: '計画会議・航行の相談', fn: talkToNavigator },
@@ -8281,7 +8291,7 @@ function renderTalkPicker(){
     body.innerHTML = '';
     const note = document.createElement('div');
     note.className = 'conv-note';
-    note.textContent = 'この航海の依頼で集まったクルーです。用件に合う役職を選んでください。';
+    note.textContent = 'この航宙の依頼で集まったクルーです。用件に合う役職を選んでください。';
     body.appendChild(note);
   }
   const next = document.getElementById('conv-next'); if(next) next.style.display = 'none';
@@ -8303,7 +8313,7 @@ function renderTalkPicker(){
    design/roster-draft.md の初期7席。席に就くと、その人物として M0 の依頼から
    始まる。信用・経歴・担当航路の引き継ぎはスタブ（未実装） ---- */
 const ROSTER_SEATS = [
-  { name: '結城 凪', rank: '少尉', org: '航路組合・輸送部門', post: '新任輸送艦長（推奨第一席・教導つき）', route: 'あおば⇔こよみ 補給便', ship: '輸送艦「さくら」', diff: '★', color: '#38bdf8', status: 'あおば第6バースに接舷中。これから処女航海のブリーフィングを受ける', startState: 'あおば接舷中から（着任式→処女航海）' },
+  { name: '結城 凪', rank: '少尉', org: '航路組合・輸送部門', post: '新任輸送艦長（推奨第一席・教導つき）', route: 'あおば⇔こよみ 補給便', ship: '輸送艦「さくら」', diff: '★', color: '#38bdf8', status: 'あおば第6バースに接舷中。これから処女航宙のブリーフィングを受ける', startState: 'あおば接舷中から（着任式→処女航宙）' },
   { name: 'キム・ソヨン', rank: '少尉', org: '航路組合・輸送部門', post: '連絡便艦長', route: 'あおば⇔こよみ 定期連絡便', ship: '連絡船「そよかぜ」', diff: '★★', color: '#f472b6', status: '定期連絡便で航行中（あおば発・こよみ行きの途中）', startState: '航路の途中から引き継ぐ' },
   { name: 'エリック・ラーション', rank: '大尉', org: '航路組合・哨戒担当', post: '哨戒艇艦長', route: 'つむぎ宙域 哨戒ループ', ship: '哨戒艇「しおかぜ」', diff: '★★', color: '#a78bfa', status: '哨戒ループを航行中', startState: '航行中から引き継ぐ' },
   { name: 'ラージェシュ・パテル', rank: '中尉', org: '航路組合・補給部門', post: 'あかね補給便艦長', route: 'あおば⇔あかね資源港 補給便', ship: '補給艦「わかしお」', diff: '★★★', color: '#fbbf24', status: 'あおばで積み荷中。出発は次の出発窓に合わせる', startState: '接舷・出発準備中から' },
@@ -8353,7 +8363,7 @@ function startRosterSeat(i){
    続ける場合は同じ航路の復路・次便が立つ。新しい雇い主・航路は信用で広がる。
    実働は M0 のみ。他は設計由来のプロトタイプ表示で、受けられるようには見せない ---- */
 const REQUEST_BOARD = [
-  { sec: '現在の配船', title: '定期補給便（訓練航海）', route: 'あおば → こよみ（補給艦「あけぼの」から荷受け）', client: '航路組合・輸送部門', ship: '輸送船「さくら」（依頼側の指定）', crew: '三浦 葵（航法）／高橋 蓮（補給）／榊原 凛（教導）', opState: '自分が運航中（この航海）', pay: '成功報酬 30 cred', bonus: '条件ボーナス +10（無事故・定時・精算適正）', budget: '運航委託費の枠 80 cred', chip: 'active', chipLabel: '受注中 — この航海' },
+  { sec: '現在の配船', title: '定期補給便（訓練航宙）', route: 'あおば → こよみ（補給艦「あけぼの」から荷受け）', client: '航路組合・輸送部門', ship: '輸送船「さくら」（依頼側の指定）', crew: '三浦 葵（航法）／高橋 蓮（補給）／榊原 凛（教導）', opState: '自分が運航中（この航宙）', pay: '成功報酬 30 cred', bonus: '条件ボーナス +10（無事故・定時・精算適正）', budget: '運航委託費の枠 80 cred', chip: 'active', chipLabel: '受注中 — この航宙' },
   { sec: '継続便（同じ航路の往復）', title: '定期補給便（復路）', route: 'こよみ → あおば', client: '航路組合・輸送部門', ship: '輸送船「さくら」', crew: '往路と同じ編成', opState: '継続便（往路の完了後に配船）', pay: '成功報酬 30 cred', bonus: '条件ボーナス +10（同条件）', budget: '運航委託費の枠 80 cred', chip: 'next', chipLabel: '往路の完了後に届く便' },
   { sec: '継続便（同じ航路の往復）', title: '定期補給便（次便）', route: 'あおば → こよみ', client: '航路組合・輸送部門', ship: '輸送船「さくら」', crew: '便ごとに編成', opState: '継続便（復路の完了後に配船）', pay: '成功報酬 30 cred', bonus: '条件ボーナス +10（同条件）', budget: '運航委託費の枠 80 cred', chip: 'next', chipLabel: '復路の完了後に届く便（往復が続く）' },
   { sec: '他の配船（信用で広がる・将来）', title: '定期連絡便', route: 'あおば ⇔ こよみ', client: '航路組合・輸送部門', ship: '連絡船「そよかぜ」', crew: '航法・補給（役職構成のみ表示）', opState: 'NPC（キム・ソヨン）が運航中 — 交代可', pay: '成功報酬 25 cred（設計物差しによる試算）', bonus: '条件ボーナスは契約時に明記', budget: '便ごとに枠付け', chip: 'proto', chipLabel: 'プロトタイプ — まだ就航していません' },
@@ -8423,7 +8433,7 @@ function talkToGuide(){
   if(!S) return;
   if(convState){ setStatusMsg('🗣 会話中です。終わってから話しかけてください。'); return; }
   startConversation('guide_consult', {
-    'guide.objective': (S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText) ? S.tutorial.nextActionText : '処女航海の案内は終了しています。通常運航中です'
+    'guide.objective': (S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText) ? S.tutorial.nextActionText : '処女航宙の案内は終了しています。通常運航中です'
   });
 }
 /* 最小化は会話面共通の #msg-min に統一（旧 #conv-min は廃止） */
@@ -8435,7 +8445,7 @@ function talkToGuide(){
 const CONVERSATIONS = {
 plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、航法の三浦です。あおば発、こよみ行きの計画を計算します。少しお待ちください。' },
-  n02: { type: 'calc', title: '航海計画を計算中', sub: '当直が推定を行っています。ステータス表示はそのまま見られます。', next: 'n03', stages: [
+  n02: { type: 'calc', title: '航宙計画を計算中', sub: '当直が推定を行っています。ステータス表示はそのまま見られます。', next: 'n03', stages: [
     { name: '標準案の推定', task: 'estimate:std' }, { name: '省燃料案の推定', task: 'estimate:eco' }, { name: '最速案の推定', task: 'estimate:fast' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
   n03: { type: 'branch', cases: [ { when: 'state:plan.any_feasible == true', goto: 'n10' } ], default: 'n90' },
   n10: { type: 'say', who: 'miura_aoi', next: 'n11', text: 'できました。3案あります。順に説明します。' },
@@ -8467,9 +8477,9 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n32: { type: 'choice', options: [
     { label: 'その計画で出発する', primary: true, goto: 'n33', effects: [ { commit: true } ] },
     { label: 'もう少し考える', goto: 'n34' } ] },
-  n33: { type: 'effect', effects: [ { schedule: { action: 'publish', ref: 'self_plan' } }, { log: '航海計画を承認' } ], next: 'n35' },
+  n33: { type: 'effect', effects: [ { schedule: { action: 'publish', ref: 'self_plan' } }, { log: '航宙計画を承認' } ], next: 'n35' },
   n35: { type: 'say', who: 'miura_aoi', next: 'n36', text: '了解です。{choice.variant_name}で出発準備に入ります。チェックリストは当直が進め、離舷の最終確認だけ改めてお伺いします。' },
-  n36: { type: 'log', next: 'end', text: '航海計画を承認 —— {choice.variant_name}（Δv {choice.dv}／所要 {choice.time}／到着 {choice.arr}）。あおば第6バースより出発準備に入る。' },
+  n36: { type: 'log', next: 'end', text: '航宙計画を承認 —— {choice.variant_name}（Δv {choice.dv}／所要 {choice.time}／到着 {choice.arr}）。あおば第6バースより出発準備に入る。' },
   n34: { type: 'say', who: 'miura_aoi', next: 'n20', text: '承知しました。計画はこのまま保持しておきます。お決まりになったら声をかけてください。' },
   n90: { type: 'say', who: 'miura_aoi', next: 'n91', text: '計算が終わりました。正直にお伝えします——今の位相では、3案とも成立しません。理由を順に説明します。' },
   n91: { type: 'grounds', title: '全案不成立 — 不足の内訳（根拠）', bars: 'variants', next: 'n92', rows: [
@@ -8492,7 +8502,7 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n9b: { type: 'say', who: 'miura_aoi', next: 'n9c', text: '承知しました。第6バースに接舷したまま窓を待ち、{est.window.depart} に出発準備へ移ります。待機中の当直は通常どおり回します。' },
   n9c: { type: 'log', next: 'end', text: '出発窓を採用 —— 現在位相では全案不成立のため、{est.window.wait}の窓まで接舷待機。出発予定 {est.window.depart}、標準案（Δv {est.window.dv}／到着 {est.window.arr}）。' },
   n9a: { type: 'say', who: 'miura_aoi', next: 'n9d', text: '承知しました。その場合は、積荷の軽量化か予備の見直しが必要です。どちらも今日この場では決められないので、計画は保留にします。出発はしません。' },
-  n9d: { type: 'log', next: 'end', text: '航海計画は判断保留 —— 出発窓での待機を見送り。条件（積荷・予備）の見直し後に再計算する。' }
+  n9d: { type: 'log', next: 'end', text: '航宙計画は判断保留 —— 出発窓での待機を見送り。条件（積荷・予備）の見直し後に再計算する。' }
 } },
 plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。「あけぼの」からの受け取りは完了、積荷は固定まで済んでいます。点検も完了しています。それより前には、どのみち出られません。' },
@@ -8750,7 +8760,7 @@ function triggerTrafficAdvisory(){
   setStatusMsg(msg);
   if(!chartIntroShown && S.tutorial && !S.tutorial.skipped){
     chartIntroShown = true;
-    setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '周りの交通は海図で確認できます。表示範囲は航行AIの'+aiName()+'が状況で切り替えますが、船長から指定もできます。'); }, 1500);
+    setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '周りの交通は宙図で確認できます。表示範囲は航行AIの'+aiName()+'が状況で切り替えますが、船長から指定もできます。'); }, 1500);
   }
 }
 
@@ -8931,7 +8941,7 @@ function triggerEvent(){
   const ev=pool[Math.floor(Math.random()*pool.length)];
   const [text, major]=ev.run(o,other);
   // 報告階層（v0.6）: 部下の定常行動は船長へ逐一直接報告しない。裏で調整され、蓄積報告として
-  // 航海日誌に静かに積まれ、船長室の机でまとめて読む。船長の画面に出るのは判断要求・例外・事故だけ。
+  // 航宙日誌に静かに積まれ、船長室の机でまとめて読む。船長の画面に出るのは判断要求・例外・事故だけ。
   S.reportQueue = S.reportQueue || [];
   S.reportQueue.push({ t: S.time, who: o.name, text });
   if(S.reportQueue.length > 40) S.reportQueue.shift();
@@ -9111,6 +9121,7 @@ document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', 
 }));
 document.getElementById('btn-debug-skip').addEventListener('click', ()=>{ playSfx('click'); startDebugSkip(); });
 document.getElementById('btn-debug-log').addEventListener('click', ()=>{ playSfx('click'); exportDebugLog(); });
+document.getElementById('btn-debug-toggle').addEventListener('click', ()=>{ playSfx('click'); const p = document.getElementById('debug-panel'); if(p) p.style.display = (p.style.display === 'none' || !p.style.display) ? 'inline-flex' : 'none'; });
 document.getElementById('btn-assist').addEventListener('click', assistBurn);
 document.getElementById('btn-resupply').addEventListener('click', resupply);
 document.getElementById('btn-build').addEventListener('click', buildShip);
@@ -9161,7 +9172,7 @@ function computeContacts(){
   if(S.target && S.target !== S.ship) push(S.target.name, 'target', S.prologue ? 'ステーション' : '目標船', S.target);
   (S.npcs || []).forEach(n => push(n.name, 'moving', n.kind === 'patrol' ? '軍艦（航路）' : '民間船（航路）', n));
   (S.portCraft || []).forEach(c => push(c.name, c.cat, c.cat === 'docked' ? '接舷中' : (c.cat === 'holding' ? '沖待ち' : (c.cat === 'lane' ? '定期便（航路）' : '作業艇')), c, c.gate));
-  // 地表港（設計上の実在目的地）: つむぎの地表港は惑星と共に海図・交通一覧に現れる
+  // 地表港（設計上の実在目的地）: つむぎの地表港は惑星と共に宙図・交通一覧に現れる
   // 応急処置: 表示アンカーは惑星中心でなく円盤上（地表）に置く。中心だと「地面の
   // 中」に見える。具体的な地表位置は未決（世界モデルに天体自転が無く、確定は
   // 着陸ライン側）で、ここでは北極方向の地表点を仮の置き場にする
@@ -9170,7 +9181,7 @@ function computeContacts(){
     const surfR = host.dispR || host.displayRadius || host.radius || 2600;
     push('地表港「しんこう」', 'port', '地表港（降下船級のみ）', { x: host.x, y: host.y + surfR, z: host.z, vx: host.vx, vy: host.vy, vz: host.vz });
   }
-  // 資源衛星（設計上の実在施設）: 採掘プラットフォーム「タロス」は あかね を周期 約1.81日で周回し、海図・交通一覧に現れる
+  // 資源衛星（設計上の実在施設）: 採掘プラットフォーム「タロス」は あかね を周期 約1.81日で周回し、宙図・交通一覧に現れる
   if(S.sys && S.sys.id === 'sol' && S.planets && S.planets[2]){
     const ak = S.planets[2];
     const R = 350000;
@@ -9353,7 +9364,7 @@ function updateNpcLabels(){
     .sort((a, b) => (prio(a) - prio(b)) || (a.dist - b.dist))
     .slice(0, 8);
   /* #80: system 縮尺では名前ラベルは惑星級のみ。このプールの対象は駅・船・港が
-     ほとんど（惑星名は海図が担う）で、遠景でも焦点近傍の細部ラベルが画面一定で
+     ほとんど（惑星名は宙図が担う）で、遠景でも焦点近傍の細部ラベルが画面一定で
      浮いてしまうため、惑星に一致する名前だけ残す */
   const cs = viewScaleLevel() === 'system'
     ? csAll.filter(c => (S.planets || []).some(p => !p.isMoon && p.name === c.name))
@@ -9510,7 +9521,7 @@ function talkToCrew(i){
 }
 const SHIP_ROOMS = [
   { id:'bridge', name:'船橋', bg:'bridge', posts:['航法', '戦術', '教導'], line:'当直の士官が静かに計器を見守っている。判断が要る局面になれば、すぐ船長へ報告が上がる。' },
-  { id:'cabin', name:'船長室', bg:'cabin', posts:[], line:'船長の私室。航海日誌と、港で受け取った辞令が机に置かれている。' },
+  { id:'cabin', name:'船長室', bg:'cabin', posts:[], line:'船長の私室。航宙日誌と、港で受け取った辞令が机に置かれている。' },
   { id:'corridor', name:'通路', bg:'corridor', posts:[], line:'各区画をつなぐ通路。当直交代の乗組員とすれ違う。' },
   { id:'engine', name:'機関室', bg:'engine', posts:['機関'], line:'機関の低い唸りが床を伝う。出力は安定し、航行AIが微調整を続けている。' },
   { id:'cargo', name:'貨物庫', bg:'cargo', posts:['補給'], line:'積荷は固定され、残量は補給士官の台帳どおり。揺れひとつない。' },
@@ -9578,7 +9589,7 @@ const OP_DUR = { engine: 360, drill: 300, rounds: 180 };
    説明文に出てくる物（船長室の机の日誌・辞令など）は実際に使えること ---- */
 const ROOM_ACTIONS = {
   bridge: [ { id:'watch-report', label:'当直報告を受ける' } ],
-  cabin: [ { id:'desk-log', label:'机：航海日誌を読む' }, { id:'desk-reports', label:'机：蓄積報告を読む' }, { id:'desk-rest', label:'机：休息する（約30分）' } ],
+  cabin: [ { id:'desk-log', label:'机：航宙日誌を読む' }, { id:'desk-reports', label:'机：蓄積報告を読む' }, { id:'desk-rest', label:'机：休息する（約30分）' } ],
   corridor: [ { id:'corridor-board', label:'掲示板を見る' } ],
   engine: [ { id:'engine-status', label:'機関ステータスを確認' } ],
   cargo: [ { id:'cargo-manifest', label:'積荷目録を見る' } ],
@@ -9606,7 +9617,7 @@ function roomAction(roomId, actionId){
     sceneSetLine(t);
   } else if(actionId === 'desk-log'){
     const items = recentLogTexts(6);
-    sceneSetLine(items.length ? '航海日誌（直近）：\n' + items.join('\n') : '航海日誌はまだ白紙です。');
+    sceneSetLine(items.length ? '航宙日誌（直近）：\n' + items.join('\n') : '航宙日誌はまだ白紙です。');
   } else if(actionId === 'desk-reports'){
     const q = S.reportQueue || [];
     if(!q.length){ sceneSetLine('机の報告トレイ： 新しい蓄積報告はありません。部下の定常行動は裏で調整され、ここに静かに積まれます。'); return; }
@@ -9863,7 +9874,7 @@ function renderTransitScene(){
   let ch = '<button data-turnback="1">引き返す</button>';
   ch += SHIP_ROOMS.filter(r => r.id !== tr.to && r.id !== 'corridor').map(r => '<button data-move="' + r.id + '">' + r.name + 'へ変更</button>').join('');
   ch += '<button data-terminal="nav">📱 端末：航行画面</button>';
-  ch += '<button data-terminal="plan">📱 端末：航海計画</button>';
+  ch += '<button data-terminal="plan">📱 端末：航宙計画</button>';
   ch += '<button data-terminal="log">📱 端末：日誌・報告</button>';
   if(stageState.interrupt) ch += '<button data-gonav="1" class="primary">航行画面で対応する</button>';
   sceneSetChoices(ch, el => {
@@ -9916,10 +9927,10 @@ function renderTalkScene(){
 }
 document.getElementById('scene-exit').addEventListener('click', ()=>{ playSfx('click'); closeStage(); });
 
-// ---------- 海図（表示範囲は航行AIが自動管理／船長指定で上書き） ----------
+// ---------- 宙図（表示範囲は航行AIが自動管理／船長指定で上書き） ----------
 const CHART_RANGES = { port:{ label:'港内', half:4000 }, local:{ label:'近傍', half:3000000 }, system:{ label:'広域', half:150000000 } };
 let chartState = { mode:'auto', range:'system', lastAutoT:-99, open:false };
-let frameState = { mode:'auto', ref:'station' };
+let frameState = { mode:'auto', ref:'planet' };
 function camDistForRange(r){
   return r === 'port' ? 240 : (r === 'local' ? 1200000 : 180000000);
 }
@@ -9940,14 +9951,15 @@ function getEffectiveFrameRef(){
   const hasStation = !!(S && S.station);
   if(frameState.mode === 'auto'){
     const pe = S && S.planExec;
-    if(hasStation && (S.docked || (pe && pe.phase === 'harbor'))) return 'station';
+    if(hasStation && (S.docked || (pe && pe.phase === 'harbor'))) return 'planet';
     const r = chartState.range;
-    if(r === 'port') return hasStation ? 'station' : 'planet';
+    if(r === 'port') return 'planet';
     if(r === 'local') return 'planet';
+    if(S.prologue) return 'planet'; /* M0は宙域内のみの航宙: 初心者向けに母惑星（つむぎ）基準を既定にする。他基準は手動で選べる */
     return 'star';
   }
-  if(frameState.ref === 'station' && !hasStation) return 'planet';
-  return frameState.ref || (hasStation ? 'station' : 'planet');
+  if(frameState.ref === 'station') return 'planet'; /* 旧セーブ互換: ステーション基準は惑星基準へ読み替え */
+  return frameState.ref || 'planet';
 }
 function getFrameRefInfo(refOverride){
   const ref = refOverride || getEffectiveFrameRef();
@@ -9984,9 +9996,10 @@ function openFrameSelector(selId){
   document.querySelectorAll('.frame-selector').forEach(s => s.classList.remove('open'));
   if(wasOpen) return;
   const eff = getEffectiveFrameRef();
-  const refs = [];
-  if(S && S.station) refs.push('station');
-  refs.push('planet', 'star');
+  /* 基準の選択肢は惑星基準と恒星基準の2つ（＋将来の広域）。ステーション基準は
+     選択肢から外した（2026-11-19 本人裁定）: 港の周辺は視点で寄るもので、
+     座標基準は惑星で足りる */
+  const refs = ['planet', 'star'];
   let html = refs.map(r => {
     const inf = getFrameRefInfo(r);
     const active = frameState.mode === 'manual' && eff === r;
@@ -10050,7 +10063,7 @@ function evalChartAuto(force){
   if(want !== chartState.range){
     chartState.range = want; chartState.lastAutoT = S.time;
     chartNote(reason, true);
-    logEvent('🧭 ' + aiName() + ': 海図を' + CHART_RANGES[want].label + '表示に切り替えました。');
+    logEvent('🧭 ' + aiName() + ': 宙図を' + CHART_RANGES[want].label + '表示に切り替えました。');
     renderChartHead();
     camDistTarget = camDistForRange(want);
   }
@@ -10170,7 +10183,7 @@ function renderChart(){
       const isNext = (idx === cd.nextIdx);
       const isDest = !!w.target || (idx === rWps.length - 1);
       const isFix = !!w.fix;
-      // 表示範囲外の航路点は捨てず、海図の端に寄せて描く（オフレンジの航路点の標準的な示し方）。
+      // 表示範囲外の航路点は捨てず、宙図の端に寄せて描く（オフレンジの航路点の標準的な示し方）。
       const a0 = px(wx, wz);
       const a = [Math.max(10, Math.min(W - 10, a0[0])), Math.max(10, Math.min(H - 10, a0[1]))];
       const col = isPassed ? 'rgba(148,163,184,0.5)' : (isNext ? '#ffd166' : (isDest ? '#38bdf8' : (isFix ? '#fbbf24' : '#2dd4bf')));
@@ -10298,14 +10311,14 @@ function syncLabelsToggle(){ const b = document.getElementById('btn-view-labels'
 applyTopCollapsed();
 applyDockCollapsed();
 
-// ---------- 船内／海図ボタン ----------
+// ---------- 船内／宙図ボタン ----------
 document.getElementById('btn-ship').addEventListener('click', ()=>{
   playSfx('click');
   const dr = document.getElementById('drawer'); if(dr) dr.classList.add('open');
   const tab = document.querySelector('[data-tab="ship"]'); if(tab) tab.click();
   renderShipPanel();
 });
-/* モード切替: 「航行」はドロワーを閉じるだけ（カメラ・海図・計画の状態は一切触らない＝完全ステートレス） */
+/* モード切替: 「航行」はドロワーを閉じるだけ（カメラ・宙図・計画の状態は一切触らない＝完全ステートレス） */
 document.getElementById('btn-mode-nav').addEventListener('click', ()=>{
   playSfx('click');
   const dr = document.getElementById('drawer'); if(dr) dr.classList.remove('open');
@@ -10492,7 +10505,7 @@ function debugSkipDrive(){
 }
 /* ---- デバッグログ出力（v0.6.1.2 先行公開分と同等実装） ----
    実機プレイの不具合報告に使えるよう、自船状態・計画・チュートリアル・
-   航海日誌を1つのテキストにまとめ、ファイル保存とクリップボードへ出す。 */
+   航宙日誌を1つのテキストにまとめ、ファイル保存とクリップボードへ出す。 */
 function buildDebugLog(){
   const lines = [];
   const push = (s) => lines.push(s == null ? '' : String(s));
