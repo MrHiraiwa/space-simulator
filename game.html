@@ -1116,7 +1116,7 @@
   <div class="modal-box" style="text-align:left">
     <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">名簿 — 席に就く（プロトタイプ）</div>
     <h2 style="margin:4px 0 8px;font-size:19px">誰の席に就きますか</h2>
-    <p class="roster-note">選ぶのは「人」です。名簿の人たちは既に運航中のため、席にはその人の現在の運行（担当船・航路・進行中の仕事）が付随します。席に就くとは、その航路を運航していた船長と交代し、運行の割り当てを引き継ぐことです（船の所有ではありません。交代した前任者は、会社の配船で別の割り当てへ回ります）。船を個人で持てるのは会社・事業家など資本の側だけで、船長は運航者の船と予算を預かる受託管理者）。自分で作る船長がゼロから依頼を受ける側なのに対し、名簿の席は運行中の引き継ぎです。ここで席に就くと、その人物として処女航海（M0）の配船から始まります。信用・経歴・現在の運行の引き継ぎは未実装（スタブ）で、担当船は M0 の配船側の指定になります。開始位置は本来、その席の時刻表（計画と時計）から決まります。席の船がその時刻に航路の途中なら、途中から引き継ぐのが正しい形です。現プロトタイプでは全席を M0 の接舷開始に読み替えて開始しており、航行途中からの引き継ぎ（航行状態の初期化）は未実装です。</p>
+    <p class="roster-note">選ぶのは「人」です。席に就くと、その人が運航していた便と交代して、運行を引き継ぎます（プロトタイプ：全席とも処女航海 M0 から開始します）。</p>
     <div id="roster-list"></div>
     <div class="modal-actions"><button id="btn-roster-create">＋ 新しい艦長を登録する</button><button id="btn-roster-close">閉じる</button></div>
   </div>
@@ -8302,6 +8302,7 @@ const ROSTER_SEATS = [
   { name: 'チディ・オコロ', rank: '大尉', org: '航路組合・航路保全部門', post: '保全作業船長', route: 'ビーコン保守・障害物除去', ship: '保全作業船「カノープス」', diff: '★★', color: '#60a5fa', status: 'あおば接舷中、保守対象ビーコンの作業計画を提出済み', startState: '接舷中から' },
   { name: 'デウィ・サリ', rank: '中尉', org: '航路組合・輸送部門', post: '資源輸送船長', route: 'あかね資源港⇔タロス⇔あおば 資源輸送', ship: '輸送船「ボレアス」', diff: '★★', color: '#fb923c', status: 'あかね資源港に接舷中、積み込み待ち', startState: 'あかね接舷中から' }
 ];
+const ROSTER_ART = ['assets/portraits/captain-p1.webp','assets/portraits/kim-seoyeon.webp','assets/portraits/erik-larsson.webp','assets/portraits/rajesh-patel.webp','assets/portraits/valentina-rojas.webp','assets/portraits/chidi-okoro.webp','assets/portraits/dewi-sari.webp'];
 function renderRoster(){
   const box = document.getElementById('roster-list');
   if(!box) return;
@@ -8310,12 +8311,10 @@ function renderRoster(){
     const b = document.createElement('button');
     b.className = 'roster-card';
     b.id = 'roster-seat-' + i;
-    b.innerHTML = '<span class="roster-face">' + faceHTML({ name: p.name, initial: p.name.slice(0, 1), color: p.color }) + '</span>'
+    b.innerHTML = '<span class="roster-face">' + faceHTML({ name: p.name, initial: p.name.slice(0, 1), color: p.color, art: ROSTER_ART[i] }) + '</span>'
       + '<span class="roster-main"><b>' + convEsc(p.name) + '</b> <span style="font-size:11.5px;color:#8ea3c8">' + p.rank + '／' + convEsc(p.org) + '／難度 ' + p.diff + '</span>'
-      + '<span class="roster-sub">' + convEsc(p.post) + ' — 担当：' + convEsc(p.route) + '</span>'
-      + '<span class="roster-sub">現在の担当船：' + convEsc(p.ship) + '（運航者の資産・割り当て）</span>'
-      + '<span class="roster-sub">現在の運行：' + convEsc(p.status) + '</span>'
-      + '<span class="roster-sub">引き継ぎ開始：' + convEsc(p.startState || '') + '（開始位置は時刻表＝計画と時計から決まります）</span></span>';
+      + '<span class="roster-sub">' + convEsc(p.post) + ' — ' + convEsc(p.route) + '／' + convEsc(p.ship) + '</span>'
+      + '<span class="roster-sub">現在：' + convEsc(p.status) + '</span></span>';
     b.addEventListener('click', () => { startRosterSeat(i); });
     box.appendChild(b);
   });
