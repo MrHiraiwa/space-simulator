@@ -4015,7 +4015,11 @@ function confirmDepartureRest(ctx){
        出発時刻の配置で計算済みなので、出発時に再推定して差し替えない。
        planHarborTime は推定の港内所要で、追従時計の原点を出発時刻＋港内
        所要に置くために保持する */
-    committedPlan: !!wp,
+    /* 即時出発もコミット扱い（2026-11-20）: 会議の推定は現在状態から計算され
+       出発はその直後なので、承認した計画のまま飛べる。旧規則（窓だけコミット）
+       では帰投の即時出発が非コミットになり、追従開始時の積み直しが承認計画と
+       別解の噴射列に差し替えて惑星衝突に至った実測がある */
+    committedPlan: true,
     planHarborTime: (v.est && v.est.harborTime) || 0,
     waitVariantId: wp ? wp.variantId : null,
     waitPromisedDv: wp ? wp.est.dvTotal : 0,
@@ -4075,6 +4079,10 @@ function confirmDepartureRest(ctx){
     captainSoftTimer: 0,
     onDone: cfg.onDone || null
   };
+  /* 非接舷の即時出発は追従原点を承認時刻に置く（2026-11-20）: 原点が null の
+     ままだと追従開始時の積み直し対象になる。接舷の即時出発は分離完了時に
+     原点が置かれる（committedPlan の規則） */
+  if(!wp && !wasDocked) S.planExec.trackT0 = S.time;
   if(wp){
     if(wp.epochPlan){
       logEvent('🕐 出発便の計画を承認。' + fmtDayClock(S.time + wp.waitSec) + ' の出発まで接舷したまま待機し、承認した計画のまま自動で出発します（' + v.label + '案・推定Δv ' + (v.est.dvTotal + harborDv).toFixed(1) + '）。');
@@ -4089,7 +4097,10 @@ function confirmDepartureRest(ctx){
   /* 航路ラインは出発の瞬間から宙図・3Dに明示する（初回再計算まで待たない） */
   updatePlanLineMesh();
   saveGame('depart');
-  bgmDepart();
+  /* BGM の出発曲は「実際に出発が始まる時」に切り替える（2026-11-20 本人指摘）:
+     窓・出発便の承認はまだ待機に入るだけで、出発していない。窓到着時の
+     自動出発（startWindowDeparture / departAtWindow）が改めて鳴らす */
+  if(!wp) bgmDepart();
 }
 
 /* 出発窓の自動出発（v0.6.4、台帳#49）: 窓の時刻に現在の状態で再検証し、
@@ -4644,7 +4655,7 @@ function updatePlanExecution(simDt){
   const info = relInfo(S.ship, pe.targetBody);
   /* 計画追従の時計: 本航行（depart 以降）に入った最初の更新で原点を置き、
      承認計画のサンプル時刻列を実体化する */
-  if(pe.trackT0 == null && (pe.phase === 'depart' || pe.phase === 'cruise') && S.planFullSamples && S.planFullSamples.length > 1){
+  if(pe.trackT0 == null && !pe.committedPlan && (pe.phase === 'depart' || pe.phase === 'cruise') && S.planFullSamples && S.planFullSamples.length > 1){
     pe.trackT0 = S.time;
     /* 基準の取り直し（2026-11-19）: 会議で承認された推定は「会議時点の出域状態」
        から積まれている。実際の出域はその後に起きるため、世界座標のサンプル列は
@@ -6229,6 +6240,15 @@ function orbitPeriodOf(r, v2, gm){
   if(!(a > 0) || !isFinite(a)) return 0;
   return 2 * Math.PI * Math.sqrt(a * a * a / gm);
 }
+/* 2惑星の会合周期（相対軌跡が閉じる周期）。惑星基準で他惑星の相対軌道を
+   焼く時の伝播時間に使う。上限は焼き込みコストの歯止め（400日） */
+function synodicPeriodOf(pa, pb, starGM){
+  const per = (b) => orbitPeriodOf(Math.hypot(b.x, b.y, b.z), b.vx * b.vx + b.vy * b.vy + b.vz * b.vz, starGM);
+  const t1 = per(pa), t2 = per(pb);
+  if(!t1 || !t2) return 0;
+  if(Math.abs(t1 - t2) < 1) return t1;
+  return Math.min(1 / Math.abs(1 / t1 - 1 / t2), 400 * 86400);
+}
 /* 表示専用の系クローンと連成 RK4 ステッパ（#77 の焼き込みと #80 のエフェメリスで共用）。
    階層モデルは実シムと同一（惑星=恒星重力のみ／衛星・駅・船=全重力）。全重力側の
    加速度は自己項を除く（accExcluding）: RK4 は中間点で加速度を評価するため、
@@ -6279,7 +6299,7 @@ function makeCoupledStepper(all, stC){
     }
   };
 }
-function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip){
+function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip, periodOverride){
   const { stC, all } = systemClones(includeShip);
   const tgt = all.find(b => b.ref === targetRef);
   const host = hostRef ? all.find(b => b.ref === hostRef) : null;
@@ -6287,7 +6307,10 @@ function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip){
   const hx = host ? host.x : 0, hy = host ? host.y : 0, hz = host ? host.z : 0;
   const rvx = tgt.vx - (host ? host.vx : 0), rvy = tgt.vy - (host ? host.vy : 0), rvz = tgt.vz - (host ? host.vz : 0);
   const r = Math.hypot(tgt.x - hx, tgt.y - hy, tgt.z - hz);
-  const T = orbitPeriodOf(r, rvx * rvx + rvy * rvy + rvz * rvz, gmHost);
+  /* periodOverride: 惑星同士の相対軌跡（会合周期で閉じる）を焼く時に使う。
+     相対運動は宿主の重力によるケプラー軌道ではないので、二体周期でなく
+     会合周期を外から与える（2026-11-20、惑星基準の本式描画） */
+  const T = periodOverride || orbitPeriodOf(r, rvx * rvx + rvy * rvy + rvz * rvz, gmHost);
   if(!T) return null;
   /* #80: 焼き込み精度の是正。旧実装は衛星・駅・船を周期/160（こよみで約846秒）の
      半陰的オイラーで進めたため、細密伝播に比べ輪が最大で こよみ 16,282／あおば 29,326
@@ -6348,7 +6371,8 @@ function rebuildOrbitLines(){
   orbitLines = [];
   orbitBuiltAt = S.time; orbitRealAt = performance.now();
   const pe = S.planExec;
-  orbitPhaseKey = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '');
+  const frameInfo0 = (typeof getFrameRefInfo === 'function') ? getFrameRefInfo() : { ref: 'star', body: null };
+  orbitPhaseKey = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '') + '|' + frameInfo0.ref + ':' + (frameInfo0.body && frameInfo0.body.name ? frameInfo0.body.name : '');
   const addLine = (key, hostBody, relPts, color, opacity) => {
     if(!relPts || relPts.length < 8) return;
     const pos = new Float32Array(relPts.length * 3);
@@ -6360,24 +6384,55 @@ function rebuildOrbitLines(){
     orbitGroup.add(line); orbitLines.push(line);
   };
   const framePlanet = (typeof getFrameRefPlanet === 'function') ? getFrameRefPlanet() : null;
+  const planetFrame = frameInfo0.ref === 'planet' && !!framePlanet;
   (S.planets || []).forEach(p => {
     if(p.isMoon){
       const host = (S.planets || []).find(q => q.name === p.moonOf) || framePlanet;
       if(host) addLine('orbit:' + p.name, host, propagateOrbitRel(p, host, host.gm, false), p.color || 0x9fb4c8, 0.45);
+    } else if(planetFrame){
+      /* 惑星基準では枠を混ぜない（2026-11-20 本人裁定・本式）: 基準惑星自身の
+         軌道はこの枠では点（原点に固定）なので描かない。他の惑星は恒星基準の
+         楕円の平行移動ではなく、基準惑星から見た相対軌跡（会合周期で閉じる
+         周転円の曲線）を描く。恒星基準の画面では従来の楕円がその枠の真実 */
+      if(p === framePlanet) return;
+      const syn = synodicPeriodOf(p, framePlanet, S.sys.starGM);
+      if(syn) addLine('orbit:' + p.name, framePlanet, propagateOrbitRel(p, framePlanet, S.sys.starGM, false, syn), p.color || 0x64748b, 0.30);
     } else {
       addLine('orbit:' + p.name, null, propagateOrbitRel(p, null, S.sys.starGM, false), p.color || 0x64748b, 0.30);
     }
   });
+  if(planetFrame){
+    /* 恒星は基準惑星の周りを回る: その軌跡は基準惑星の公転軌道の裏返し
+       （符号反転）になる。基準枠の錨として描く */
+    const own = propagateOrbitRel(framePlanet, null, S.sys.starGM, false);
+    if(own){
+      const starName = (S.sys && S.sys.id === 'sol') ? 'ソル' : ((S.sys && S.sys.name) || '恒星').replace(/系$/, '');
+      addLine('orbit:' + starName, framePlanet, own.map(q => [-q[0], -q[1], -q[2]]), (S.sys && S.sys.starColor) || 0xffd166, 0.30);
+    }
+  }
   if(S.station && framePlanet) addLine('orbit:' + (S.station.name || 'あおば'), framePlanet, propagateOrbitRel(S.station, framePlanet, framePlanet.gm, false), 0x2dd4bf, 0.45);
-  /* 待機中は自船の待機軌道も描く: 窓の到来が「数字」でなく幾何で追えるようにする */
-  if(pe && pe.active && pe.phase === 'waitwin' && pe.targetBody){
-    addLine('orbit:自船待機', pe.targetBody, propagateOrbitRel(S.ship, pe.targetBody, pe.targetBody.gm, true), 0xffd166, 0.6);
+  /* 待機中は自船の待機軌道も描く: 窓の到来が「数字」でなく幾何で追えるようにする。
+     ただし意味があるのは「目標天体の周回軌道上で窓を待つ」時だけ（2026-11-20
+     本人指摘）: 接舷待機はバースで時刻を待つだけで周回しておらず、目標天体
+     相対の伝播は周転円の落書きになった。実際に目標天体へ束縛され、その
+     近傍にいる場合だけ描く */
+  if(pe && pe.active && pe.phase === 'waitwin' && pe.targetBody && !S.docked){
+    const tb = pe.targetBody;
+    const rdx = S.ship.x - tb.x, rdy = S.ship.y - tb.y, rdz = S.ship.z - tb.z;
+    const rvx2 = S.ship.vx - tb.vx, rvy2 = S.ship.vy - tb.vy, rvz2 = S.ship.vz - tb.vz;
+    const rr = Math.hypot(rdx, rdy, rdz);
+    const bound = rr > 0 && tb.gm > 0 && (rvx2 * rvx2 + rvy2 * rvy2 + rvz2 * rvz2) / 2 - tb.gm / rr < 0;
+    const vic = (typeof vicinityRadius === 'function') ? vicinityRadius(tb) : 0;
+    if(bound && vic > 0 && rr < vic * 1.5){
+      addLine('orbit:自船待機', tb, propagateOrbitRel(S.ship, tb, tb.gm, true), 0xffd166, 0.6);
+    }
   }
 }
 function updateOrbitLines(ref){
   if(!orbitGroup || !S) return;
   const pe = S.planExec;
-  const pk = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '');
+  const frameInfo1 = (typeof getFrameRefInfo === 'function') ? getFrameRefInfo() : { ref: 'star', body: null };
+  const pk = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '') + '|' + frameInfo1.ref + ':' + (frameInfo1.body && frameInfo1.body.name ? frameInfo1.body.name : '');
   if(pk !== orbitPhaseKey || S.time - orbitBuiltAt > 900 || performance.now() - orbitRealAt > 20000) rebuildOrbitLines();
   let any = false;
   orbitLines.forEach(line => {

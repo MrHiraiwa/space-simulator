@@ -1350,6 +1350,92 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     if(!hit && lRisk && lAlt < bestAlt){ bestAlt = lAlt; bestRisk = lRisk; }
     return hit;
   };
+  /* 軌道出発フェーズ（2026-11-20）: 目標でない天体に束縛された軌道から
+     出発する推定では、巡航ホーミングが軌道位相を無視して即噴射し、配置次第で
+     速度の打消し＋再加速になる（実測: 帰投推定 80〜98、初回噴射 45.3 を即発射）。
+     物理的な正道は、軌道を滑空して位相を選び、接線方向に脱出すること
+     （同条件の実測で総計 28 前後）。1 軌道周期にわたり弾道スコア
+     （脱出Δv＋最接近時の相対速度＋ミス距離の罰）で最良の脱出スナップショットを
+     保持し、周期の終わりにその状態へ戻して脱出噴射→通常巡航へ移る。
+     候補ごとに本推定を回さないため、計算量はほぼ 1 ジョブ分＋周期的な弾道評価。 */
+  let depBody = null, depPeriod = 0, depStartT = 0, depTimer = 0, depBest = null;
+  if(!o.depSep){
+    /* 対象は「衛星の捕捉軌道」に限る: 惑星の周りの遷移軌道や惑星間巡航も
+       エネルギー的には束縛だが、それは通常巡航の領分で、軌道出発を被せると
+       巡航中の再推定まで壊れる（実測: 月脱出後の状態から作った推定が
+       つむぎ周りで二重に発火し 28.5 の帰投が 91.6 に化けた）。捕捉軌道の
+       緊さ（a が衛星の近傍半径未満）も併せて要求する。 */
+    for(const p of pls){
+      if(!p.gm || !p.isMoon || p === pls[targetPlIdx]) continue;
+      const r = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z);
+      if(r < 1) continue;
+      const rvx = s.vx - p.vx, rvy = s.vy - p.vy, rvz = s.vz - p.vz;
+      const E = (rvx * rvx + rvy * rvy + rvz * rvz) / 2 - p.gm / r;
+      if(E >= 0) continue;
+      const aO = -p.gm / (2 * E);
+      if(aO >= vicinityRadius(p)) continue;
+      const P = 2 * Math.PI * Math.sqrt(aO * aO * aO / p.gm);
+      if(P < 600 || P > 400000) continue;
+      if(!depBody || r < depBody.r){ depBody = { p, r }; depPeriod = P; }
+    }
+    if(depBody){ phase = 'orbitdep'; depStartT = timeTotal; depTimer = 0; }
+  }
+  const snapState = () => ({
+    s: { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz },
+    t: { x: t.x, y: t.y, z: t.z, vx: t.vx, vy: t.vy, vz: t.vz },
+    pls: pls.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz })),
+    timeTotal, dvTotal, dvCruise, dvGravityComp,
+    samples: samples.map(a => a.slice()), sampleTimes: sampleTimes.slice(), sampleStride, nextSampleT,
+    bestAlt, bestRisk, planetCross, surfaceHit, hitCount, crossCount, lastRel,
+    patience: approachCtx.patienceLeft
+  });
+  const restoreState = (sn) => {
+    Object.assign(s, sn.s); Object.assign(t, sn.t);
+    pls.forEach((p, i) => Object.assign(p, sn.pls[i]));
+    timeTotal = sn.timeTotal; dvTotal = sn.dvTotal; dvCruise = sn.dvCruise; dvGravityComp = sn.dvGravityComp;
+    samples.length = 0; sn.samples.forEach(a => samples.push(a));
+    sampleTimes.length = 0; sn.sampleTimes.forEach(v => sampleTimes.push(v));
+    sampleStride = sn.sampleStride; nextSampleT = sn.nextSampleT;
+    bestAlt = sn.bestAlt; bestRisk = sn.bestRisk; planetCross = sn.planetCross; surfaceHit = sn.surfaceHit;
+    hitCount = sn.hitCount; crossCount = sn.crossCount; lastRel = sn.lastRel;
+    approachCtx.patienceLeft = sn.patience;
+  };
+  /* 軌道出発の弾道スコア（2026-11-20）: 脱出後の状態を無噴射で 75,000 秒
+     伝播し、最接近距離とその時の相対速度で候補を採点する。伝播は推定双子と
+     同じ積分器・同じ刻み上限で行う——RK4 の予測（predictClosest）だけでは、
+     オイラー双子が発散する位相（実測 τ1520: RK4 では 35.7、オイラーでは 92）
+     を見抜けない。 */
+  const ballisticScore = (es, dv) => {
+    const cs = { x: es.x, y: es.y, z: es.z, vx: es.vx, vy: es.vy, vz: es.vz };
+    const ct = { x: t.x, y: t.y, z: t.z, vx: t.vx, vy: t.vy, vz: t.vz };
+    const cpls = pls.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, isMoon: !!p.isMoon }));
+    const cplsT = cpls.filter(p => Math.hypot(p.x - ct.x, p.y - ct.y, p.z - ct.z) > 1);
+    const acc = fullAccFn(starGM, cpls);
+    const accT = fullAccFn(starGM, cplsT);
+    const accs = cpls.map((_, i) => accExcluding(starGM, cpls, i));
+    const sAcc = starAccFn(starGM);
+    const stepB = (b, hh, accFn) => {
+      if(eulerTwin){ const a = accFn(b.x, b.y, b.z); b.vx += a[0] * hh; b.vy += a[1] * hh; b.vz += a[2] * hh; b.x += b.vx * hh; b.y += b.vy * hh; b.z += b.vz * hh; }
+      else rk4StepState(b, hh, accFn);
+    };
+    let minDist = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z), relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz), tt = 0, tAtMin = 0;
+    while(tt < 75000){
+      let hh = 120;
+      const dT = Math.hypot(cs.x - ct.x, cs.y - ct.y, cs.z - ct.z);
+      if(dT < 300000) hh = 20;
+      else for(const p of cpls){ if(p.gm && Math.hypot(cs.x - p.x, cs.y - p.y, cs.z - p.z) < 300000){ hh = 20; break; } }
+      hh = Math.min(hh, 75000 - tt);
+      stepB(cs, hh, acc); stepB(ct, hh, accT);
+      for(let i = 0; i < cpls.length; i++){
+        if(i === targetPlIdx){ cpls[i].x = ct.x; cpls[i].y = ct.y; cpls[i].z = ct.z; cpls[i].vx = ct.vx; cpls[i].vy = ct.vy; cpls[i].vz = ct.vz; }
+        else stepB(cpls[i], hh, cpls[i].isMoon ? accs[i] : sAcc);
+      }
+      tt += hh;
+      const d = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z);
+      if(d < minDist){ minDist = d; relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz); tAtMin = tt; }
+    }
+    return dv + relAtMin + Math.max(0, minDist - 20000) / 2000 + tAtMin / 25000;
+  };
   const job = { done: false, result: null, iterCount: 0, timeTotal: 0, maxT };
   job.step = function(maxIter, maxMs){
     if(job.done) return true;
@@ -1466,7 +1552,32 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     if(job.done) break;
     if(phaseT0[phase] === undefined) phaseT0[phase] = timeTotal;
     if(actCd > 0) actCd -= h;
-    if(phase === 'cruise'){
+    if(phase === 'orbitdep'){
+      depTimer -= h;
+      if(depTimer <= 0){
+        depTimer = Math.max(300, Math.min(1200, depPeriod / 16));
+        const B = depBody.p;
+        const r = Math.hypot(s.x - B.x, s.y - B.y, s.z - B.z) || 1;
+        const rvx = s.vx - B.vx, rvy = s.vy - B.vy, rvz = s.vz - B.vz;
+        const rsp = Math.hypot(rvx, rvy, rvz) || 1e-9;
+        for(const vInf of [0.3, 1.0, 2.0]){
+          const dv = Math.sqrt(vInf * vInf + 2 * B.gm / r) - rsp;
+          if(dv < -0.01) continue;
+          const d = Math.max(0, dv);
+          const es = { x: s.x, y: s.y, z: s.z, vx: s.vx + rvx / rsp * d, vy: s.vy + rvy / rsp * d, vz: s.vz + rvz / rsp * d };
+          const score = ballisticScore(es, d);
+          if(!depBest || score < depBest.score) depBest = { score, snap: snapState(), dvx: rvx / rsp * d, dvy: rvy / rsp * d, dvz: rvz / rsp * d, cost: d };
+        }
+      }
+      if(timeTotal - depStartT >= depPeriod){
+        if(depBest){
+          const b = depBest;
+          restoreState(b.snap);
+          phase = 'cruise'; checkTimer = 0;
+          applyDv({ dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost });
+        } else { phase = 'cruise'; checkTimer = 0; }
+      }
+    } else if(phase === 'cruise'){
       checkTimer -= h;
       if(checkTimer <= 0){
         checkTimer = planCadenceFor(s, info.dist, pls);
