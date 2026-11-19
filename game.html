@@ -1315,8 +1315,8 @@ function faceHTML(person){
   if(person && person.art) return '<img class="art-face" src="' + person.art + '" alt="">';
   return silhouetteSVG(silhouetteOf(person), person && person.color);
 }
-const CTRL  = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#38bdf8' };
-const CONTROL = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#94a3b8', tactics:50, logistics:50, politics:50, loyalty:50, ambition:0, role:'管制' };
+const CTRL  = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#38bdf8', art:'assets/portraits/aoba-control.webp' };
+const CONTROL = { name:'あおば管制', title:'ステーション管制', initial:'管', color:'#94a3b8', art:'assets/portraits/aoba-control.webp', tactics:50, logistics:50, politics:50, loyalty:50, ambition:0, role:'管制' };
 let SHIP_NAME = '輸送船 さくら';
 let SHIP_CALLSIGN = 'サクラ';
 
@@ -3855,6 +3855,11 @@ function openPlanPanel(cfg){
      （航路図・根拠表）として背後に置き、提示と承認は会話の中で行う */
   if(S.prologue && S.tutorial && cfg.mode === 'depart' && !planPanelState.convStarted){
     planPanelState.convStarted = true;
+    /* 会話が主役の間、パネルは画面に出さない（推定計算は裏で続ける）。
+       会話の背後に選択カードが透けると「別のUIがちらつく」ため。
+       パネルが要る局面（出発確認等）では endConversation が戻す */
+    planPanelState.hiddenForConv = true;
+    document.getElementById('plan-panel').classList.remove('open');
     setTimeout(() => { try{ startPlanConversation(); }catch(e){} }, 60);
   }
 }
@@ -8174,6 +8179,10 @@ function endConversation(){
   convState = null;
   msgState.convActive = false;
   convShowLayer(false);
+  if(typeof planPanelState !== 'undefined' && planPanelState && planPanelState.hiddenForConv){
+    planPanelState.hiddenForConv = false;
+    document.getElementById('plan-panel').classList.add('open');
+  }
   if(pendingTalkNav){ pendingTalkNav = false; setTimeout(() => { if(!convState) talkToNavigator(); }, 350); }
   if(!cs) return;
   logConv('💬 ── ' + (cs.def.title || '会話') + ' 終了 ──');
