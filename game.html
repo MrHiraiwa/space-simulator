@@ -6642,7 +6642,9 @@ function updateDestLabels(){
   gl.textContent = '会合点 ' + fmtEtaShort(destArcCache ? destArcCache.arrivalAbs : S.time);
   placeLabelClamped(gl, destGhostPos[0] - ref.x, destGhostPos[1] - ref.y, destGhostPos[2] - ref.z);
 }
-/* #66: 描くレーンの向き。実行中計画の depSep（無ければ接舷中のプレビュー用に同じ計算）を世界方向で返す */
+/* #66: 描くレーンの向き。順番は「航路が決まってからゲート」（2026-11-19 本人裁定）：
+   実行中計画の depSep、または計画パネルで提示中の候補航路から計算した方向だけを返す。
+   航路が存在しない接舷中は null —— レーン帯・ゲート・ビーコンは描かない */
 function effectiveDepSepWorld(){
   if(!S || !S.station) return null;
   const pe = S.planExec;
@@ -6651,7 +6653,6 @@ function effectiveDepSepWorld(){
     let tb = null;
     const panel = document.getElementById('plan-panel');
     if(planPanelState && !planPanelState.tracking && panel && panel.classList.contains('open') && planPanelState.cfg) tb = planPanelState.cfg.targetBody;
-    else if(S.target && S.target !== S.station && S.target !== S.ship) tb = S.target;
     if(tb) return computeDepSep(S.dockedTo || S.station, tb);
   }
   return null;
@@ -9239,13 +9240,15 @@ function updatePortCraft(){
     const ref = getFrameRefPos();
     S.laneBeacons.forEach((b, i) => {
       const m = laneBeaconMeshes[i]; if(!m) return;
+      m.visible = !!effW;
       /* #66: ビーコンは「世界レーン方向×距離＋法線オフセット」で置く。方向が計画の depSep と
          完全一致するため、フィックス（anchor + depSep×700）と同じ直線上にビーコン列が並ぶ */
       const d = Math.hypot(b.fx, b.fy);
       m.position.set(st.x + laneDirW.x * d + N.x * b.fz - ref.x, st.y + laneDirW.y * d + N.y * b.fz - ref.y, st.z + laneDirW.z * d + N.z * b.fz - ref.z);
     });
-    /* レーン帯（コリドー）と出域ゲート（レーン上の距離700の輪）も同じ世界方向で置く */
-    if(laneBandMesh && laneGateMesh){
+    /* レーン帯（コリドー）と出域ゲート（レーン上の距離700の輪）も同じ世界方向で置く。
+       effW が無い（航路未決定）間は帯もゲートも出さない */
+    if(laneBandMesh && laneGateMesh && effW){
       const dirW = laneDirW;
       let px = dirW.y * N.z - dirW.z * N.y, py = dirW.z * N.x - dirW.x * N.z, pz = dirW.x * N.y - dirW.y * N.x;
       let pm = Math.hypot(px, py, pz);
@@ -9259,14 +9262,14 @@ function updatePortCraft(){
       });
       laneBandMesh.geometry.attributes.position.needsUpdate = true;
       laneBandMesh.visible = true;
-      laneBandMesh.material.opacity = effW ? 0.13 : 0.08;
+      laneBandMesh.material.opacity = 0.13;
       const gx = st.x + dirW.x * 700 - ref.x, gy = st.y + dirW.y * 700 - ref.y, gz = st.z + dirW.z * 700 - ref.z;
       laneGateMesh.position.set(gx, gy, gz);
       _lookTmp.set(gx + dirW.x, gy + dirW.y, gz + dirW.z);
       laneGateMesh.lookAt(_lookTmp);
       laneGateMesh.visible = true;
-      laneGateMesh.material.opacity = effW ? 0.6 : 0.3;
-    }
+      laneGateMesh.material.opacity = 0.6;
+    } else if(laneBandMesh && laneGateMesh){ laneBandMesh.visible = false; laneGateMesh.visible = false; }
   }
 }
 let laneBeaconMeshes = [];
