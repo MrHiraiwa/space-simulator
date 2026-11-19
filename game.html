@@ -533,12 +533,12 @@
   }
 
   /* ===== 航宙計画パネル (#plan-panel) & モーダル共通 ===== */
-  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal{
+  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal,#log-panel,#traffic-panel{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
     display:none;align-items:center;justify-content:center;padding:12px;
   }
-  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open{display:flex}
+  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open,#log-panel.open,#traffic-panel.open{display:flex}
   /* 名簿は開始画面（z-index:50）の上に出す。開始画面を隠すのは席決定後（enterGameWorld） */
   #roster-modal{z-index:60}
   .roster-note{font-size:12px;line-height:1.6;color:#cbd5e1;background:rgba(6,11,24,0.6);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:0 0 12px}
@@ -564,6 +564,7 @@
   #plan-panel.banded:not(.compact) .modal-box,#briefing-modal.banded .modal-box,#chart-panel.banded:not(.compact) .modal-box{max-height:calc(100dvh - var(--hud-band,0px) - 26px)}
   /* 資料コーデックス（B10）: 固定枠＋中身スクロール＋展開式の項目 */
   #codex-modal{z-index:65}
+  #log-panel,#traffic-panel{z-index:65}
   #codex-modal .modal-box{display:flex;flex-direction:column;height:min(82vh,680px)}
   #codex-scroll{flex:1;overflow-y:auto;min-height:0}
   #codex-modal .modal-actions{margin-top:auto;padding-top:10px;flex:none}
@@ -808,7 +809,6 @@
         <div id="mission-timer">残り 420s</div>
         <div class="top-actions">
           <button id="btn-mute" class="icon-btn" title="効果音オン/オフ">🔊 音ON</button>
-          <button id="btn-drawer-toggle" class="icon-btn">☰ 指揮</button>
           <button id="btn-top-toggle" class="icon-btn" title="上部パネルをしまう/出す">▽ しまう</button>
         </div>
       </div>
@@ -915,16 +915,13 @@
             <button data-warp="8">×8</button>
             <button data-warp="0">⏸</button>
             <button id="btn-debug-log" title="デバッグ用：自船状態・計画・航宙日誌をテキスト出力する">🐛 ログ出力</button>
+            <button id="btn-manual-toggle">緊急手動操縦: OFF</button>
+            <button id="btn-reset">最初から</button>
           </div>
-          <button id="btn-plan" class="teal task-chip" data-n="">🗺 航宙計画</button>
           <button id="btn-talk" class="teal task-chip" data-n="" title="クルーに話しかける（相手は会話面で選ぶ）">🗣 話しかける</button>
-          <span id="mode-toggle" role="group" aria-label="表示モード切替"><button id="btn-mode-nav">🧭 航行</button><button id="btn-ship">🚶 船内</button></span>
-          <button id="btn-chart" class="teal task-chip" data-n="">🧭 宙図</button>
           <button id="btn-task-traffic" class="task-chip" data-n="">📡 交通</button>
           <button id="btn-task-log" class="task-chip" data-n="">📜 日誌</button>
           <button id="btn-codex" class="task-chip" data-n="">📚 資料</button>
-          <button id="btn-assist" class="amber">🎯 支援(<span id="assist-left">3</span>)</button>
-          <button id="btn-resupply" disabled>⛽ 補給</button>
         </div>
       </div>
 
@@ -940,110 +937,27 @@
   </div>
 
   <!-- サイドドロワー (デフォルト閉) -->
-  <aside id="drawer">
-    <div class="drawer-head">
-      <strong>艦隊指揮ドロワー</strong>
-      <div style="display:flex;gap:6px">
-        <button id="btn-reset" style="padding:4px 9px;font-size:11px">最初から</button>
-        <button id="btn-drawer-close" style="padding:4px 9px;font-size:11px">✕</button>
-      </div>
+  <!-- 航宙日誌・交通パネル（旧・艦隊指揮ドロワーを廃止し、見るだけのパネルとして独立。2026-11-19） -->
+  <div id="log-panel">
+    <div class="modal-box" style="text-align:left;display:flex;flex-direction:column;height:min(82vh,680px)">
+      <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">📜 記録</div>
+      <h2 style="margin:4px 0 8px;font-size:19px">航宙日誌</h2>
+      <div id="log" style="flex:1;overflow-y:auto;min-height:0"></div>
+      <button id="btn-log-close" class="primary" style="margin-top:10px">閉じる</button>
     </div>
-    <div id="drawer-status">航行状況を確認しています…</div>
-    <div id="drawer-notice" style="display:none">📣 報告があります — タップで航行画面へ戻る</div>
-    <div class="drawer-tabs">
-      <button class="active" data-tab="galaxy">🌌 銀河</button>
-      <button data-tab="prod">🏭 生産・政治</button>
-      <button data-tab="officers">👥 部下</button>
-      <button data-tab="ship">🚶 船内</button>
-      <button data-tab="traffic">📡 交通</button>
-      <button data-tab="log">📜 航宙日誌</button>
+  </div>
+  <div id="traffic-panel">
+    <div class="modal-box" style="text-align:left;display:flex;flex-direction:column;height:min(82vh,680px)">
+      <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">📡 周辺の船</div>
+      <h2 style="margin:4px 0 8px;font-size:19px">交通</h2>
+      <p style="font-size:12px;color:var(--muted);margin:0 0 8px">周辺のコンタクト（自船からの距離順）。管制のアドバイザリはこの中の船を指します。</p>
+      <div style="flex:1;overflow-y:auto;min-height:0"><div id="traffic-list"></div></div>
+      <button id="btn-traffic-close" class="primary" style="margin-top:10px">閉じる</button>
     </div>
-    <div class="drawer-body">
-      <div class="tab-pane active" id="tab-galaxy">
-        <div class="kv"><span>ワープ燃料</span><b id="res-warp">-</b><span>恒星距離</span><b id="star-dist">-</b></div>
-        <p style="font-size:12px;color:var(--muted);margin:6px 0 10px">ワープ条件：恒星からの3D距離 <b>約1.3億以上</b>（外縁域）＋ワープ燃料が必要。</p>
-        <div id="galaxy"></div>
-      </div>
-
-      <div class="tab-pane" id="tab-prod">
-        <div class="kv">
-          <span>推進剤ストック</span><b id="res-prop">-</b>
-          <span>補給物資</span><b id="res-sup">-</b>
-          <span>資金（予算）</span><b id="res-cred">-</b>
-          <span>政治的支持</span><b id="res-pol">-</b>
-        </div>
-        <hr style="border:none;border-top:1px solid var(--line);margin:10px 0">
-        <div style="font-size:13px;font-weight:700;margin-bottom:4px">生産キュー</div>
-        <div id="prod-state" style="font-size:12px;color:var(--muted)">空き</div>
-        <div class="bar amber" style="margin:6px 0"><i id="prod-bar" style="width:0%"></i></div>
-        <button id="btn-build" style="width:100%;margin-top:4px">小型船を建造（資金120／物資20）</button>
-      </div>
-
-      <div class="tab-pane" id="tab-officers">
-        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">役割を割り当てると、将校が自律的に政治・補給イベントを起こします。</p>
-        <div id="officers"></div>
-      </div>
-
-      <div class="tab-pane" id="tab-ship">
-        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">航行中は当直と航行AIが船を運航しています。船長は船内を回り、乗組員と話したり、点検や訓練ができます（航行は止まりません）。</p>
-        <div id="ship-scene">
-          <div id="ship-scene-bg"></div>
-          <div id="ship-scene-name">船橋</div>
-          <div class="ship-line" id="ship-dialogue">乗組員を選ぶと、その士官のいる区画へ移動して会話の場面が開きます（移動と会話には船内時間がかかります）。</div>
-        </div>
-        <div class="ship-sec">🗣 乗組員と話す</div>
-        <div id="ship-crew"></div>
-        <div class="ship-sec">🗺 船内を見回る（移動には船内時間がかかります）</div>
-        <div id="ship-rooms"></div>
-        <div class="ship-line" id="ship-room-line">区画を選ぶと通路を通って移動し、その場所の場面が開きます。点検などの作業は各区画の中で行います。</div>
-        <div class="ship-line" id="ship-loc-line">現在位置：船橋</div>
-      </div>
-
-      <div class="tab-pane" id="tab-traffic">
-        <p style="font-size:12px;color:var(--muted);margin:0 0 8px">周辺のコンタクト（自船からの距離順）。管制のアドバイザリはこの中の船を指します。</p>
-        <div id="traffic-list"></div>
-      </div>
-
-      <div class="tab-pane" id="tab-log">
-        <div id="log"></div>
-      </div>
-    </div>
-    <div class="drawer-footer">
-      <span>船長が自ら操舵を取る緊急時のみ</span>
-      <button id="btn-manual-toggle" style="padding:4px 8px;font-size:11px">緊急手動操縦: OFF</button>
-    </div>
-  </aside>
-</div>
-
-<!-- 航宙計画パネル (#plan-panel) -->
-<!-- 宙図パネル (#chart-panel) -->
-<div id="chart-panel">
-  <div class="modal-box" style="text-align:left;max-width:560px">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
-      <div>
-        <div style="font-size:11px;color:var(--accent);font-weight:700">宙図 — 航行AI <span id="chart-ai-name">イオ</span> が表示を管理</div>
-        <div style="font-size:15px;font-weight:800">表示範囲：<span id="chart-range-name">広域</span>（<span id="chart-mode-name">自動</span>）</div>
-      </div>
-      <div style="display:flex;align-items:center;gap:6px">
-        <div class="frame-chip-wrap" id="frame-chip-chart-wrap">
-          <button type="button" class="frame-chip" id="frame-chip-chart" title="基準座標系を切り替え"><span class="frame-chip-label">あおば基準</span><span class="frame-auto-tag">AUTO</span><span class="frame-caret" aria-hidden="true">▾</span></button>
-          <div class="frame-selector down" id="frame-sel-chart"></div>
-        </div>
-        <button id="btn-chart-close" style="padding:4px 10px">✕</button>
-      </div>
-    </div>
-    <div class="ship-btns" style="margin:8px 0" id="chart-range-btns">
-      <button data-range="auto">🤖 自動（AIに任せる）</button>
-      <button data-range="port">港内</button>
-      <button data-range="local">近傍</button>
-      <button data-range="system">広域</button>
-    </div>
-    <div class="ship-line" id="chart-note" style="margin:0 0 8px">状況に合わせて表示範囲を切り替えます。</div>
-    <canvas id="chart-canvas" width="520" height="520" style="width:100%;height:auto;background:rgba(3,6,16,0.9);border:1px solid var(--line);border-radius:10px"></canvas>
-    <div id="chart-contacts" style="margin-top:8px"></div>
   </div>
 </div>
 
+<!-- 航宙計画パネル (#plan-panel) -->
 <div id="plan-panel">
   <div class="modal-box">
     <div class="plan-head">
@@ -1632,7 +1546,7 @@ function loadGame(){
     updateMissionBanner();
     document.getElementById('creation-modal').classList.remove('open');
     document.getElementById('assist-left').textContent = S.assistUses;
-    document.getElementById('btn-assist').disabled = false;
+    /* 支援ボタン廃止に伴い削除 */
     renderOfficers(); renderGalaxy(); updatePanels();
     renderTutorialUI();
     updatePlanStatusUI();
@@ -2327,7 +2241,7 @@ function startPrologue(){
   updateMissionBanner();
   document.getElementById('result-modal').classList.remove('open');
   document.getElementById('assist-left').textContent = S.assistUses;
-  document.getElementById('btn-assist').disabled = false;
+  /* 支援ボタン廃止に伴い削除 */
   logEvent('🎖️ ' + (S.captain ? S.captain.name : '') + '船長、' + SHIP_NAME + 'に着任。ステーション「あおば」に接舷中（処女航宙）。');
   setStatusMsg(SHIP_NAME + ' 着任式。教導士官の案内を確認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
@@ -2353,7 +2267,7 @@ function startMission(idx){
   updateMissionBanner();
   document.getElementById('result-modal').classList.remove('open');
   document.getElementById('assist-left').textContent = S.assistUses;
-  document.getElementById('btn-assist').disabled = false;
+  /* 支援ボタン廃止に伴い削除 */
   logEvent('🚀 ミッション'+m.id+'「'+m.title+'」開始（'+cfg.label+'）。');
   setStatusMsg('航宙計画を確認し、出航を承認してください。');
   renderOfficers(); renderGalaxy(); updatePanels();
@@ -4733,7 +4647,7 @@ function deriveNextAction(){
   if(S.docked || S.failed || S.missionEnded) return { text:'', cls:'' };
   if(S.tutorial && !S.tutorial.skipped && S.tutorial.nextActionText){
     let tt = S.tutorial.nextActionText;
-    if(S.planExec && S.planExec.active && S.planExec.phase === 'cruise') tt += '。船内を回って乗組員と話せます（「船内」）';
+    if(S.planExec && S.planExec.active && S.planExec.phase === 'cruise') tt += '。乗組員に話しかけられます（「話しかける」）';
     return { text: tt, cls: '' };
   }
   if(S.planExec && S.planExec.active && !S.planExec.paused && !S.planExec.manualModified){
@@ -4746,7 +4660,7 @@ function deriveNextAction(){
       t += ' — 出域後に本航行へ入ります。当直の報告を待とう';
     } else if(pe.remTime && isFinite(pe.remTime) && pe.remTime > 0){
       t += ' — 到着まで約'+fmtDuration(pe.remTime);
-      if(pe.phase === 'cruise') t += '。船内を回って乗組員と話せます（「船内」）' + (S.warp > 1 ? '（×'+S.warp+' で早送り中）' : '');
+      if(pe.phase === 'cruise') t += '。乗組員に話しかけられます（「話しかける」）' + (S.warp > 1 ? '（×'+S.warp+' で早送り中）' : '');
       else t += (S.warp > 1) ? '（×'+S.warp+' で早送り中）' : '。当直に任せて「待機」で時間を進められます';
     }
     return { text: t, cls:'good' };
@@ -7581,8 +7495,8 @@ function logEvent(text){
   const d=document.createElement('div');
   d.textContent=formatShipTime(S?S.time:0)+' '+text;
   logEl.appendChild(d);
-  { const dr = document.getElementById('drawer'); const lt = document.querySelector('[data-tab="log"]');
-    if(!(dr && dr.classList.contains('open') && lt && lt.classList.contains('active'))) logUnread = Math.min(99, logUnread + 1); }
+  { const lp = document.getElementById('log-panel');
+    if(!(lp && lp.classList.contains('open'))) logUnread = Math.min(99, logUnread + 1); }
   while(logEl.children.length>80) logEl.removeChild(logEl.firstChild);
   logEl.scrollTop=logEl.scrollHeight;
 }
@@ -8734,12 +8648,6 @@ function updateContextUI(){
   document.querySelectorAll('.metric-chip.cond').forEach(el => el.classList.toggle('visible', mc));
   const assist = document.getElementById('btn-assist'); if(assist) assist.style.display = mc ? '' : 'none';
   const resup = document.getElementById('btn-resupply'); if(resup) resup.style.display = 'none'; /* 界面憲法: 補給は高橋との会話から。直接操作ボタンは廃止 */
-  // モード切替のアクティブ表示（ドロワーが開いていれば船内モード）
-  const dr = document.getElementById('drawer');
-  const shipMode = !!(dr && dr.classList.contains('open'));
-  const bn = document.getElementById('btn-mode-nav'); if(bn) bn.classList.toggle('active', !shipMode);
-  const bs = document.getElementById('btn-ship'); if(bs) bs.classList.toggle('active', shipMode);
-  updateDrawerNotice();
   updateTaskChips();
 }
 /* 船内モード中に報告・アラートが来たら、ドロワー内に通知を出す（タップで航行へ戻る） */
@@ -8825,9 +8733,7 @@ function updateHUD(){
     }
   }
   { const ct = Math.floor(S.time); document.getElementById('clock').textContent = (Math.floor(ct / 86400) + 1) + '日目 ' + String(Math.floor(ct / 3600) % 24).padStart(2, '0') + ':' + String(Math.floor(ct / 60) % 60).padStart(2, '0'); }
-  document.getElementById('btn-resupply').disabled = !resupplyExecutableHere();
-  document.getElementById('btn-assist').disabled = S.docked || S.failed || S.assistUses<=0 || S.dv<=0;
-  document.getElementById('assist-left').textContent = S.assistUses;
+  /* 支援・補給の直接ボタンは廃止（会話経由に一本化済み） */
   updateMissionBanner();
 }
 
@@ -8851,6 +8757,7 @@ function syncHudBand(){
 function updatePanels(){
   syncHudBand();
   if(!S) return;
+  if(!document.getElementById('res-prop')) return; /* 旧ドロワーの資源欄は廃止。HUD帯（syncHudBand）のみ生きる */
   document.getElementById('res-prop').textContent=S.res.prop;
   document.getElementById('res-sup').textContent=S.res.sup;
   document.getElementById('res-cred').textContent=S.res.cred;
@@ -8893,7 +8800,7 @@ function openResultModal(isSuccess, title, desc, prevMerit=meritTotal){
 // ---------- 銀河/ワープ ----------
 function distFromStar(){ return Math.hypot(S.ship.x,S.ship.y,S.ship.z); }
 function renderGalaxy(){
-  const g=document.getElementById('galaxy'); g.innerHTML='';
+  const g=document.getElementById('galaxy'); if(!g) return; g.innerHTML='';
   SYSTEMS.forEach(sys=>{
     const b=document.createElement('button');
     const cur=S&&S.sys.id===sys.id;
@@ -8933,7 +8840,7 @@ function doWarp(sys){
 
 // ---------- 部下・イベント ----------
 function renderOfficers(){
-  const wrap=document.getElementById('officers'); wrap.innerHTML='';
+  const wrap=document.getElementById('officers'); if(!wrap) return; wrap.innerHTML='';
   S.officers.forEach(o=>{
     const div=document.createElement('div'); div.className='officer';
     div.innerHTML='<span class="name">'+o.name+'</span><div class="stats">配置：'+(o.post||'待機')+'｜戦術 '+o.tactics+'／補給 '+o.logistics+'／政治 '+o.politics+'／忠誠 '+o.loyalty+'／野心 '+o.ambition+'</div>';
@@ -9032,20 +8939,6 @@ document.getElementById('btn-sortie').addEventListener('click', ()=>{
 document.getElementById('btn-creation-done').addEventListener('click', finishCreation);
 document.getElementById('btn-cr-auto').addEventListener('click', ()=>{ playSfx('click'); autoAssignAbilities(); });
 
-const drawer = document.getElementById('drawer');
-document.getElementById('btn-drawer-toggle').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.toggle('open'); });
-document.getElementById('btn-drawer-close').addEventListener('click', ()=>{ playSfx('click'); drawer.classList.remove('open'); });
-document.querySelectorAll('.drawer-tabs button').forEach(btn=>{
-  btn.addEventListener('click', ()=>{
-    playSfx('click');
-    document.querySelectorAll('.drawer-tabs button').forEach(b=>b.classList.remove('active'));
-    document.querySelectorAll('.tab-pane').forEach(p=>p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-'+btn.dataset.tab).classList.add('active');
-    if(btn.dataset.tab === 'log') logUnread = 0;
-    if(btn.dataset.tab === 'traffic') trafficUnread = 0;
-  });
-});
 
 document.getElementById('btn-mute').addEventListener('click', e=>{
   isMuted = !isMuted;
@@ -9061,20 +8954,6 @@ document.getElementById('btn-order-hold').addEventListener('click', toggleHoldMo
 
 document.querySelectorAll('#plan-levers [data-prio]').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); if(!planPanelState || planPanelState.tracking) return; planPanelState.priority = b.dataset.prio; if(planPanelState._render) planPanelState._render(); }));
 document.querySelectorAll('#plan-levers [data-res]').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); if(!planPanelState || planPanelState.tracking) return; planPanelState.reserve = Number(b.dataset.res); if(planPanelState._render) planPanelState._render(); }));
-document.getElementById('btn-plan').addEventListener('click', ()=>{
-  playSfx('click');
-  if(!S) return;
-  if(S.planExec && S.planExec.active && S.planExec.planDoc && !S.docked){ openPlanTracking(); return; }
-  if(S.prologue && S.tutorial){
-    /* 界面憲法: このボタンは「見るだけ」。計画会議は航法の三浦に話しかけて始まる。
-       既に会議が開いている場合、その証拠表示（計画パネル）の開閉だけを行う */
-    const pp = document.getElementById('plan-panel');
-    if(planPanelState && !planPanelState.tracking && pp){ pp.classList.toggle('open'); return; }
-    setStatusMsg('🗣 計画会議は航法の三浦に話しかけて始めます');
-    return;
-  }
-  openMissionPlanPanel();
-});
 /* 話しかける入口（界面憲法）: ボタンは1つ。相手は会話面のピッカーで選ぶ */
 document.getElementById('btn-talk').addEventListener('click', ()=>{ playSfx('click'); openTalkPicker(); });
 /* 名簿・依頼パネル（プロトタイプ）の入口 */
@@ -9147,13 +9026,9 @@ document.querySelectorAll('[data-warp]').forEach(b=>b.addEventListener('click', 
 document.getElementById('btn-debug-skip').addEventListener('click', ()=>{ playSfx('click'); startDebugSkip(); });
 document.getElementById('btn-debug-log').addEventListener('click', ()=>{ playSfx('click'); exportDebugLog(); });
 document.getElementById('btn-debug-toggle').addEventListener('click', ()=>{ playSfx('click'); const p = document.getElementById('debug-panel'); if(p) p.style.display = (p.style.display === 'none' || !p.style.display) ? 'inline-flex' : 'none'; });
-document.getElementById('btn-assist').addEventListener('click', assistBurn);
-document.getElementById('btn-resupply').addEventListener('click', resupply);
-document.getElementById('btn-build').addEventListener('click', buildShip);
 document.getElementById('btn-reset').addEventListener('click', ()=>{
   playSfx('click');
   if(S && S.prologue) startPrologue(); else startMission(currentMissionIdx);
-  drawer.classList.remove('open');
 });
 document.getElementById('btn-view-pick').addEventListener('click', ()=>{ playSfx('click'); toggleViewPicker(); });
 document.getElementById('btn-view-auto').addEventListener('click', ()=>{ playSfx('click'); backToAuto(); });
@@ -9178,7 +9053,7 @@ function maybeCruiseIntro(){
   if(!(S.prologue || currentMissionIdx === 0)) return;
   if(S.planExec.phase !== 'cruise') return;
   cruiseIntroShown = true;
-  showOfficerPopup(GUIDE, '航行中は、船長が判断することは特にありません。ですが、船内を回って乗組員と話す時間です。どうぞ、ゆっくり見て回ってください。');
+  showOfficerPopup(GUIDE, '航行中は、船長が判断することは特にありません。ですが、クルーと話す時間です。「話しかける」から、どうぞゆっくり話してください。');
 }
 
 // ---------- コンタクト（交通） ----------
@@ -9916,8 +9791,7 @@ function openTerminalDuringTransit(kind){
   if(kind === 'plan'){
     const bp = document.getElementById('btn-plan'); if(bp) bp.click();
   } else if(kind === 'log'){
-    const dr = document.getElementById('drawer'); if(dr) dr.classList.add('open');
-    const lt = document.querySelector('[data-tab="log"]'); if(lt) lt.click();
+    openDrawerTab('log');
   }
   setStatusMsg('📱 船長端末（移動は継続中です）');
 }
@@ -10088,7 +9962,7 @@ function evalChartAuto(force){
   if(want !== chartState.range){
     chartState.range = want; chartState.lastAutoT = S.time;
     chartNote(reason, true);
-    logEvent('🧭 ' + aiName() + ': 宙図を' + CHART_RANGES[want].label + '表示に切り替えました。');
+    logEvent('🧭 ' + aiName() + ': 画面を' + CHART_RANGES[want].label + '表示に切り替えました。');
     renderChartHead();
     camDistTarget = camDistForRange(want);
   }
@@ -10308,12 +10182,15 @@ function applyDockCollapsed(){
 function closeOtherTasks(except){
   if(except !== 'plan'){ const pp = document.getElementById('plan-panel'); if(pp && pp.classList.contains('open')) closePlanPanel(); }
   if(except !== 'chart' && chartState.open){ chartState.open = false; document.getElementById('chart-panel').classList.remove('open'); }
-  if(except !== 'drawer'){ const dr = document.getElementById('drawer'); if(dr) dr.classList.remove('open'); }
+  if(except !== 'log'){ const lp = document.getElementById('log-panel'); if(lp) lp.classList.remove('open'); }
+  if(except !== 'traffic'){ const tp = document.getElementById('traffic-panel'); if(tp) tp.classList.remove('open'); }
 }
 function openDrawerTab(tab){
-  const dr = document.getElementById('drawer'); if(dr) dr.classList.add('open');
-  const t = document.querySelector('[data-tab="' + tab + '"]'); if(t) t.click();
+  if(tab === 'log'){ document.getElementById('log-panel').classList.add('open'); logUnread = 0; updateTaskChips(); }
+  else if(tab === 'traffic'){ document.getElementById('traffic-panel').classList.add('open'); trafficUnread = 0; updateTaskChips(); }
 }
+document.getElementById('btn-log-close').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('log-panel').classList.remove('open'); });
+document.getElementById('btn-traffic-close').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('traffic-panel').classList.remove('open'); });
 function updateTaskChips(){
   const setChip = (id, n) => { const b = document.getElementById(id); if(!b) return; b.classList.toggle('pending', n > 0); b.dataset.n = n > 9 ? '9+' : String(n || ''); };
   let planPend = 0;
@@ -10336,22 +10213,6 @@ function syncLabelsToggle(){ const b = document.getElementById('btn-view-labels'
 applyTopCollapsed();
 applyDockCollapsed();
 
-// ---------- 船内／宙図ボタン ----------
-document.getElementById('btn-ship').addEventListener('click', ()=>{
-  playSfx('click');
-  const dr = document.getElementById('drawer'); if(dr) dr.classList.add('open');
-  const tab = document.querySelector('[data-tab="ship"]'); if(tab) tab.click();
-  renderShipPanel();
-});
-/* モード切替: 「航行」はドロワーを閉じるだけ（カメラ・宙図・計画の状態は一切触らない＝完全ステートレス） */
-document.getElementById('btn-mode-nav').addEventListener('click', ()=>{
-  playSfx('click');
-  const dr = document.getElementById('drawer'); if(dr) dr.classList.remove('open');
-});
-document.getElementById('drawer-notice').addEventListener('click', ()=>{
-  playSfx('click');
-  const dr = document.getElementById('drawer'); if(dr) dr.classList.remove('open');
-});
 document.getElementById('btn-codex').addEventListener('click', ()=>{
   playSfx('click');
   document.getElementById('codex-modal').classList.add('open');
@@ -10360,24 +10221,8 @@ document.getElementById('btn-codex-close').addEventListener('click', ()=>{
   playSfx('click');
   document.getElementById('codex-modal').classList.remove('open');
 });
-document.getElementById('btn-chart').addEventListener('click', ()=>{
-  playSfx('click');
-  const pp = document.getElementById('plan-panel');
-  document.getElementById('chart-panel').classList.toggle('compact', !!(pp && pp.classList.contains('open')));
-  chartState.open = true;
-  document.getElementById('chart-panel').classList.add('open');
-  evalChartAuto(true);
-  renderChart();
-});
-document.getElementById('btn-chart-close').addEventListener('click', ()=>{
-  playSfx('click');
-  chartState.open = false;
-  document.getElementById('chart-panel').classList.remove('open');
-  document.getElementById('plan-panel').classList.remove('compact');
-});
 document.querySelectorAll('#chart-range-btns button').forEach(b => b.addEventListener('click', ()=>{ playSfx('click'); setChartMode(b.dataset.range); renderChart(); }));
 document.getElementById('frame-chip-3d').addEventListener('click', (e)=>{ e.stopPropagation(); playSfx('click'); openFrameSelector('frame-sel-3d'); });
-document.getElementById('frame-chip-chart').addEventListener('click', (e)=>{ e.stopPropagation(); playSfx('click'); openFrameSelector('frame-sel-chart'); });
 document.addEventListener('click', ()=>{ document.querySelectorAll('.frame-selector.open').forEach(s => s.classList.remove('open')); });
 
 // ---------- メインループ ----------
