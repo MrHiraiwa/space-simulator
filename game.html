@@ -2055,6 +2055,7 @@ function avoidanceWatch(){
     const plan = computeAvoidBurn(hit);
     if(plan.mag <= 0.01) return;
     executeAvoidBurn(plan);
+    if(S.econ) S.econ.accident = true; /* 条件ボーナス（無事故）の判定材料 */
     S.avoidProposal = null;
     S.avoidSuppress = S.avoidSuppress || {};
     S.avoidSuppress[hit.body] = S.time + 600;
@@ -2201,6 +2202,10 @@ function createBaseState(cfg, isPrologue){
     cfg, time:0, warp:1,
     dv: cfg.maxDv, maxDv: cfg.maxDv,
     res:{ prop:cfg.prop, sup:cfg.sup, cred:cfg.cred, pol:cfg.pol, warp:cfg.warp },
+    /* 経済（二財布・確定設計 design/economy-design.md）: 運航予算は航宙ごとの
+       枠（M0 は委託費 80、持ち越しなし）、個人予算は成功報酬で育つ別財布。
+       旧来の単一財布 res.cred とは混ぜない（§8.3） */
+    econ:{ frame:80, personal:0, settled:false, settlement:null, deviated:false, accident:false },
     prod:null,
     officers: OFFICER_DEFS.map(o=>Object.assign({}, o, { role:'待機', rel:{ aff:0, trust:0 }, chatIdx:0 })),
     eventTimer: 7200,
@@ -2793,8 +2798,40 @@ function completeDocking(){
     openResultModal(true, 'ミッション '+m.id+' 達成！', '補給船「あけぼの」との接舷に成功。功績 +'+m.merit+' pt 獲得！', prevMerit);
     updatePanels();
 }
+/* M0 の精算計算（economy-design.md §7 の単価・§8 の最小ループ）:
+   推進剤は実消費 Δv 連動（0.3 cred/Δv）、接舷料は寄港ごと 10（こよみ＋あおばで 20）、
+   定例整備は航宙ごと 20、食料・賄いは乗員数×日数×1。枠は運航委託費 80。
+   成功報酬は基本 30＋条件ボーナス 10（無事故・定時・精算適正の複合条件）で、
+   残額とは無関係に契約で決まる額。残額は全額を運航者へ返還する */
+function computeM0Settlement(pe0){
+  const e = S.econ || (S.econ = { frame: 80, personal: 0, settled: false, settlement: null, deviated: false, accident: false });
+  const dvUsed = Math.max(0, S.maxDv - S.dv);
+  const propellant = Math.round(dvUsed * 0.3);
+  const berthing = 20, maintenance = 20;
+  const crewN = (S.officers ? S.officers.length : 5) + 1;
+  const days = S.time / 86400;
+  const food = Math.max(1, Math.round(crewN * days));
+  const total = propellant + berthing + maintenance + food;
+  const frame = e.frame || 80;
+  const residual = frame - total;
+  let onTime = true;
+  if(pe0 && pe0.trackT0 != null && pe0.trackDur) onTime = S.time <= pe0.trackT0 + pe0.trackDur + 1800;
+  if(e.deviated) onTime = false; /* 計画逸脱があった航宙は定時扱いにしない */
+  const conds = { noAccident: !S.failed && !e.accident, onTime, cleanBooks: residual >= 0 };
+  const bonus = (conds.noAccident && conds.onTime && conds.cleanBooks) ? 10 : 0;
+  return { dvUsed, propellant, berthing, maintenance, food, crewN, days, total, frame, residual, conds, bonus, reward: 30 + bonus, deviated: !!e.deviated };
+}
+function finalizeM0Settlement(){
+  const e = S.econ, st = e && e.settlement;
+  if(!e || !st || e.settled) return;
+  e.settled = true;
+  e.personal += st.reward;
+  logEvent('💴 精算確定 —— 支出 ' + st.total + ' cred（推進剤 ' + st.propellant + '／接舷 ' + st.berthing + '／整備 ' + st.maintenance + '／食料 ' + st.food + '）、残額 ' + st.residual + ' cred を運航者へ返還。成功報酬 +' + st.reward + ' cred（個人予算 ' + e.personal + ' cred）。');
+  if(typeof updatePanels === 'function') updatePanels();
+}
 function completePrologue(){
   if(!S || S.missionEnded) return;
+  const pe0 = S.planExec;
   S.missionEnded = true; S.succeeded = true;
   if(S.tutorial) S.tutorial.skipped = true;
   S.planExec = null; S.activeBurn = null;
@@ -2803,8 +2840,35 @@ function completePrologue(){
   playSfx('success');
   triggerCelebration('処女航宙 完了！');
   logEvent('🎖️ 処女航宙完了！功績 +30 pt 獲得。');
-  showOfficerPopup(GUIDE, '処女航宙、見事でした！功績が認められました。さて、次は実務です。');
-  openResultModal(true, '処女航宙 完了！', '観光航路とステーション「あおば」への帰投を完遂しました。功績 +30 pt 獲得！', prevMerit);
+  /* 経済の精算: 帰着のターンアラウンドで高橋が内訳を提示し、船長の承認で
+     確定する（界面憲法どおり、船長の仕事は承認だけ）。会話が開けない場合は
+     従来どおり即時に確定して結果モーダルへ進む */
+  const st = S.prologue ? computeM0Settlement(pe0) : null;
+  let modalDesc = '観光航路とステーション「あおば」への帰投を完遂しました。功績 +30 pt 獲得！';
+  let convOk = false;
+  if(st){
+    S.econ.settlement = st;
+    modalDesc += '精算では残額 ' + st.residual + ' cred を運航者へ返還し、成功報酬 +' + st.reward + ' cred を受け取りました。';
+    const b = {
+      'settle.frame': String(st.frame), 'settle.dvUsed': st.dvUsed.toFixed(1),
+      'settle.propellant': String(st.propellant), 'settle.food': String(st.food),
+      'settle.crew': String(st.crewN), 'settle.days': st.days.toFixed(1),
+      'settle.total': String(st.total), 'settle.residual': String(st.residual),
+      'settle.bonus': String(st.bonus), 'settle.reward': String(st.reward),
+      'settle.personalAfter': String((S.econ.personal || 0) + st.reward),
+      'settle.c1': st.conds.noAccident ? '達成' : '未達（回避噴射の実施あり）',
+      'settle.c2': st.conds.onTime ? '達成' : (st.deviated ? '未達（計画逸脱あり）' : '未達（予定到着を超過）'),
+      'settle.c3': st.conds.cleanBooks ? '達成' : '未達（枠を超過）'
+    };
+    try { convOk = startConversation('settle_m0', b); } catch(err) { convOk = false; }
+  }
+  if(convOk && convState && convState.id === 'settle_m0'){
+    convState.afterEnd = () => { openResultModal(true, '処女航宙 完了！', modalDesc, prevMerit); };
+  } else {
+    if(st) finalizeM0Settlement();
+    showOfficerPopup(GUIDE, '処女航宙、見事でした！功績が認められました。さて、次は実務です。');
+    openResultModal(true, '処女航宙 完了！', modalDesc, prevMerit);
+  }
   updatePanels();
 }
 
@@ -4602,7 +4666,7 @@ function updatePlanExecution(simDt){
       pe.progressT = S.time; /* 完走した再推定（不良判定でも）＝誘導系が生きている証跡。逸脱の扱いは badEst 側が担う */
       pe.badEst = (pe.badEst || 0) + 1;
       if(pe.badEst >= 2){
-        pe.paused = true; pe.deviated = true;
+        pe.paused = true; pe.deviated = true; if(S.econ) S.econ.deviated = true;
         showOfficerPopup(HELM, '計画からの逸脱を検知。このままでは目標に到達できません');
         logEvent('⚠️ 三浦: 計画からの逸脱を検知。自動噴射を一時停止します。');
       }
@@ -4784,7 +4848,7 @@ function updatePlanExecution(simDt){
                噴射が途中で死んで非束縛軌道に残される（ハーネス実測: 必要
                40.7 に対し残量 26.2 で発火し枯渇）。発火せず判断点にする。 */
             if(capPre.cost > S.dv){
-              pe.paused = true; pe.deviated = true;
+              pe.paused = true; pe.deviated = true; if(S.econ) S.econ.deviated = true;
               showOfficerPopup(HELM, '捕捉噴射に必要な Δv ' + capPre.cost.toFixed(1) + ' に対し、残量は ' + S.dv.toFixed(1) + ' しかありません。噴射を保留します');
               logEvent('⚠️ 三浦: 推進剤不足のため捕捉噴射を保留しました。船長の判断を仰ぎます。');
               return;
@@ -4798,7 +4862,7 @@ function updatePlanExecution(simDt){
             pe.captureState = 'burning';
             logEvent('🛰️ ' + aiName() + ': 到着に伴い捕捉噴射を実施し、' + pe.targetBody.name + ' の周回軌道に入ります。');
           } else {
-            pe.paused = true; pe.deviated = true;
+            pe.paused = true; pe.deviated = true; if(S.econ) S.econ.deviated = true;
             showOfficerPopup(HELM, '捕捉噴射を実施できません。到着状態が安定しません');
             logEvent('⚠️ 三浦: 捕捉噴射を実施できず、到着を保留しました。船長の判断を仰ぎます。');
           }
@@ -4815,7 +4879,7 @@ function updatePlanExecution(simDt){
           pe.captureConfirmed = true;
           logEvent('🛰️ ' + aiName() + ': 捕捉軌道の安定を確認。' + pe.targetBody.name + ' への到着が成立しました。');
         } else {
-          pe.paused = true; pe.deviated = true;
+          pe.paused = true; pe.deviated = true; if(S.econ) S.econ.deviated = true;
           showOfficerPopup(HELM, '捕捉後の軌道が安定しません。到着を確定できません');
           logEvent('⚠️ 三浦: 捕捉後の軌道確認に失敗しました。到着を保留し、船長の判断を仰ぎます。');
           return;
@@ -8278,6 +8342,7 @@ function convApplyEffects(effects){
     else if(e.undelegate){ if(typeof undelegateTutorial === 'function') undelegateTutorial(); }
     else if(e.end_guidance){ if(S && S.tutorial && !S.tutorial.skipped){ S.tutorial.skipped = true; logEvent('船長： 教導の案内はここまででよいと伝えた。'); if(typeof renderTutorialUI === 'function') renderTutorialUI(); } }
     else if(e.commit){ cs.commitDeparture = true; }
+    else if(e.settle){ finalizeM0Settlement(); }
   });
 }
 function convCrossTrack(){
@@ -8944,6 +9009,21 @@ nav_consult: { title: '航法相談（三浦）', start: 'n01', nodes: {
     { label: '分かった。続けてくれ', primary: true, goto: 'end' } ] },
   n04: { type: 'say', who: 'miura_aoi', next: 'end', text: '分かりました。承認いただいた計画の運航文書をお見せします。通過点と実績はそちらで確認できます。' },
   n05: { type: 'say', who: 'miura_aoi', next: 'end', text: '所属の航路組合から届いている配船連絡の一覧です。担当船と集まるクルーは、組合が決めて割り当てます。' }
+} },
+settle_m0: { title: '精算（高橋）', start: 'n01', nodes: {
+  n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。帰投の精算をまとめました。運航委託費の枠 {settle.frame} cred に対する実績です。' },
+  n02: { type: 'grounds', who: 'takahashi_ren', title: '精算内訳（運航予算）', rows: [
+    [ '推進剤（実消費 Δv {settle.dvUsed} × 0.3）', '{settle.propellant} cred' ],
+    [ '接舷料（こよみ寄港・あおば帰着）', '20 cred' ],
+    [ '定例整備（点検・ターンアラウンド）', '20 cred' ],
+    [ '食料・賄い（乗員 {settle.crew} 名 × {settle.days} 日）', '{settle.food} cred' ],
+    [ '支出合計', '{settle.total} cred' ],
+    [ '残額（運航者へ全額返還）', '{settle.residual} cred' ] ],
+    note: '条件ボーナスの判定 —— 無事故：{settle.c1}／定時：{settle.c2}／精算適正：{settle.c3}。', next: 'n03' },
+  n03: { type: 'say', who: 'takahashi_ren', next: 'n04', text: '成功報酬は基本 30 cred、条件ボーナス {settle.bonus} cred で、合計 {settle.reward} cred が船長の個人予算に入ります。残額は報酬とは無関係に、全額を組合へ返還します。' },
+  n04: { type: 'choice', who: 'takahashi_ren', text: 'この内容で精算を確定してよろしいですか。', options: [
+    { label: '精算を承認する', primary: true, goto: 'n05', effects: [ { settle: true } ] } ] },
+  n05: { type: 'say', who: 'takahashi_ren', text: '精算が確定しました。記録は組合の照合に回ります。個人予算は {settle.personalAfter} cred になりました。お疲れさまでした、船長。' }
 } },
 supply_consult: { title: '補給相談（高橋）', start: 'n01', nodes: {
   n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。積荷は固定まで済んでいます。いまの在庫は、推進剤ストック {sup.prop}、補給物資 {sup.sup}、資金 {sup.cred}。タンクの Δv は {dv.remaining}／{dv.max} です。' },
