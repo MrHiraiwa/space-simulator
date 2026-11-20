@@ -358,6 +358,7 @@
   .traffic-row .tm{color:var(--muted);white-space:nowrap}
   .npc-label{position:fixed;transform:translate(-50%,-130%);font-size:10px;font-weight:700;color:#e2e8f0;background:rgba(4,8,20,0.62);border:1px solid rgba(148,163,184,0.5);border-radius:5px;padding:1px 5px;pointer-events:auto;cursor:pointer;z-index:15;white-space:nowrap;display:none}
   .npc-label.body-label{font-size:12px;color:#fff;background:rgba(10,16,34,0.78);border-color:rgba(147,197,253,0.85);padding:2px 8px;z-index:16;pointer-events:none}
+  .npc-label.ship-label{font-size:11px;color:#bfdbfe;background:rgba(10,24,48,0.8);border-color:rgba(88,180,255,0.8);padding:2px 7px;z-index:16;pointer-events:none}
   .npc-label.orbit-off{opacity:0.45}
   .ff-bar .ff-now{color:#e9d5ff;font-weight:700;font-size:10px;white-space:nowrap}
   .ff-bar button{padding:4px 8px;font-size:11px;border-radius:999px;min-height:30px;white-space:nowrap}
@@ -1941,8 +1942,11 @@ function playSfx(type){
   }catch(_){}
 }
 // ---------- BGM（第2段b・スコープH、正典3曲） ----------
-// タイトル画面=title／出発=departure（ワンショット）／航行中=cruise（ループ）。
-// 自動再生制限のため再生開始は最初のユーザー操作以降。ミュート（isMuted）に従う。
+// タイトル画面・待機（接舷／着陸中）=title／出発=departure（ワンショット）／
+// 航行中=cruise（ループ）。待機と航行で同じ曲を使うと、出発曲の終了が
+// 「待機中の音楽に戻った」と聞こえる（2026-11-21 実機報告）ため、待機は
+// title 曲に分ける。自動再生制限のため再生開始は最初のユーザー操作以降。
+// ミュート（isMuted）に従う。
 const BGM_FILES = { title: 'assets/music/title_mainchorus.opus', departure: 'assets/music/departure_mainchorus.opus', cruise: 'assets/music/cruise_mainchorus.opus' };
 let bgmAudio = null, bgmName = null, bgmUnlocked = false, bgmDeparture = false;
 function bgmEnsure(){
@@ -1971,7 +1975,8 @@ function updateBgm(){
   if(bgmDeparture){ if(bgmName !== 'departure') bgmPlay('departure'); return; }
   const ss = document.getElementById('start-screen');
   const titleShown = !ss || !ss.classList.contains('hidden');
-  bgmPlay((titleShown || !S) ? 'title' : 'cruise');
+  const waiting = !!(S && (S.docked || S.landed));
+  bgmPlay((titleShown || !S || waiting) ? 'title' : 'cruise');
 }
 window.addEventListener('pointerdown', () => { if(!bgmUnlocked){ bgmUnlocked = true; updateBgm(); } }, { capture: true });
 
@@ -6178,7 +6183,7 @@ function frameCamOnShip(){
   else cam.target = new THREE.Vector3(S.ship.x - ref.x, S.ship.y - ref.y, S.ship.z - ref.z);
   setCamButtons();
 }
-let starMesh, planetMeshes=[], planetMarkers=[], shipMesh, targetMesh, stationMesh=null, npcMeshes=[], portCraftMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, planGlowLine=null, planCoursePoints=null, planWpGroup=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
+let starMesh, planetMeshes=[], planetMarkers=[], shipMarker=null, shipMesh, targetMesh, stationMesh=null, npcMeshes=[], portCraftMeshes=[], wingMeshes=[], trailLines={}, predLine=null, planLine=null, planGlowLine=null, planCoursePoints=null, planWpGroup=null, corridorGroup=null, corridorLine=null, corridorFixRing=null, corridorMidRing=null;
 let planLineRef = null;
 let planLineAnim = null; /* #80: 枠変換つき計画線の毎フレーム再アンカー用（生サンプル＋時刻） */
 let _lastPlanSamplesRef = undefined; /* #75: サンプル列の差し替え検出（チップ再構築用） */
@@ -7550,7 +7555,18 @@ function makePlanetMarkerTexture(color){
   x.beginPath(); x.arc(64, 64, 10, 0, Math.PI * 2); x.fill();
   return new THREE.CanvasTexture(c);
 }
-
+/* 自船マーカー（2026-11-21 実機報告）: 広域では実寸の船体が見えず、名前
+   ラベルも system 尺度で落ちるため、自船の位置が分からなくなっていた。
+   天体の丸マーカーと区別できる菱形＋白芯で、画面一定サイズで示す */
+function makeShipMarkerTexture(){
+  const c = document.createElement('canvas'); c.width = 128; c.height = 128;
+  const x = c.getContext('2d');
+  x.strokeStyle = '#58b4ff'; x.lineWidth = 8;
+  x.beginPath(); x.moveTo(64, 10); x.lineTo(118, 64); x.lineTo(64, 118); x.lineTo(10, 64); x.closePath(); x.stroke();
+  x.fillStyle = '#ffffff';
+  x.beginPath(); x.arc(64, 64, 11, 0, Math.PI * 2); x.fill();
+  return new THREE.CanvasTexture(c);
+}
 function buildSystemMeshes(){
   if(!scene) return;
   if(sysGroup) scene.remove(sysGroup);
@@ -7637,6 +7653,9 @@ function buildSystemMeshes(){
   trailLines.target = makeTrail(0x47e5a1); sysGroup.add(trailLines.target);
 
   shipMesh = buildShipDisplay(playerShipModelId(), { fallback: 'player' }); sysGroup.add(shipMesh);
+  shipMarker = new THREE.Sprite(new THREE.SpriteMaterial({ map: makeShipMarkerTexture(), transparent: true, depthWrite: false, depthTest: false }));
+  shipMarker.renderOrder = 20;
+  sysGroup.add(shipMarker);
   trailLines.ship = makeTrail(0x58b4ff); sysGroup.add(trailLines.ship);
 
   predLine = makeTrail(0x38bdf8); sysGroup.add(predLine);
@@ -8348,6 +8367,18 @@ function syncMeshes(){
 
   shipMesh.position.set(S.ship.x - ref.x, S.ship.y - ref.y, S.ship.z - ref.z);
   orientShip(shipMesh, S.ship, ref);
+  if(shipMarker){
+    const sx = S.ship.x - ref.x, sy = S.ship.y - ref.y, sz = S.ship.z - ref.z;
+    shipMarker.position.set(sx, sy, sz);
+    if(camera){
+      const dCamS = Math.max(1000, Math.hypot(camera.position.x - sx, camera.position.y - sy, camera.position.z - sz));
+      /* 船体が読める近さでは消す。点になる遠方でのみ画面一定サイズで示す
+         （天体マーカーと同じ作法。自船は一回り大きく 0.02） */
+      shipMarker.visible = labelsOn && dCamS > 1500;
+      const ms = dCamS * 0.02;
+      shipMarker.scale.set(ms, ms, 1);
+    } else shipMarker.visible = false;
+  }
   if(shipMesh.userData.flames){
     const active = isThrusting && S.dv > 0 && S.warp > 0;
     const flicker = active ? (0.85 + Math.random()*0.45) : 0.18;
@@ -10336,6 +10367,7 @@ let laneBeaconMeshes = [];
 // ---------- 3D 名前ラベル ----------
 const npcLabelPool = [];
 const bodyLabelPool = []; /* ラベル階層の最上位（太陽・惑星）専用プール */
+let shipLabelEl = null; /* 自船ラベル（広域でも落とさない） */
 function updateNpcLabels(){
   const wrap = document.getElementById('npc-labels');
   if(!wrap) return;
@@ -10384,6 +10416,26 @@ function updateNpcLabels(){
     for(let i = tops.length; i < bodyLabelPool.length; i++) bodyLabelPool[i].style.display = 'none';
   } else {
     bodyLabelPool.forEach(el => { el.style.display = 'none'; });
+  }
+  /* 自船ラベル: 広域（system 尺度）でも自船の位置が分かるよう、コンタクト
+     ラベルの距離・尺度フィルタの対象外として常時置く（2026-11-21 実機
+     報告）。船体が読める近さでは 3D マーカーともども消す */
+  if(!shipLabelEl){ shipLabelEl = document.createElement('div'); shipLabelEl.className = 'npc-label ship-label'; wrap.appendChild(shipLabelEl); }
+  {
+    const sx = S.ship.x - ref.x, sy = S.ship.y - ref.y, sz = S.ship.z - ref.z;
+    const dCamS = Math.hypot(camera.position.x - sx, camera.position.y - sy, camera.position.z - sz);
+    _proj.set(sx, sy, sz).project(camera);
+    if(dCamS <= 1500 || _proj.z > 1 || Math.abs(_proj.x) > 0.97 || Math.abs(_proj.y) > 0.97){
+      shipLabelEl.style.display = 'none';
+    } else {
+      const lx = rect.left + (_proj.x * 0.5 + 0.5) * rect.width;
+      const ly = rect.top + (-_proj.y * 0.5 + 0.5) * rect.height;
+      shipLabelEl.style.display = 'block';
+      shipLabelEl.textContent = '自船 さくら';
+      shipLabelEl.style.left = (lx + 10) + 'px';
+      shipLabelEl.style.top = (ly - 8) + 'px';
+      placed.push({ x: lx, y: ly, w: 76 });
+    }
   }
   cs.forEach((c, i) => {
     let el = npcLabelPool[i];
