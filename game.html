@@ -1085,7 +1085,7 @@
       </details>
       <details class="codex-entry"><summary>🚨 衝突と回避のルール</summary>
         <p>天体へは「位置」だけでなく「相対速度」が合って初めて着けます。合っていなければ、すれ違うか、ぶつかります。惑星と同じ速さで並んでも、それは静止ではなく、やがて落ちていきます（留まるには重力補償の噴射が要ります）。</p>
-        <p>航行AIは全天体（恒星を含む）への衝突軌道を常時監視しています。時間に余裕があれば回避案を提案し、船長の承認で噴射します。衝突が切迫し判断の時間がない場合は、定常方針（船の保全優先）に基づきAIが即時に回避噴射し、事後に報告します。承認した計画は、AIが衝突チェックを通したものだけです。</p>
+        <p>航行AIは全天体（恒星を含む）への衝突軌道を常時監視しています。衝突まで時間に余裕がある場合は、緊急の警告ではなく通常の航路調整としてお知らせします。衝突が切迫し判断の時間がない場合は、定常方針（船の保全優先）に基づきAIが即時に回避噴射し、事後に報告します。承認した計画は、AIが衝突チェックを通したものだけです。</p>
       </details>
       <details class="codex-entry"><summary>🕐 時間と当直</summary>
         <p>船内時計は時刻で進みます。船長が席を外している間も世界は止まらず、航行は当直と航行AIが続けます。戻ると、過ぎた時間の航行がそのまま進んでいて、途中の日誌もその時刻で積まれています。ただし、接舷や事故、船長の判断が要る場面では、そこで止まって判断を待ちます（不在の間に進むのは、最大で船内時24時間まで）。</p>
@@ -1911,9 +1911,12 @@ window.addEventListener('pointerdown', () => { if(!bgmUnlocked){ bgmUnlocked = t
 /* ==== ORDER LOGIC は flight-core.js へ移設（台帳 #56） ====
    物理・推定・誘導・捕捉判定の純粋計算は FlightCore 側にある。
    ここに残るのは S（ゲーム状態）に結合した衝突回避プロトコルだけ。 */
-/* ---- 衝突回避プロトコル（B7b） ----
-   全天体（恒星含む）への衝突を無推力伝播で監視する。時間余裕がある場合は回避案を船長へ提案し（承認で実行）、
-   衝突まで AVOID_AUTO_TTI 以下に切迫した場合は、船長の定常方針（船の保全優先）に基づき航行AIが即時回避噴射し、事後に報告する。 */
+/* ---- 衝突回避プロトコル（B7b、2026-11-20 改定） ----
+   全天体（恒星含む）への衝突を無推力伝播で監視する。衝突まで1時間を超える
+   予測は緊急扱いせず、通常の航路調整としてログで知らせる（警告カードは
+   判断待ちで時間を止めるため出さない）。衝突まで AVOID_AUTO_TTI 以下に
+   切迫した場合のみ、船長の定常方針（船の保全優先）に基づき航行AIが即時
+   回避噴射し、事後に報告する。計画飛行中は目標天体を計画に委ねる。 */
 const AVOID_HORIZON = 172800; /* 予測ホライゾン: 船内時 48時間 */
 const AVOID_AUTO_TTI = 3600;  /* これ以下は即時自動回避 */
 function predictImpact(horizon){
@@ -2064,13 +2067,18 @@ function avoidanceWatch(){
   }
   if(S.avoidSuppress && S.avoidSuppress[hit.body] && S.time < S.avoidSuppress[hit.body]){ if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null; return; }
   if(planTarget){ if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null; return; }
-  if(!S.avoidProposal || S.avoidProposal.body !== hit.body){
-    const plan = computeAvoidBurn(hit);
-    if(plan.mag <= 0.01) return;
-    S.avoidProposal = { body: hit.body, tti: hit.tti, mag: plan.mag, dir: plan.dir, at: S.time };
-  } else {
-    S.avoidProposal.tti = hit.tti;
+  /* 通常の航路調整（2026-11-20・本人の裁定「4時間前なら激突警告じゃなくて
+     普通に航路調整だろうに」）: 衝突まで AVOID_AUTO_TTI（1時間）を超える予測は
+     緊急ではない。警告カードは判断待ちで時間を等速に落とすため、ここでは
+     出さない。航行AIからの通常の知らせとしてログに残すだけにし、実際の
+     調整は計画の通常補正や船長の指示に委ねる。同一天体への知らせは
+     船内時1時間に1回まで */
+  S.avoidAdvisory = S.avoidAdvisory || {};
+  if(!(S.avoidAdvisory[hit.body] > S.time - 3600)){
+    S.avoidAdvisory[hit.body] = S.time;
+    logEvent('🧭 航行AI: 約 ' + fmtDuration(hit.tti) + ' 後に ' + hit.body + ' への衝突コースが予測されます。通常の航路調整で対応できる範囲です。');
   }
+  if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null;
 }
 function approveAvoidance(){
   const p = S && S.avoidProposal; if(!p) return;
