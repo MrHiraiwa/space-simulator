@@ -2633,7 +2633,11 @@ function relState(){
 }
 
 function updateApproachCourse(){
-  if(!S || S.prologue || S.docked || S.failed) return;
+  if(!S || S.docked || S.failed) return;
+  /* プロローグ中は接舷計画が進行している時だけ接近コースを有効にする:
+     旧ガードは S.prologue の間ずっと established を立てられなくし、M0 帰投の
+     join が final へ進めず必ず停滞していた */
+  if(S.prologue && !(S.planExec && S.planExec.active && S.planExec.needDock)) return;
   const fix = approachFix(S.target);
   const dFix = Math.hypot(S.ship.x - fix.x, S.ship.y - fix.y, S.ship.z - fix.z);
   const info = relInfo(S.ship, S.target);
