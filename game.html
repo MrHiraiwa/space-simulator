@@ -533,12 +533,20 @@
   }
 
   /* ===== 航宙計画パネル (#plan-panel) & モーダル共通 ===== */
-  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal,#log-panel,#traffic-panel,#overwrite-modal{
+  #plan-panel,#result-modal,#roster-modal,#request-panel,#creation-modal,#chart-panel,#codex-modal,#log-panel,#traffic-panel,#overwrite-modal,#ship-panel{
     position:fixed;inset:0;z-index:45;
     background:rgba(3,6,16,0.78);backdrop-filter:blur(8px);
     display:none;align-items:center;justify-content:center;padding:12px;
   }
-  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open,#log-panel.open,#traffic-panel.open,#overwrite-modal.open{display:flex}
+  #plan-panel.open,#result-modal.open,#roster-modal.open,#request-panel.open,#creation-modal.open,#chart-panel.open,#codex-modal.open,#log-panel.open,#traffic-panel.open,#overwrite-modal.open,#ship-panel.open{display:flex}
+  .wear-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12.5px}
+  .wear-row .wl{width:78px;flex:none;opacity:.85}
+  .wear-bar{flex:1;height:8px;background:rgba(127,180,255,.14);border-radius:4px;overflow:hidden}
+  .wear-fill{height:100%;border-radius:4px}
+  .wear-pct{width:86px;flex:none;text-align:right;font-variant-numeric:tabular-nums}
+  .tl-row{display:flex;gap:8px;font-size:12.5px;margin:2.5px 0;align-items:baseline}
+  .tl-t{color:var(--teal);white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
+  .ship-sec{font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em;margin:14px 0 5px}
   /* 名簿は開始画面（z-index:50）の上に出す。開始画面を隠すのは席決定後（enterGameWorld） */
   #roster-modal{z-index:60}
   .roster-note{font-size:12px;line-height:1.6;color:#cbd5e1;background:rgba(6,11,24,0.6);border:1px solid var(--line);border-radius:10px;padding:9px 11px;margin:0 0 12px}
@@ -921,6 +929,7 @@
           <button id="btn-task-traffic" class="task-chip" data-n="">📡 交通</button>
           <button id="btn-task-log" class="task-chip" data-n="">📜 日誌</button>
           <button id="btn-codex" class="task-chip" data-n="">📚 資料</button>
+          <button id="btn-task-ship" class="task-chip" data-n="">🚢 船の状況</button>
         </div>
       </div>
 
@@ -1053,6 +1062,17 @@
     <p class="roster-note">仕事は公開ボードから取るものではなく、所属会社（航路組合）からの配船・業務連絡として届きます。会社が船とクルーを集め、船長に割り当てます。同じ会社の仕事を続ける場合は、同じ航路の復路・次便が続いて届きます。配船を受けることは、その航路を運航していた船長と交代することです。航路は会社のもので止まりません。船長が別の配船へ移れば、会社が別の船長を充てて運航が続きます。戻ってきた時に担当が空いていれば、また同じ航路の便が届きます。航路も船も、船長の「自分のもの」にはなりません。他のプレーヤーが運航中の航路は、一覧に見えても受けられません（交代できるのは、NPCが運航している航路だけです）。他社や直接の依頼が開くのは、信用が上がった先の段階です（ここでは含みのみ）。金額は経済設計（design/economy-design.md）の物差しによります。M0 以外は設計由来のプロトタイプ表示で、まだ受けられません。</p>
     <div id="request-list"></div>
     <div class="modal-actions"><button id="btn-request-close">閉じる</button></div>
+  </div>
+</div>
+
+<!-- 船の状況パネル: 摩耗ゲージ・二財布・航宙タイムライン（予定と実績）。
+     設計根拠: README「船の状況ビューでは系統ごとの摩耗を図（ゲージ）で見せる」 -->
+<div id="ship-panel">
+  <div class="modal-box" style="text-align:left">
+    <div style="font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em">船の状況 — 輸送船「さくら」</div>
+    <h2 style="margin:4px 0 8px;font-size:19px">船の状況と予定</h2>
+    <div id="ship-status-body"></div>
+    <div class="modal-actions"><button id="btn-ship-close">閉じる</button></div>
   </div>
 </div>
 
@@ -8849,6 +8869,66 @@ function renderRequests(){
   });
 }
 function openRequestPanel(){ renderRequests(); document.getElementById('request-panel').classList.add('open'); }
+function shipPhaseLabel(){
+  if(!S) return '—';
+  if(S.failed) return '事故により航宙終了';
+  if(S.missionEnded) return '航宙完了（精算済み）';
+  if(S.docked) return '接舷中（ステーション「あおば」）';
+  if(S.berthing) return '接舷作業中';
+  const pe = S.planExec;
+  if(pe && pe.active){
+    const m = { waitwin: '出発窓待ち', undock: '出発作業中（港内）', harbor: '出発作業中（港内）', orbitdep: '軌道出発中', depart: '出発噴射中', cruise: '巡航中', join: '目的地へ接近中', final: '最終接近中', capture: '捕捉中', captain: '船長の判断待ち' };
+    return m[pe.phase] || ('航行中（' + pe.phase + '）');
+  }
+  if(S.activeBurn) return '噴射中';
+  return '航行中（承認済み計画なし）';
+}
+function wearBar(label, pct){
+  const v = Math.max(0, Math.min(100, pct || 0));
+  const col = v < 30 ? '#57d977' : v < 60 ? '#e8c547' : '#e5534b';
+  return '<div class="wear-row"><span class="wl">' + label + '</span><div class="wear-bar"><div class="wear-fill" style="width:' + v.toFixed(0) + '%;background:' + col + '"></div></div><span class="wear-pct">' + v.toFixed(1) + '%</span></div>';
+}
+function renderShipStatusPanel(){
+  const el = document.getElementById('ship-status-body');
+  if(!el || !S) return;
+  const w = S.wear || { engine: 0, attitude: 0, life: 0, seals: 0 };
+  const e = S.econ || { frame: 80, personal: 0, settled: false, settlement: null };
+  const dvFrac = S.maxDv > 0 ? Math.max(0, Math.min(1, S.dv / S.maxDv)) : 0;
+  let h = '';
+  h += '<div class="tl-row"><span class="tl-t">' + formatShipTime(S.time) + '</span><span>' + shipPhaseLabel() + '</span></div>';
+  h += '<div class="wear-row"><span class="wl">推進剤 Δv</span><div class="wear-bar"><div class="wear-fill" style="width:' + (dvFrac * 100).toFixed(0) + '%;background:#4cc9f0"></div></div><span class="wear-pct">' + S.dv.toFixed(1) + '／' + S.maxDv.toFixed(0) + '</span></div>';
+  h += '<div class="ship-sec">摩耗（実使用に連動・定例整備で回復）</div>';
+  h += wearBar('機関', w.engine) + wearBar('姿勢制御', w.attitude) + wearBar('生命維持', w.life) + wearBar('船体シール', w.seals);
+  h += '<div class="ship-sec">予算（二財布）</div>';
+  if(e.settled && e.settlement){
+    h += '<div class="tl-row"><span>運航予算</span><span>枠 ' + e.settlement.frame + ' cred — 精算済み（支出 ' + e.settlement.total + '／残額 ' + e.settlement.residual + ' を返還）</span></div>';
+  } else {
+    const propNow = Math.round(Math.max(0, S.maxDv - S.dv) * 0.3);
+    h += '<div class="tl-row"><span>運航予算</span><span>枠 ' + (e.frame || 80) + ' cred — 現在の実績見込み： 推進剤 ' + propNow + ' cred（精算は帰投時）</span></div>';
+  }
+  h += '<div class="tl-row"><span>個人予算</span><span>' + (e.personal || 0) + ' cred（成功報酬で育つ船長個人の財布）</span></div>';
+  h += '<div class="ship-sec">タイムライン（予定）</div>';
+  const pe = S.planExec;
+  let planRows = '';
+  if(pe && pe.active){
+    if(pe.waitUntil && pe.waitUntil > S.time) planRows += '<div class="tl-row"><span class="tl-t">' + fmtDayClock(pe.waitUntil) + '</span><span>出発（承認済み計画）</span></div>';
+    if(pe.trackT0 != null && pe.planBurns){
+      const from = pe.burnIdx || 0;
+      for(let i = from; i < Math.min(pe.planBurns.length, from + 6); i++){
+        const b = pe.planBurns[i];
+        planRows += '<div class="tl-row"><span class="tl-t">' + fmtDayClock(pe.trackT0 + b.t) + '</span><span>計画噴射 Δv ' + (b.cost || 0).toFixed(1) + '</span></div>';
+      }
+    }
+    if(pe.trackT0 != null && pe.trackDur) planRows += '<div class="tl-row"><span class="tl-t">' + fmtDayClock(pe.trackT0 + pe.trackDur) + '</span><span>到着予定（' + (pe.targetBody ? pe.targetBody.name : '目的地') + '）</span></div>';
+  }
+  h += planRows || '<div class="tl-row"><span>承認済みの計画はありません</span></div>';
+  h += '<div class="ship-sec">タイムライン（実績・直近）</div>';
+  const lines = logEl ? [...logEl.children].slice(-12).map(d => d.textContent) : [];
+  h += lines.length ? lines.map(t => '<div class="tl-row"><span>' + t.replace(/</g, '&lt;') + '</span></div>').join('') : '<div class="tl-row"><span>まだ記録がありません</span></div>';
+  el.innerHTML = h;
+}
+function openShipPanel(){ renderShipStatusPanel(); document.getElementById('ship-panel').classList.add('open'); }
+setInterval(() => { const p = document.getElementById('ship-panel'); if(p && p.classList.contains('open')) renderShipStatusPanel(); }, 1000);
 /* ---- 話しかける入口（界面憲法）: 計画・補給・案内は、役職への話しかけから始まる。
    パネルやボタンの直接操作では世界の状態を変えない ---- */
 function openPlanMeeting(){
@@ -9502,6 +9582,8 @@ document.getElementById('btn-talk').addEventListener('click', ()=>{ playSfx('cli
 document.getElementById('btn-roster-create').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('roster-modal').classList.remove('open'); enterGameWorld(); openCreation(); });
 document.getElementById('btn-roster-close').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('roster-modal').classList.remove('open'); });
 document.getElementById('btn-request-close').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('request-panel').classList.remove('open'); });
+document.getElementById('btn-task-ship').addEventListener('click', ()=>{ playSfx('click'); openShipPanel(); });
+document.getElementById('btn-ship-close').addEventListener('click', ()=>{ playSfx('click'); document.getElementById('ship-panel').classList.remove('open'); });
 document.getElementById('btn-plan-close').addEventListener('click', ()=>{ playSfx('click'); closePlanPanel(); updatePlanLineMesh(); });
 document.getElementById('btn-depart').addEventListener('click', confirmDeparture);
 
