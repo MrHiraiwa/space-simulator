@@ -431,14 +431,12 @@
   .vp-card .vp-tag{font-size:9.5px;padding:1px 5px;border-radius:4px;background:rgba(148,163,184,0.16);color:#cbd5e1}
   .vp-card .vp-tag.rec{background:rgba(74,222,128,0.18);color:#86efac}
   .vp-card .vp-tag.cur{background:rgba(56,189,248,0.22);color:var(--accent)}
-  #view-pad{position:absolute;left:50%;transform:translateX(-50%);bottom:calc(100% + 8px);z-index:130;width:min(430px,94vw);background:rgba(9,15,32,0.96);border:1px solid var(--line);border-radius:12px;padding:10px;box-shadow:0 10px 30px rgba(0,0,0,0.6)}
-  #view-pad .vp-head{font-size:12px;font-weight:700;color:#fff;margin-bottom:2px}
-  #view-pad .vp-sub{display:block;font-size:10.5px;font-weight:400;color:var(--muted);margin-top:1px}
-  .vpad-cols{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
-  .vpad-cap{font-size:10.5px;color:var(--muted);margin-bottom:4px}
-  .vpad-cross{display:grid;grid-template-columns:repeat(3,1fr);gap:5px}
-  .vpad-row{display:flex;gap:5px;margin-bottom:5px}
-  .vpad-btn{flex:1;min-height:42px;font-size:15px;border-radius:9px;border:1px solid var(--line);background:rgba(15,23,48,0.85);color:var(--text);cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
+  #view-pad{position:absolute;right:6px;bottom:calc(100% + 6px);z-index:130;width:178px;background:rgba(9,15,32,0.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);border:1px solid var(--line);border-radius:12px;padding:7px 8px;box-shadow:0 10px 30px rgba(0,0,0,0.55)}
+  #view-pad .vp-head{font-size:11px;font-weight:700;color:#fff;margin-bottom:4px}
+  .vpad-cap{font-size:9.5px;color:var(--muted);margin:5px 0 2px}
+  .vpad-cross{display:grid;grid-template-columns:repeat(3,1fr);gap:4px}
+  .vpad-row{display:flex;gap:4px;margin-bottom:2px}
+  .vpad-btn{flex:1;min-height:36px;font-size:14px;border-radius:8px;border:1px solid var(--line);background:rgba(15,23,48,0.55);color:var(--text);cursor:pointer;touch-action:none;user-select:none;-webkit-user-select:none}
   .vpad-btn:active{border-color:var(--accent);background:rgba(22,42,86,0.9)}
   .vpad-btn.vpad-auto{font-size:10.5px;color:var(--accent)}
   .vp-foot{display:flex;align-items:center;gap:8px;margin-top:9px;flex-wrap:wrap}
@@ -875,26 +873,20 @@
         <span class="view-labels-wrap"><span class="view-labels-cap">名前表示</span><button id="btn-view-labels" type="button" class="view-switch on" role="switch" aria-checked="true" title="名前表示のオン／オフ"><span class="knob"></span></button></span>
       </div>
       <div id="view-pad" style="display:none">
-        <div class="vp-head">視点パッド<span class="vp-sub">ボタンで視点を動かします（長押しで連続）。ジェスチャ操作が難しいときの代替手段です</span></div>
-        <div class="vpad-cols">
-          <div>
-            <div class="vpad-cap">移動（見る場所）</div>
-            <div class="vpad-cross">
-              <span></span><button type="button" class="vpad-btn" id="vpad-pan-up" aria-label="上へ移動">↑</button><span></span>
-              <button type="button" class="vpad-btn" id="vpad-pan-left" aria-label="左へ移動">←</button><button type="button" class="vpad-btn vpad-auto" id="vpad-auto">AUTO</button><button type="button" class="vpad-btn" id="vpad-pan-right" aria-label="右へ移動">→</button>
-              <span></span><button type="button" class="vpad-btn" id="vpad-pan-down" aria-label="下へ移動">↓</button><span></span>
-            </div>
-          </div>
-          <div>
-            <div class="vpad-cap">回転（方位）</div>
-            <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-rot-l" aria-label="左へ回転">◀</button><button type="button" class="vpad-btn" id="vpad-rot-r" aria-label="右へ回転">▶</button></div>
-            <div class="vpad-cap">回転（傾き）</div>
-            <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-tilt-u" aria-label="視点を上げる">▲</button><button type="button" class="vpad-btn" id="vpad-tilt-d" aria-label="視点を下げる">▼</button></div>
-            <div class="vpad-cap">ズーム</div>
-            <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-zoom-o" aria-label="縮小">−</button><button type="button" class="vpad-btn" id="vpad-zoom-i" aria-label="拡大">＋</button></div>
-          </div>
+        <div class="vp-head">視点パッド</div>
+        <div class="vpad-cap">移動（見る場所）</div>
+        <div class="vpad-cross">
+          <span></span><button type="button" class="vpad-btn" id="vpad-pan-up" aria-label="上へ移動">↑</button><span></span>
+          <button type="button" class="vpad-btn" id="vpad-pan-left" aria-label="左へ移動">←</button><button type="button" class="vpad-btn vpad-auto" id="vpad-auto">AUTO</button><button type="button" class="vpad-btn" id="vpad-pan-right" aria-label="右へ移動">→</button>
+          <span></span><button type="button" class="vpad-btn" id="vpad-pan-down" aria-label="下へ移動">↓</button><span></span>
         </div>
-        <div class="vpad-row" style="margin-top:10px"><button type="button" class="vpad-btn" id="vpad-route" style="font-size:12.5px">航路全体を見る</button></div>
+        <div class="vpad-cap">回転（方位）</div>
+        <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-rot-l" aria-label="左へ回転">◀</button><button type="button" class="vpad-btn" id="vpad-rot-r" aria-label="右へ回転">▶</button></div>
+        <div class="vpad-cap">回転（傾き）</div>
+        <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-tilt-u" aria-label="視点を上げる">▲</button><button type="button" class="vpad-btn" id="vpad-tilt-d" aria-label="視点を下げる">▼</button></div>
+        <div class="vpad-cap">ズーム</div>
+        <div class="vpad-row"><button type="button" class="vpad-btn" id="vpad-zoom-o" aria-label="縮小">−</button><button type="button" class="vpad-btn" id="vpad-zoom-i" aria-label="拡大">＋</button></div>
+        <div class="vpad-row" style="margin-top:6px"><button type="button" class="vpad-btn" id="vpad-route" style="font-size:11.5px;min-height:32px">航路全体を見る</button></div>
       </div>
       <div id="view-picker" style="display:none">
         <div class="vp-head">見方を選ぶ<span class="vp-sub">選んだ見方で保持します。角度はドラッグで自由に変えられます</span></div>
