@@ -36,6 +36,12 @@ const STAR_SURFACE_R = 900000;
 const V_IAF = 12;
 const V_FINAL = 4;
 const V_CONTACT = 1.5;
+/* マスドライバーの公表出口速度（台帳#113）: 装備港からの接舷出発は、射出
+   レーンを進んで出域点（錨中心＋depSep×80）で「錨の速度＋depSep×MD_EXIT_V」
+   という港の公表値どおりの状態に固定される。推定と実飛行が同じ出口状態を
+   共有するため、出発状態のばらつき（推定と実績の最大の発散源）が消える。
+   射出は港の設備なので船の推進剤は使わない（港内操船 Δv は 0）。 */
+const MD_EXIT_V = 2.5;
 function surfaceRadius(body){
   if(!body) return 0;
   if(body.isStar || body === 'star') return STAR_SURFACE_R;
@@ -723,6 +729,32 @@ function captureGateAt(ship, target, planetsRaw, arrivalDist){
   }
   return false;
 }
+/* 捕捉の機会（2026-11-20、台帳#130）: captureGateAt は「既に束縛された幾何」
+   でしか開かないため、近接パスで有効な捕捉解があっても試みすらされず、
+   熱いフライバイ（実測: 相対速度 17〜19、脱出速度超過）のまま通り過ぎて
+   推進剤を食い潰した。ゲートが閉じていても、捕捉半径（capR）内に入って
+   いて、捕捉噴射後の軌道が安全帯に収まり 72 時間安定し、残量で払える
+   解があるなら、それは捕捉の機会である。v0.7 の失敗（離行脚での力任せ
+   捕捉→到着の偽装）への歯止めは、発火条件の厳しさではなく「帯内＋
+   72 時間安定＋捕捉後 1800 秒の滑空確認（captureOrbitConfirmOk）」が
+   担う——ここではその全てを通る解だけを返す。推定器と実飛行が共用し、
+   見積もる捕捉と実際に撃つ捕捉の規則を一致させる（#76 の単一化を維持）。
+   高コスト（安定伝播を含む）なので、呼び出し側は試行間隔で絞ること。 */
+function captureOpportunity(ship, target, planetsRaw, arrivalDist, starGM, dvAvail){
+  if(!target || !(target.gm > 0)) return null;
+  if(captureGateAt(ship, target, planetsRaw, arrivalDist)) return null; /* ゲートが開く幾何は従来経路に任せる */
+  const info = relInfo(ship, target);
+  const capSr = surfaceRadius(target);
+  const capR = Math.min(capSr + impactMargin(capSr) + 4200, (arrivalDist || 0) * 0.9);
+  if(!(info.dist <= capR)) return null;
+  const cap = computeCapture(ship, target, planetsRaw);
+  if(!cap) return null;
+  if(dvAvail != null && cap.cost > dvAvail) return null;
+  const post = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx + cap.dvx, vy: ship.vy + cap.dvy, vz: ship.vz + cap.dvz };
+  if(!captureOrbitInBand(post, target, planetsRaw)) return null;
+  if(starGM && !captureOrbitStable72h(post, target, starGM, planetsRaw)) return null;
+  return cap;
+}
 /* 到着の確定条件（#76 で単一化）: 捕捉後の状態が「安定な終了状態」か。
    束縛軌道であり、近点が安全フロア（表面＋マージン＋800）を割らないこと。
    推定器の捕捉後確認と実飛行の到着確定が共用する。捕捉噴射の完了をもって
@@ -977,12 +1009,17 @@ function predictClosest(ship, target, starGM, tMax, pl, hMax){
    出域状態・操船Δv・所要時間を実測と同じ規則で求めてから本航行の推定に
    入る。錨（＝接舷中の自艦と同状態）・天体は階層モデル（惑星＝恒星重力のみ、
    衛星・錨・自艦＝全重力）で進める。 */
-function simulateHarborExit(ship, depSep, starGM, planetsRaw){
+function simulateHarborExit(ship, depSep, starGM, planetsRaw, md){
   const pls = (planetsRaw || []).map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, dispR: p.dispR || 0, name: p.name || '', isMoon: !!p.isMoon }));
   const sAcc = starAccFn(starGM);
   const accs = pls.map((_, i) => accExcluding(starGM, pls, i));
   const accFull = fullAccFn(starGM, pls);
-  const a = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
+  /* マスドライバー出発（md 指定時）では、基準 a を錨中心の状態に置く
+     （呼び出し側が md.anchor0 に中心スナップショットを渡す）。出口状態は
+     a から公表式で決まるため、開始状態がバースでも中心でも推定は同じ
+     出域点・出口速度に着地する */
+  const a = (md && md.anchor0) ? { x: md.anchor0.x, y: md.anchor0.y, z: md.anchor0.z, vx: md.anchor0.vx, vy: md.anchor0.vy, vz: md.anchor0.vz }
+    : { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   const h = 2;
   let t = 0, dvHarbor = 0;
@@ -1014,9 +1051,199 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw){
     const remain = Math.max(0, 80 - distA);
     const spd = Math.min(0.4 + t * 0.25, Math.max(0.5, Math.min(2.2, 0.5 + remain / 90)));
     steer(a.vx + depSep.x * spd, a.vy + depSep.y * spd, a.vz + depSep.z * spd);
-    if(distA >= 80) break;
+    if(distA >= 80){
+      if(md){
+        /* 出口状態は港の公表値で固定（台帳#113）: 位置＝錨＋depSep×80、
+           速度＝錨の速度＋depSep×公表出口速度。射出は港の設備のため
+           港内 Δv は 0（従来の自力出発は dvHarbor を数え、両航路を残す） */
+        s.x = a.x + depSep.x * 80; s.y = a.y + depSep.y * 80; s.z = a.z + depSep.z * 80;
+        s.vx = a.vx + depSep.x * md.exitV; s.vy = a.vy + depSep.y * md.exitV; s.vz = a.vz + depSep.z * md.exitV;
+        dvHarbor = 0;
+      }
+      break;
+    }
   }
   return { state: s, dvHarbor, time: t };
+}
+/* 月地表の基地点（台帳#114）: 月の公転フレームで主星と反対側の地表点。
+   位置は主星方向の単位ベクトル×表面半径、速度は剛体回転（ω×オフセット）。
+   planets は状態スナップショット（伝播中の複製でもよい） */
+function moonBasePointIn(moon, planets){
+  const host = (planets || []).find(q => q.name === moon.moonOf) || null;
+  const cx = host ? moon.x - host.x : moon.x, cy = host ? moon.y - host.y : moon.y, cz = host ? moon.z - host.z : moon.z;
+  const rp = Math.hypot(cx, cy, cz) || 1;
+  const R = { x: cx / rp, y: cy / rp, z: cz / rp };
+  const sr = surfaceRadius(moon);
+  const ox = R.x * sr, oy = R.y * sr, oz = R.z * sr;
+  const rvx = host ? moon.vx - host.vx : moon.vx, rvy = host ? moon.vy - host.vy : moon.vy, rvz = host ? moon.vz - host.vz : moon.vz;
+  const wx = (cy * rvz - cz * rvy) / (rp * rp), wy = (cz * rvx - cx * rvz) / (rp * rp), wz = (cx * rvy - cy * rvx) / (rp * rp);
+  return {
+    x: moon.x + ox, y: moon.y + oy, z: moon.z + oz,
+    vx: moon.vx + (wy * oz - wz * oy), vy: moon.vy + (wz * ox - wx * oz), vz: moon.vz + (wx * oy - wy * ox)
+  };
+}
+/* 降下の終端制動則（台帳#114）: 降下楕円の近点付近から基地点へ。
+   希望速度＝基地の速度＋基地方向×許容速度で、許容速度は等減速プロファイル
+   v(d) = √(2·a·d + v_end²)（a = 0.05、v_end = 0.8、上限 24）。地表 200 未満で
+   中心へ向かう速度成分が過大な時は外向きへ逃がす（地形の安全帯）。
+   返すのは希望速度との差分×0.85（上限 2.5）で、実噴射は呼び出し側が
+   vector 命令として出す */
+function computeDescent(ship, base, moon){
+  const dx = base.x - ship.x, dy = base.y - ship.y, dz = base.z - ship.z;
+  const dist = Math.hypot(dx, dy, dz);
+  if(dist < 1e-6) return null;
+  /* 終端のグライド: 基地そのものではなく、距離に応じて上空の点を狙う。
+     球面の弦の沈み込み（半径 2,600 の球で 3,000 先の点への直行は中間で
+     約 470 地表下へ切る）が主因で、上げ幅は弦の沈み＋60 を距離 800 まで
+     満額、そこから線形に消す。40 以内では上げ幅 0＝基地へ直接 */
+  const upx = base.x - moon.x, upy = base.y - moon.y, upz = base.z - moon.z;
+  const ul = Math.hypot(upx, upy, upz) || 1;
+  const surfR2 = surfaceRadius(moon);
+  const half = Math.min(dist, 2 * surfR2) / 2;
+  const dip = surfR2 - Math.sqrt(Math.max(0, surfR2 * surfR2 - half * half));
+  const glide = dist > 40 ? Math.min(80, (dist - 40) * 0.18) : 0;
+  const raise = Math.max(glide, (dip + 200) * Math.min(1, dist / 800)) * (dist > 40 ? 1 : 0);
+  const ax = base.x + (upx / ul) * raise - ship.x, ay = base.y + (upy / ul) * raise - ship.y, az = base.z + (upz / ul) * raise - ship.z;
+  const ad = Math.hypot(ax, ay, az) || 1;
+  /* 許容速度は残り距離のプロファイルと高度クランプの小さい方（2026-11-20）:
+     低高度では横方向の距離を根拠に速い接近を許すと、粗いサンプリングの
+     間に沈み込みが間に合わず地表を割る（実測）。高度 100 で約 4.5、
+     高度 20 で約 2.5 に制限される */
+  const altV = Math.hypot(ship.x - moon.x, ship.y - moon.y, ship.z - moon.z) - surfR2;
+  const vAllow = Math.min(24, Math.sqrt(2 * 0.05 * dist + 0.64), Math.sqrt(2 * 0.07 * Math.max(0, altV)) + 0.8);
+  let dvx0 = base.vx + (ax / ad) * vAllow - ship.vx;
+  let dvy0 = base.vy + (ay / ad) * vAllow - ship.vy;
+  let dvz0 = base.vz + (az / ad) * vAllow - ship.vz;
+  const dcx = ship.x - moon.x, dcy = ship.y - moon.y, dcz = ship.z - moon.z;
+  const dc = Math.hypot(dcx, dcy, dcz) || 1;
+  const alt = dc - surfaceRadius(moon);
+  if(alt < 200){
+    const ux = dcx / dc, uy = dcy / dc, uz = dcz / dc;
+    const vRad = (ship.vx - moon.vx) * ux + (ship.vy - moon.vy) * uy + (ship.vz - moon.vz) * uz;
+    if(vRad < -1.5){ const push = (-vRad - 1.5) * 0.9; dvx0 += ux * push; dvy0 += uy * push; dvz0 += uz * push; }
+  }
+  const mag = Math.hypot(dvx0, dvy0, dvz0);
+  if(mag < 0.05) return null;
+  /* 上限 3.5・係数 0.9: 2.5/0.85 では速度制御に噴射枠を使い切り、重力サグ
+     分の経路補正が残らず地表へ沈んだ（独立 sim 実測） */
+  const f = Math.min(1, 3.5 / mag) * 0.9;
+  return { dvx: dvx0 * f, dvy: dvy0 * f, dvz: dvz0 * f, cost: mag * f, dist };
+}
+/* 降下目標照準（台帳#114）: 捕捉軌道から地表基地への降下楕円を 1 回の
+   逆行噴射で作る探索。変数は「今からの待ち時間 τ」と「噴射の大きさ m」。
+   候補ごとに実飛行と同じ積分規律で伝播し、到着時刻の基地点への最接近
+   （線分最小距離）とその時の相対速度で採点する。最良候補のまわりで
+   1 段だけ細かく再探索する。戻り値の totalEst（m＋到着相対速度）が
+   そのまま降下レグの Δv 見積もりになる */
+function findDescentBurn(ship, moon, planetsRaw, starGM, tNow){
+  if(!moon || !(moon.gm > 0)) return null;
+  const pls0 = (planetsRaw || []).map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, dispR: p.dispR || 0, name: p.name || '', isMoon: !!p.isMoon, moonOf: p.moonOf || null }));
+  const mIdx = pls0.findIndex(p => p.name === moon.name);
+  if(mIdx < 0) return null;
+  const srT = surfaceRadius(pls0[mIdx]);
+  const eulerStep = (b, h, accFn) => { const a = accFn(b.x, b.y, b.z); b.vx += a[0] * h; b.vy += a[1] * h; b.vz += a[2] * h; b.x += b.vx * h; b.y += b.vy * h; b.z += b.vz * h; };
+  function propagate(s, pls, seconds, track, tOff0){
+    const sAcc = starAccFn(starGM);
+    const accs = pls.map((_, i) => accExcluding(starGM, pls, i));
+    const accFull = fullAccFn(starGM, pls);
+    let tt = 0, guard = 0, best = null, lastBaseDist = Infinity, minDc = Infinity;
+    let prevS = { x: s.x, y: s.y, z: s.z }, prevB = track ? moonBasePointIn(pls[mIdx], pls) : null;
+    /* 照準点は基地の真上 600（2026-11-20 改定）: 弾道楕円は地表の点でなく
+       上空の点に接し、最後の 600 は終端制動が受け持つ。地表すれすれの
+       楕円は積分刻みの差で地表を割る（実ページ・粗刻み sim で実測） */
+    const aimOf = (bp, mc) => { const ux = bp.x - mc.x, uy = bp.y - mc.y, uz = bp.z - mc.z; const ul = Math.hypot(ux, uy, uz) || 1; return { x: bp.x + ux / ul * 600, y: bp.y + uy / ul * 600, z: bp.z + uz / ul * 600 }; };
+    let prevA = track ? aimOf(prevB, pls[mIdx]) : null;
+    while(tt < seconds){
+      if(++guard > 200000) break;
+      const dNear = Math.hypot(s.x - pls[mIdx].x, s.y - pls[mIdx].y, s.z - pls[mIdx].z);
+      /* 刻みは実飛行の physics() と同じ規律に揃える（目標近傍 20 秒／遠方
+         120 秒、dynStep の上限は physics と同じ 0.75×SCALE_K）。細かい刻み
+         （2 秒）で照準すると、実飛行の粗い積分では楕円が別物になり、
+         実ページで地表衝突した（2026-11-20 実測）。判定・照準は守る対象の
+         世界と同じモデルで測る——捕捉安定確認と同じ原則 */
+      const h = Math.max(2, Math.min(dynStep(s.x, s.y, s.z, starGM, pls, 0.75 * SCALE_K), dNear < 300000 ? 20 : 120, seconds - tt));
+      if(!(h > 0)) break;
+      for(let i = 0; i < pls.length; i++){ if(pls[i].isMoon) eulerStep(pls[i], h, accs[i]); else rk4StepState(pls[i], h, sAcc); }
+      eulerStep(s, h, accFull);
+      tt += h;
+      if(track){
+        const bp = moonBasePointIn(pls[mIdx], pls);
+        const aim = aimOf(bp, pls[mIdx]);
+        const mx = (prevA.x + aim.x) / 2, my = (prevA.y + aim.y) / 2, mz = (prevA.z + aim.z) / 2;
+        const sx = s.x - prevS.x, sy = s.y - prevS.y, sz = s.z - prevS.z;
+        const len2 = sx * sx + sy * sy + sz * sz;
+        const u = len2 > 1e-12 ? Math.max(0, Math.min(1, -((prevS.x - mx) * sx + (prevS.y - my) * sy + (prevS.z - mz) * sz) / len2)) : 0;
+        const d = Math.hypot(prevS.x + sx * u - mx, prevS.y + sy * u - my, prevS.z + sz * u - mz);
+        if(!best || d < best.miss){
+          const rel = Math.hypot(s.vx - bp.vx, s.vy - bp.vy, s.vz - bp.vz);
+          best = { miss: d, arrRel: rel, arrT: tNow + tOff0 + tt - h + h * u };
+        }
+        lastBaseDist = Math.hypot(s.x - aim.x, s.y - aim.y, s.z - aim.z);
+        const dc = Math.hypot(s.x - pls[mIdx].x, s.y - pls[mIdx].y, s.z - pls[mIdx].z);
+        /* 最低高度はステップ端点でなく区間の弦の最接近で測る: 粗い刻みの
+           端点だけ見ると、ステップ間の一番深い沈みを取りこぼす（実測で
+           ゲート 2,900 に対し実飛行 2,531 まで沈んだ）。また照準点まで
+           3,000 以内は終端制動の担当域としてゲートから外す（低い軌道から
+           の降下では、制動圏の手前で 300 の余裕を保てない候補しかない） */
+        if(lastBaseDist > 3000){
+          const cx = pls[mIdx].x, cy = pls[mIdx].y, cz = pls[mIdx].z;
+          const mx2 = (prevS.x + s.x) / 2 - cx, my2 = (prevS.y + s.y) / 2 - cy, mz2 = (prevS.z + s.z) / 2 - cz;
+          const segDc = Math.hypot(mx2, my2, mz2) - Math.hypot(s.x - prevS.x, s.y - prevS.y, s.z - prevS.z) / 2;
+          if(segDc < minDc) minDc = segDc;
+          if(dc < minDc) minDc = dc;
+        }
+        prevS = { x: s.x, y: s.y, z: s.z }; prevB = bp; prevA = aim;
+        if(dc < srT + 1) break;
+        if(best && tt > 1200 && lastBaseDist > best.miss + 800) break;
+      }
+    }
+    return track ? { best, minDc } : best;
+  }
+  function evaluate(waitS, m){
+    const pls = pls0.map(p => ({ ...p }));
+    const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
+    if(waitS > 0) propagate(s, pls, waitS, false, 0);
+    /* 逆行は月相対の運動に対する逆行（慣性系の速度で引くと主星まわりの
+       公転成分を消してしまい、月の周回軌道から外れる） */
+    const mv = pls[mIdx];
+    const rvx = s.vx - mv.vx, rvy = s.vy - mv.vy, rvz = s.vz - mv.vz;
+    const sp = Math.hypot(rvx, rvy, rvz) || 1;
+    const burn = { x: -rvx / sp * m, y: -rvy / sp * m, z: -rvz / sp * m };
+    s.vx += burn.x; s.vy += burn.y; s.vz += burn.z;
+    const res = propagate(s, pls, 9000, true, waitS);
+    const best = res && res.best;
+    if(!best) return null;
+    /* 弾道区間の最低高度はハードゲート（地表＋300 未満は採用しない）:
+       ソフトな罰点では「小さな miss と引き換えのすれすれ楕円」が勝ち、
+       実飛行の積分差で地表を割った（2026-11-20 実測）。全滅の場合は
+       null を返して軌道待機に留まるのが正直な振る舞い */
+    const minDc = isFinite(res.minDc) ? res.minDc : srT + 300;
+    if(minDc < srT + 300) return { waitS, m, burn, miss: best.miss, arrRel: best.arrRel, arrT: best.arrT, score: 1e7 + (srT + 300 - minDc) * 100, gated: true };
+    const score = best.miss + Math.max(0, best.arrRel - 18) * 25;
+    return { waitS, m, burn, miss: best.miss, arrRel: best.arrRel, arrT: best.arrT, score };
+  }
+  const r0 = Math.hypot(ship.x - moon.x, ship.y - moon.y, ship.z - moon.z);
+  const period = 2 * Math.PI * Math.sqrt(Math.pow(Math.max(r0, srT + 100), 3) / moon.gm);
+  let best = null;
+  const mags = [0.5, 1.25, 2.0, 2.75, 3.5];
+  for(let k = 0; k < 16; k++){
+    const w = period * k / 16;
+    for(const m of mags){ const r = evaluate(w, m); if(r && (!best || r.score < best.score)) best = r; }
+  }
+  if(!best || best.gated) return null;
+  const wStep = period / 16, mStep = 0.75;
+  for(const dw of [-wStep / 2, wStep / 2]){
+    for(const dm of [-mStep / 2, mStep / 2]){
+      const w = best.waitS + dw, m = best.m + dm;
+      if(w < 0 || m < 0.2) continue;
+      const r = evaluate(w, m); if(r && r.score < best.score) best = r;
+    }
+  }
+  if(best.miss > 1500) return null; /* 実行側の却下基準と同値（照準が遠い案は案でない） */
+  /* totalEst は見積もり用: 終端制動の実績は（照準噴射＋到着相対速度）の
+     約 2.6 倍（高度クランプ導入後の実測: 係数 1.8〜2.9、形状でばらつく。
+     独立 sim・実系・通常フレーム刻みで全形状着陸時の合計 43〜57） */
+  return { waitS: best.waitS, dvx: best.burn.x, dvy: best.burn.y, dvz: best.burn.z, cost: best.m, miss: best.miss, arrRel: best.arrRel, arrT: best.arrT, totalEst: (best.m + best.arrRel) * 2.6 };
 }
 function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   // The estimate flies the SAME phase policy as the real plan execution
@@ -1034,7 +1261,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   let dvHarbor = 0, harborTime = 0;
   if(o.depSep){ /* v0.6.4: 接舷出発は港内航行を実操船則で回し、出域状態から始める（下記注記） */
-    const har = simulateHarborExit(ship, o.depSep, starGM, o.planets);
+    const har = simulateHarborExit(ship, o.depSep, starGM, o.planets, o.mdExitV != null ? { exitV: o.mdExitV, anchor0: o.depAnchor || null } : null);
     s.x = har.state.x; s.y = har.state.y; s.z = har.state.z;
     s.vx = har.state.vx; s.vy = har.state.vy; s.vz = har.state.vz;
     dvHarbor = har.dvHarbor; harborTime = har.time;
@@ -1173,6 +1400,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      予測で確認し、割り込む場合は噴射後の速度ベクトルを母港から離す向きへ
      最小限だけ回して回避する。大きさ（Δv コスト）は変えないため、推定の
      収支はそのまま実飛行に一致する。 */
+  /* 出発噴射の対錨最接近（最終的に選ばれた噴射について）。fin() で impactRisk
+     へ統合され、KEEP 未満なら案そのものが不成立になる（2026-11-20 #122:
+     従来は回転フォールバックが「一番マシな危険案」を黙って返し、最接近
+     約 10 の計画が承認・実行されてステーションに衝突した。錨は pls に
+     含まれず recordBody の対象外だったため、impactRisk にも載らなかった） */
+  let departClearMin = null;
   const departClearBurn = (d) => {
     const KEEP = 55, HORIZON = 900;
     if(Math.hypot(depAnchor.x - s.x, depAnchor.y - s.y, depAnchor.z - s.z) > 3000) return d;
@@ -1183,21 +1416,25 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       let tA = 0; while(tA < epochT){ const hh = Math.min(20, epochT - tA); rk4StepState(pa, hh, acc); tA += hh; }
       return pa;
     };
-    /* 与えた船状態・時刻から噴射した場合の、錨への最接近（900秒地平） */
+    /* 与えた船状態・時刻から噴射した場合の、錨への最接近（900秒地平）。
+       刻みは錨に近いほど細かくする: 相対速度 10 級の横断を 15 秒刻みで測ると
+       最接近を最大で数十ほど過大評価し、危険な案が KEEP を通ってしまう */
     const probeAt = (shipSt, epochT, dvx, dvy, dvz) => {
       const ps = { x: shipSt.x, y: shipSt.y, z: shipSt.z, vx: shipSt.vx + dvx, vy: shipSt.vy + dvy, vz: shipSt.vz + dvz };
       const pa = anchorAt(epochT);
       let minD = Math.hypot(ps.x - pa.x, ps.y - pa.y, ps.z - pa.z);
       let tE = 0;
       while(tE < HORIZON){
-        rk4StepState(ps, 15, acc); rk4StepState(pa, 15, acc); tE += 15;
+        const hh = minD < 300 ? 3 : 15;
+        rk4StepState(ps, hh, acc); rk4StepState(pa, hh, acc); tE += hh;
         const dd = Math.hypot(ps.x - pa.x, ps.y - pa.y, ps.z - pa.z);
         if(dd < minD) minD = dd;
       }
       return minD;
     };
     const probe = (dvx, dvy, dvz) => probeAt(s, timeTotal, dvx, dvy, dvz);
-    if(probe(d.dvx, d.dvy, d.dvz) >= KEEP) return d;
+    const md0 = probe(d.dvx, d.dvy, d.dvz);
+    if(md0 >= KEEP){ departClearMin = md0; return d; }
     /* 遅延を回転に優先する（2026-11-19）: 噴射ベクトルを回転させると迎撃の
        前提そのものが壊れ、推定が「目標を素通り→周回して戻る」劣化計画に化ける
        （実測: 回転 0.28 rad の案が会議で選ばれ、実飛行は到着圏を素通りするか
@@ -1211,7 +1448,9 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       if(timeTotal + tau > 1750) break; /* 実飛行のコミット噴射ゲート（atT ≤ 1800）に収める */
       const cs = { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz };
       let tc = 0; while(tc < tau){ const hh = Math.min(20, tau - tc); rk4StepState(cs, hh, acc); tc += hh; }
-      if(probeAt(cs, timeTotal + tau, d.dvx, d.dvy, d.dvz) >= KEEP){
+      const mdTau = probeAt(cs, timeTotal + tau, d.dvx, d.dvy, d.dvz);
+      if(mdTau >= KEEP){
+        departClearMin = mdTau;
         const savedH = h; let doneTau = 0;
         while(doneTau < tau){ const chunk = Math.min(120, tau - doneTau); h = chunk; propStar(); timeTotal += chunk; doneTau += chunk; }
         h = savedH;
@@ -1250,9 +1489,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
         cvx *= f; cvy *= f; cvz *= f;
         const md = probe(cvx, cvy, cvz);
         if(md > bestMin){ bestMin = md; best = { dvx: cvx, dvy: cvy, dvz: cvz, cost: d.cost }; }
-        if(md >= KEEP) return best;
+        if(md >= KEEP){ departClearMin = md; return best; }
       }
     }
+    /* ここに来るのは「どの手でも KEEP に届かなかった」場合。選ばれた噴射の
+       最接近を記録し、fin() 経由で案を不成立にする（黙って飛ばさない） */
+    departClearMin = best ? bestMin : md0;
     return best || d;
   };
   const applyDv = d => {
@@ -1277,7 +1519,20 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const seen = order.filter(p => phaseT0[p] !== undefined);
     return seen.map((p, i) => ({ phase: p, t0: phaseT0[p], t1: (i + 1 < seen.length ? phaseT0[seen[i + 1]] : timeTotal), dv: phaseDv[p] || 0 }));
   };
-  const fin = rel => Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, sampleTimes, burns });
+  const fin = rel => {
+    /* 出発噴射の対錨最接近を impactRisk へ統合する（#122）。錨（ステーション等、
+       衝突半径 40）への最接近が安全側 55 未満なら、案の安全判定が落ちて
+       会議・窓の仕組みが次の窓や他案へ倒れる。bestRisk は最小高度の記録なので
+       錨の高度（最接近 − 40）がそれより小さい時だけ差し替える */
+    if(departClearMin != null){
+      const altA = departClearMin - 40;
+      if(!bestRisk || altA < bestRisk.minDist - bestRisk.surfaceR){
+        bestRisk = { body: (depAnchor && depAnchor.name) || '出発地', minDist: departClearMin, surfaceR: 40, margin: 15 };
+        bestAlt = altA;
+      }
+    }
+    return Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, mdUse: (o.mdExitV != null && !!o.depSep), sampleTimes, burns });
+  };
   let planetCross = false, surfaceHit = false, bestRisk = null, bestAlt = Infinity;
   let hitCount = 0, crossCount = 0, capHitBase = 0, capCrossBase = 0;
   /* 推定の暴走ガード（v0.6.1 #5）: シミュレーション上の艦が天体に捕捉される軌道に入ると、
@@ -1505,9 +1760,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
            （帰還側の前提＝捕捉状態で揃える）。 */
         if(verifyPassCoast()){
           if(timeTotal - lastZoneFixT >= 20){ lastZoneFixT = timeTotal; applyDv(computeApproach(s, t, starGM, scale, pls)); }
-        } else if(captureGateAt(s, t, pls, arrivalDist)){
+        } else if(captureGateAt(s, t, pls, arrivalDist) || (timeTotal - lastCapTryT >= 3600 && captureOpportunity(s, t, pls, arrivalDist, starGM, null))){
           /* 捕捉の発火条件は実飛行と共用の captureGateAt（#76 で単一化）。
-             旧インライン判定は branch 1 が離行脚でも発火する欠陥を含んでいた */
+             旧インライン判定は branch 1 が離行脚でも発火する欠陥を含んでいた。
+             近接パスで有効解がある場合は captureOpportunity（#130）も発火
+             条件に含める——実飛行と同じ規則で見積もり、熱い到着の捕捉
+             コストを見積に含める。機会判定は高コストなので試行間隔で絞る */
           /* 捕捉は近点通過の瞬間に撃つ: 動径成分がほぼ消え、接線速度の帯調整
              だけで済むため最も安い（圏突入直後の捕捉は動径落下の殺しが高くつく）。 */
           const cap = computeCapture(s, t, pls);
@@ -1660,7 +1918,11 @@ function buildSystemPlanets(sys){
   const list = sys.planets.map((p, i)=>{
     const st = orbitState(sys.starGM, p.r, 0.7 + i*1.35, p.inc, p.node);
     const body = makeBody(st, p.color, p.r > 250*SCALE_K ? 9 : 7, p.name, p.gm);
-    body.dispR = p.r * 0.0035;
+    /* 惑星の表面半径は実寸（2026-11-20 本人裁定）: 旧方式（軌道半径×0.0035）は
+       つむぎを木星の約3倍の球として描き・判定していた。dispR は surfaceRadius
+       経由で物理の表面でもあるため、SYSTEMS 側に実半径（km）を持たせて使う。
+       表示では実寸の点になり、位置は画面マーカー（情報層）が示す */
+    body.dispR = p.radius || 6000;
     return body;
   });
   sys.planets.forEach((p, i)=>{
@@ -1731,5 +1993,5 @@ function createPlanEstimateEnsembleJob(ship, target, starGM, closingScale, opts)
 }
 
 /* ==== /ORDER LOGIC ==== */
-return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, captureGateAt, captureOrbitConfirmOk, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, createPlanEstimateJob, createPlanEstimateEnsembleJob, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
+return { SCALE_K, WARP_EDGE, orbitState, makeBody, STAR_SURFACE_R, V_IAF, V_FINAL, V_CONTACT, MD_EXIT_V, surfaceRadius, impactMargin, vicinityRadius, inVicinityOf, planCadenceFor, relInfo, safeClosing, approachClosing, rk4StepState, starAccFn, fullAccFn, accExcluding, dynStep, encounterCap, planCadence, propRK4, predictTargetPos, computeApproach, orbitPeriapsis, captureApoCap, captureOrbitInBand, captureSettlesOk, captureOrbitStable72h, captureGateAt, captureOpportunity, captureOrbitConfirmOk, computeCapture, computeBrake, computeMatch, computeHold, approachFix, computeJoinApproach, computeDescent, moonBasePointIn, findDescentBurn, fastestOrbitCap, predictClosest, simulateHarborExit, computePlanEstimate, createPlanEstimateJob, createPlanEstimateEnsembleJob, addOrbitState, buildSystemPlanets, computeDepSep, computePlanEstimateEnsemble };
 }));
