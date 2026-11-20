@@ -2038,7 +2038,14 @@ function avoidanceWatch(){
      自由航行・巡航中の予測には従来どおり 3600 秒で即時回避する。 */
   const peA = S.planExec;
   const planTerminal = !!(peA && peA.active && (peA.phase === 'join' || peA.phase === 'final') && peA.targetBody && hit.body === peA.targetBody.name);
-  const autoTti = planTerminal ? 45 : AVOID_AUTO_TTI;
+  /* 計画目標との coherence（2026-11-20・本人の実機報告）: 承認済み計画の飛行中は、
+     目標天体への「衝突」は計画そのもの（捕捉・到着は弾道伝播では衝突に見える。
+     計画側は誘導込みの推定で到着安全を検証済み）。出発直後の巡航フェーズでも
+     監視が現在状態の弾道だけで提案を出し、判断待ちで時間を止めて「出発して
+     いない」ように見せた。計画が有効な間は目標天体について提案を出さず、
+     自動噴射も切迫（45秒）だけに絞る。計画が終われば通常の監視に戻る */
+  const planTarget = !!(peA && peA.active && peA.targetBody && hit.body === peA.targetBody.name);
+  const autoTti = (planTerminal || planTarget) ? 45 : AVOID_AUTO_TTI;
   if(hit.tti <= autoTti){
     if(S.activeBurn) return;
     if(S.avoidSuppress && S.avoidSuppress[hit.body] && S.time < S.avoidSuppress[hit.body]) return;
@@ -2056,6 +2063,7 @@ function avoidanceWatch(){
     return;
   }
   if(S.avoidSuppress && S.avoidSuppress[hit.body] && S.time < S.avoidSuppress[hit.body]){ if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null; return; }
+  if(planTarget){ if(S.avoidProposal && S.avoidProposal.body === hit.body) S.avoidProposal = null; return; }
   if(!S.avoidProposal || S.avoidProposal.body !== hit.body){
     const plan = computeAvoidBurn(hit);
     if(plan.mag <= 0.01) return;
@@ -2960,7 +2968,24 @@ function resolveFixPos(fix){
 function buildWaypoints(cfg, est, opts){
   const wps = [];
   const smp = est.samples || [];
-  const posAt = t => { if(!smp.length) return null; const i = Math.max(0, Math.min(smp.length - 1, Math.round(t / 2))); return smp[i]; };
+  /* サンプルは間引き済みで等間隔ではない（sampleStride は 400 点超で倍々に
+     なる）。旧 posAt は「2秒間隔」の決め打ちで索引し、中間点が最終サンプル
+     （＝到着点）に張り付いて航路から外れた場所に描かれた（2026-11-20 実機
+     指摘）。実時刻列 sampleTimes で補間する */
+  const posAt = t => {
+    if(!smp.length) return null;
+    const st = est.sampleTimes;
+    if(st && st.length === smp.length && st.length > 1){
+      if(t <= st[0]) return smp[0];
+      if(t >= st[st.length - 1]) return smp[smp.length - 1];
+      let lo = 0, hi = st.length - 1;
+      while(hi - lo > 1){ const m = (lo + hi) >> 1; if(st[m] <= t) lo = m; else hi = m; }
+      const f = (t - st[lo]) / Math.max(1e-9, st[hi] - st[lo]);
+      const a = smp[lo], b = smp[hi];
+      return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+    }
+    const i = Math.max(0, Math.min(smp.length - 1, Math.round(t / 2))); return smp[i];
+  };
   const wasDocked = (opts && opts.fromDocked !== undefined) ? opts.fromDocked : !!(S && S.docked);
   const depAnchor = (opts && opts.depAnchor) || (S && (S.dockedTo || S.station)) || null;
   const depSep = (opts && opts.depSep) || (depAnchor ? computeDepSep(depAnchor, cfg.targetBody) : null);
@@ -6222,7 +6247,7 @@ function updateTrafficTrajFrame(ref){
     const wx = u.worldPos[0] - ref.x, wy = u.worldPos[1] - ref.y, wz = u.worldPos[2] - ref.z;
     const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(wx, wy, wz)));
     const pinned = (u.pinUntil || 0) > performance.now();
-    if(u.isTrajChip){ ch.visible = (lvl !== 'system') || pinned; ch.scale.set(d * 0.22, d * 0.055, 1); }
+    if(u.isTrajChip){ ch.visible = (lvl !== 'system') || pinned; ch.scale.set(d * 0.145, d * 0.036, 1); }
     else if(u.isTrajDot){ ch.visible = (lvl === 'system') || pinned; ch.scale.setScalar(d * 0.030); }
     else if(u.isTrajArrow) ch.scale.setScalar(d * 0.012);
   });
@@ -6558,8 +6583,8 @@ function updateDepartureMarker(ref){
   const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(x, y, z)));
   departRing.position.set(x, y, z);
   departRing.scale.setScalar(d * 0.10);
-  departChip.position.set(x, y + d * 0.05, z);
-  departChip.scale.set(d * 0.22, d * 0.055, 1);
+  departChip.position.set(x, y + d * 0.033, z);
+  departChip.scale.set(d * 0.145, d * 0.036, 1);
   const key = 'dep' + Math.floor((pe.waitUntil || 0) / 60);
   if(departChipKey !== key){
     departChipKey = key;
@@ -6621,7 +6646,7 @@ function updatePlanCourseScales(ref){
     const x = wpNow[0] - ref.x, y = wpNow[1] - ref.y, z = wpNow[2] - ref.z;
     let d = Math.max(10, camera.position.distanceTo(_lookTmp.set(x, y, z)));
     if(u.isLabel){
-      let lx = x, ly = y + d * 0.055, lz = z;
+      let lx = x, ly = y + d * 0.036, lz = z;
       if(u.isNext || u.isDest){
         /* #66: 次点・目的地のチップは画面の外へ流さない（右端で切れる症状への対策）。
            対象はカメラ前方にある場合だけ（背後の点を射影すると鏡像の近点に化けて、
@@ -6645,7 +6670,7 @@ function updatePlanCourseScales(ref){
         }
       }
       sp.position.set(lx, ly, lz);
-      sp.scale.set(d * 0.22, d * 0.055, 1);
+      sp.scale.set(d * 0.145, d * 0.036, 1);
     } else {
       sp.position.set(x, y, z);
       const base = (u.isDest ? 0.085 : (u.isNext ? 0.075 * pulse : 0.045)) * (u.isPassed ? 0.45 : 1);
@@ -6881,8 +6906,8 @@ function updateCourseRibbon(ref){
       tk.material.map = sp.material.map; tk.material.needsUpdate = true;
     }
     const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(p[0], p[1], p[2])));
-    tk.position.set(p[0], p[1] + d * 0.045, p[2]);
-    tk.scale.set(d * 0.22, d * 0.055, 1);
+    tk.position.set(p[0], p[1] + d * 0.03, p[2]);
+    tk.scale.set(d * 0.145, d * 0.036, 1);
     tk.visible = true;
   });
 }
@@ -6945,8 +6970,8 @@ function updateDestOrbitViz(ref){
   if(destMidChip){
     const mid = fp[Math.floor(fp.length / 2)];
     const dM = Math.max(10, camera.position.distanceTo(_lookTmp.set(mid[0], mid[1], mid[2])));
-    destMidChip.position.set(mid[0], mid[1] + dM * 0.05, mid[2]);
-    destMidChip.scale.set(dM * 0.22, dM * 0.055, 1);
+    destMidChip.position.set(mid[0], mid[1] + dM * 0.033, mid[2]);
+    destMidChip.scale.set(dM * 0.145, dM * 0.036, 1);
   }
 }
 function updateTapPulse(ref){
