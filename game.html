@@ -8788,7 +8788,7 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n11: { type: 'evidence', show: 'route:std', next: 'n12' },
   n12: { type: 'say', who: 'miura_aoi', next: 'n13', text: 'まず標準案。所要 {est.std.time}、Δv {est.std.dv}、到着は {est.std.arr} です。' },
   n13: { type: 'evidence', show: 'route:eco', next: 'n14' },
-  n14: { type: 'say', who: 'miura_aoi', next: 'n15', text: '省燃料案は Δv {est.eco.dv} まで抑えられますが、所要 {est.eco.time} と長くなります。' },
+  n14: { type: 'say', who: 'miura_aoi', next: 'n15', text: '省燃料案は Δv {est.eco.dv}、所要 {est.eco.time}、到着は {est.eco.arr} です。' },
   n15: { type: 'evidence', show: 'route:fast', next: 'n16' },
   n16: { type: 'say', who: 'miura_aoi', next: 'n17', text: '最速案は {est.fast.time} で着きますが、Δv {est.fast.dv} と推進剤を使います。' },
   n17: { type: 'say', who: 'sakurabara_rin', next: 'n18', text: '船長、航路の線の終点は、こよみの今いる場所ではなく「会合点」です。こよみも動いていますから、着く頃にこよみがいる場所へ向かいます。線が衛星の今の位置とずれて見えるのは、そのためです。' },
@@ -8800,7 +8800,7 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
     { label: '推進剤を残したい', goto: 'n22' },
     { label: '根拠を詳しく見せて', goto: 'n23' } ] },
   n21: { type: 'say', who: 'miura_aoi', next: 'n24', set: { pendingVariant: 'fast' }, text: 'では最速案です。到着は {est.fast.arr}、標準案より {est.fast.gain} 早まります。代わりに Δv は {est.fast.dv} で、残量 {dv.remaining} に対し余裕は {est.fast.margin} しか残りません。帰投の予備が細くなります。' },
-  n22: { type: 'say', who: 'miura_aoi', next: 'n24', set: { pendingVariant: 'eco' }, text: 'では省燃料案です。到着は {est.eco.arr} と遅くなりますが、Δv は {est.eco.dv}、余裕は {est.eco.margin} 残ります。帰投を考えると一番安心な案です。' },
+  n22: { type: 'say', who: 'miura_aoi', next: 'n24', set: { pendingVariant: 'eco' }, text: 'では省燃料案です。到着は {est.eco.arr}、Δv は {est.eco.dv}、余裕は {est.eco.margin} 残ります。' },
   n23: { type: 'grounds', title: '{est.recommended.name} — Δv の内訳（根拠）', next: 'n20', rows: [
     [ '出発噴射（港内操船を含む）', '{est.rec.breakdown.depart}' ], [ '会合・捕捉噴射', '{est.rec.breakdown.capture}' ], [ '途中の補正噴射', '{est.rec.breakdown.correction}' ], [ '合計', '{est.rec.dv}' ] ],
     note: '現在の残量は {dv.remaining}。予備を確保したうえで、余裕は {est.rec.margin} 残ります。帰投分は到着後に改めて計算します。' },
