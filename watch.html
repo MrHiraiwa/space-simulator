@@ -277,7 +277,18 @@ function frame() {
   }
   let off;
   if (pole) {
-    const e1 = new THREE.Vector3(1, 0, 0);
+    let e1 = new THREE.Vector3(1, 0, 0);
+    /* 月基準の回転座標系: こよみ近傍と、月の近傍にいる船の追尾では、
+       基準方位を「月→つむぎ」方向に固定して公転に同期させる。絶対座標
+       固定だと月が公転するにつれて画面の中でつむぎが回ってしまい、
+       月の周りを回る運動が分かりにくい（2026-11-22 本人指摘） */
+    const nearMoon = viewMode === 'moon'
+      || (viewMode === 'ship' && focusShip && V3(focusShip).distanceTo(moonPos) < 50000);
+    if (nearMoon) {
+      e1 = hostPos.clone().sub(moonPos);
+      e1.addScaledVector(pole, -e1.dot(pole));
+      if (e1.lengthSq() > 0) e1.normalize(); else e1.set(1, 0, 0);
+    }
     if (Math.abs(pole.dot(e1)) > 0.9) e1.set(0, 0, 1);
     const u = new THREE.Vector3().crossVectors(pole, e1).normalize();
     const w = new THREE.Vector3().crossVectors(pole, u);
