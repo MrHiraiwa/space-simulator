@@ -4806,16 +4806,31 @@ function planTrackStep(pe, info){
      滑空は、推定器が脱出を評価した無摂動の滑空そのものであるべき。参照との
      積分差（積分刻みの違いで必ず生じる）を修正噴射で買い戻すと、消費が嵩む
      うえ脱出の幾何までずれる（実測: 脱出前に修正5回・約3、航程全体で+9） */
-  if((pe.burnIdx || 0) === 0) return;
-  if(posErr < Math.max(600, uPos) && velErr < Math.max(0.5, uVel)) return; /* 計画どおり（参照の粗さの範囲内）: 滑空する */
+  /* #95 の滑空は「出発噴射が未発の間」だけの話（2026-11-21 #137 で範囲を是正）:
+     捕捉レグでは計画噴射が到着側の1回だけのことがあり、burnIdx===0 の全面
+     適用では巡航の全区間で修正が止まり、出発噴射で生じた位置オフセット
+     （実測: 横 455・沿跡 −1,232、速度誤差 0.01 の平行軌道）が到着まで
+     凍結された。出発噴射の発火までは従来どおり滑空し、発火後は出発直後
+     600 秒だけ沈静区間を置いてから追従修正を再開する */
+  if(pe.departBurn){
+    const dbEl = Math.max(0, (pe.departBurn.atT || 0) - (pe.planHarborTime || 0));
+    if(el < dbEl + 1200) return; /* 未発火の間＋発火直後の余裕（発火し損ねても 1200 秒で再開） */
+  }
+  if((pe.burnIdx || 0) === 0 && el < 600) return;
+  if(posErr < Math.max(250, uPos) && velErr < Math.max(0.5, uVel)) return; /* 計画どおり（参照の粗さの範囲内）: 滑空する。死帯は 600→250（2026-11-21 #137: 455 の恒常オフセットが死帯に埋もれて全航程残り続けた） */
   /* 計画噴射の前後では弦参照と実速度が構造的にずれる（噴射はサンプル区間の
      内側で起きる）ため、近傍では修正を撃たず予定表の噴射に任せる。また修正は
      最短でも 300 秒あける: 強い重力域では積分差による見かけのずれ（実測で
      位置 250 前後・速度 0.5〜3）が毎分再生され、60 秒ごとの修正が同じずれを
      買い直して枯渇した（実測: 修正の累計 36.1、計画の総消費 45.2）。 */
   const nb = (pe.planBurns && pe.planBurns.length && (pe.burnIdx || 0) < pe.planBurns.length) ? pe.planBurns[pe.burnIdx || 0] : null;
-  if(nb && nb.t - el < 300 && nb.t - el > -300) return;
-  if(pe.lastBurnEl != null && el - pe.lastBurnEl < 300) return;
+  /* 近傍窓は ±300→±90（2026-11-21 #137 追補）: 推定器の誘導噴射が ~390 秒
+     間隔で並ぶ計画では、±300 の窓同士が重なって巡航の全区間で修正が
+     構造的に止まった（実測: 計画噴射 4 回実行・修正 0 回・誤差 1,290 不変）。
+     噴射を含むセグメント自体は下の pb/nb セグメント判定が守るので、
+     近傍窓は噴射の前後 90 秒で足りる */
+  if(nb && nb.t - el < 90 && nb.t - el > -90) return;
+  if(pe.lastBurnEl != null && el - pe.lastBurnEl < 90) return;
   if(pe.lastCorrEl != null && el - pe.lastCorrEl < 300 && posErr < 3000) return;
   if(posErr > Math.max(15000, 4 * uPos)){
     /* 捕捉レグの終端圏内では、大きく外れていても接近誘導の全力復帰はしない
@@ -8411,8 +8426,12 @@ function syncMeshes(){
     if(camera){
       const dCamS = Math.max(1000, Math.hypot(camera.position.x - sx, camera.position.y - sy, camera.position.z - sz));
       /* 船体が読める近さでは消す。点になる遠方でのみ画面一定サイズで示す
-         （天体マーカーと同じ作法。自船は一回り大きく 0.02） */
-      shipMarker.visible = labelsOn && dCamS > 1500;
+         （天体マーカーと同じ作法。自船は一回り大きく 0.02）。
+         閾値は 1500→250（2026-11-21 #138 実機報告）: 待機中の近傍表示は
+         カメラ距離 ~1,500 でも船体はステーションの構造に埋もれる点でしか
+         なく、「どこにいるか分からない」状態だった。接舷・着陸中は距離に
+         よらず常時示す（待機時こそ自分の船の位置が要る） */
+      shipMarker.visible = labelsOn && (S.docked || S.landed || dCamS > 250);
       const ms = dCamS * 0.02;
       shipMarker.scale.set(ms, ms, 1);
     } else shipMarker.visible = false;
@@ -10463,7 +10482,7 @@ function updateNpcLabels(){
     const sx = S.ship.x - ref.x, sy = S.ship.y - ref.y, sz = S.ship.z - ref.z;
     const dCamS = Math.hypot(camera.position.x - sx, camera.position.y - sy, camera.position.z - sz);
     _proj.set(sx, sy, sz).project(camera);
-    if(dCamS <= 1500 || _proj.z > 1 || Math.abs(_proj.x) > 0.97 || Math.abs(_proj.y) > 0.97){
+    if((!(S.docked || S.landed) && dCamS <= 250) || _proj.z > 1 || Math.abs(_proj.x) > 0.97 || Math.abs(_proj.y) > 0.97){
       shipLabelEl.style.display = 'none';
     } else {
       const lx = rect.left + (_proj.x * 0.5 + 0.5) * rect.width;

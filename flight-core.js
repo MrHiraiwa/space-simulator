@@ -1407,7 +1407,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      含まれず recordBody の対象外だったため、impactRisk にも載らなかった） */
   let departClearMin = null;
   const departClearBurn = (d) => {
-    const KEEP = 55, HORIZON = 900;
+    const KEEP = 200, HORIZON = 900; /* 55→200（2026-11-21 #137: 実飛行は出発噴射の幾何ずれで推定軌道から最大 ~460 逸れるため、衝突半径 40＋初期ずれ許容 ~160 を見込む。届かなければ遅延・回転でも届かず、案は窓待ちへ倒れる＝#90/#122 の設計どおり） */
     if(Math.hypot(depAnchor.x - s.x, depAnchor.y - s.y, depAnchor.z - s.z) > 3000) return d;
     const acc = fullAccFn(starGM, pls);
     /* 錨を指定時刻まで進めた状態 */
@@ -1527,7 +1527,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     if(departClearMin != null){
       const altA = departClearMin - 40;
       if(!bestRisk || altA < bestRisk.minDist - bestRisk.surfaceR){
-        bestRisk = { body: (depAnchor && depAnchor.name) || '出発地', minDist: departClearMin, surfaceR: 40, margin: 15 };
+        bestRisk = { body: (depAnchor && depAnchor.name) || '出発地', minDist: departClearMin, surfaceR: 40, margin: 160 }; /* KEEP 200 と一致（margin = KEEP − 表面半径 40）。承認可否（minDist < surfaceR + margin で不成立）が KEEP 判定と揃う */
         bestAlt = altA;
       }
     }
