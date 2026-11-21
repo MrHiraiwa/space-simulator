@@ -221,6 +221,11 @@ cv.addEventListener('pointercancel', endPointer);
 cv.addEventListener('wheel', e => { e.preventDefault(); dist *= (e.deltaY > 0 ? 1.12 : 0.89); dist = Math.max(3000, Math.min(3000000, dist)); }, { passive: false });
 function relayout() { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
 addEventListener('resize', relayout);
+/* モバイルでは読み込み直後に表示領域が確定せず、初期寸法のまま小さい
+   表示になることがある。load 後にも数回測り直し、visualViewport の
+   変化（アドレスバーの出入り等）でも追随する */
+addEventListener('load', () => { relayout(); setTimeout(relayout, 300); setTimeout(relayout, 1000); });
+if (window.visualViewport) visualViewport.addEventListener('resize', relayout);
 /* モバイルの向き変更では寸法の確定が resize より遅れることがあるため、
    少し置いてから測り直す */
 addEventListener('orientationchange', () => { relayout(); setTimeout(relayout, 300); });
