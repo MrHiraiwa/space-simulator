@@ -31,7 +31,7 @@
   <button data-v="wide" class="on">宙域全体</button>
   <button data-v="host">つむぎ近傍</button>
   <button data-v="moon">こよみ近傍</button>
-  <button data-v="ship">船を追う</button>
+  <button data-v="ship" id="shipBtn">船を追う</button>
 </div>
 <div id="hint">ドラッグで回転／ホイールで拡大縮小</div>
 <script src="three.min.js"></script>
@@ -182,6 +182,14 @@ document.querySelectorAll('#views button[data-v]').forEach(b => b.addEventListen
 }));
 /* 上下反転: 極角を反対側へ倒し、軌道面の下から見上げる角度に切り替える */
 document.getElementById('flipBtn').addEventListener('click', () => { pol = Math.PI - pol; });
+/* 船を追う: 押すたびに追尾対象を次の船へ切り替える（従来は航行中の
+   最初の船に固定で、対象を選べなかった） */
+let followId = null, followIdx = -1;
+document.getElementById('shipBtn').addEventListener('click', () => {
+  followIdx = (followIdx + 1) % SCHED.ships.length;
+  followId = SCHED.ships[followIdx].id;
+  document.getElementById('shipBtn').textContent = '追尾中：' + SCHED.ships[followIdx].name;
+});
 let dragging = false, lx = 0, ly = 0;
 const cv = renderer.domElement;
 cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
@@ -237,7 +245,8 @@ function frame() {
      下側からでも軌道面を基準に見上げられる */
   if (viewMode === 'wide' || viewMode === 'ship') pole = orbitNormals.moon;
   if (viewMode === 'ship') {
-    focusShip = snap.ships.find(s => !s.dockedAt) || snap.ships[0];
+    focusShip = (followId && snap.ships.find(s => s.id === followId))
+      || snap.ships.find(s => !s.dockedAt) || snap.ships[0];
     if (focusShip) center = V3(focusShip);
   }
   let off;
