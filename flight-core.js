@@ -1656,6 +1656,97 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     }
     if(depBody){ phase = 'orbitdep'; depStartT = timeTotal; depTimer = 0; }
   }
+  /* 軌道遷移フェーズ（2026-11-21、台帳#145）: 自船と目標が同じ母天体に
+     束縛されている系内ホップ（ステーション⇔衛星など）では、巡航ホーミングの
+     直行迎撃が動径ダイブになる（実測: 出発噴射が進行方向から約85°横向き・
+     動径成分 −12.6〜−16.5、合計 Δv 23〜50。正攻法の接線遷移なら約2.8）。
+     軌道出発（orbitdep）と同じ作法で、現在軌道を最大1周期滑空して位相を
+     選び、母天体まわりの接線方向に遷移楕円へ載せる噴射を候補化し、弾道
+     スコアで最良のスナップショットを採用する。採用条件は「接線噴射として
+     健全な大きさ（≤12）かつ弾道滑空で目標の近傍（≤150,000）に届くこと」。
+     満たす候補が無ければ従来の巡航へ落ちる（推定は正直なまま）。
+     対象外: 目標自身に束縛されている（到着系の領分）、母天体が恒星だけの
+     惑星間巡航、軌道出発が先行する帰投の月脱出そのもの（脱出後に再判定）。 */
+  let trHost = null, trPeriod = 0, trStartT = 0, trTimer = 0, trBest = null;
+  let trStage = 1, trStage2T = 0, trArrT = 0, trMinSeen = Infinity, trPrevDist = null, trArmed = false;
+  const trCadence = () => Math.max(300, Math.min(7200, trPeriod / 32));
+  const findTransferHost = () => {
+    /* 速達（scale > 1.1）は位相合わせの滑空そのものが目的と矛盾する
+       （実測: 遷移採用で速達が 3.25 日・不成立に化けた）。速達は従来の
+       直行迎撃がその役割で、遷移は標準・経済の正攻法として使う */
+    if(scale > 1.1) return null;
+    if(targetPlIdx >= 0){
+      const tp = pls[targetPlIdx];
+      if(tp.gm > 0){
+        const rr = Math.hypot(s.x - tp.x, s.y - tp.y, s.z - tp.z);
+        if(rr > 1){
+          const evx = s.vx - tp.vx, evy = s.vy - tp.vy, evz = s.vz - tp.vz;
+          const E = (evx * evx + evy * evy + evz * evz) / 2 - tp.gm / rr;
+          if(E < 0 && -tp.gm / (2 * E) < vicinityRadius(tp)) return null; /* 目標に捕捉済み */
+        }
+      }
+    }
+    const dT0 = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
+    if(dT0 <= Math.max(arrivalDist * 3, 3000)) return null;
+    let bestH = null;
+    for(const p of pls){
+      if(!p.gm || p === pls[targetPlIdx]) continue;
+      const vic = vicinityRadius(p);
+      const rs = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z);
+      if(rs < 1 || rs > vic) continue;
+      const esx = s.vx - p.vx, esy = s.vy - p.vy, esz = s.vz - p.vz;
+      const Es = (esx * esx + esy * esy + esz * esz) / 2 - p.gm / rs;
+      if(Es >= 0) continue;
+      const aS = -p.gm / (2 * Es);
+      if(aS > vic) continue;
+      const rt = Math.hypot(t.x - p.x, t.y - p.y, t.z - p.z);
+      if(rt < 1 || rt > vic) continue;
+      const etx = t.vx - p.vx, ety = t.vy - p.vy, etz = t.vz - p.vz;
+      const Et = (etx * etx + ety * ety + etz * etz) / 2 - p.gm / rt;
+      if(Et >= 0) continue;
+      const aT = -p.gm / (2 * Et);
+      if(aT > vic) continue;
+      if(!bestH || vic > bestH.vic) bestH = { p, vic, aS, aT };
+    }
+    if(!bestH) return null;
+    const P = 2 * Math.PI * Math.sqrt(Math.pow(bestH.aS, 3) / bestH.p.gm);
+    if(P < 600 || P > 900000) return null;
+    /* 走査期間は自船の1周期ではなく相対位相の1周期（会合周期）まで取る:
+       遷移の到着位相は出発位相で決まり、相対位相は自船1周期では最大で
+       360° まで回り切らない（実測: あおば→こよみでは必要位相まで約3.1日
+       ＝会合周期3.7日の範囲で、1周期＝2.7日の走査では候補が全滅した）。
+       上限は約7日で打ち切り、それでも届かなければ従来の巡航に委ねる */
+    const Pt = 2 * Math.PI * Math.sqrt(Math.pow(bestH.aT, 3) / bestH.p.gm);
+    const wRel = Math.abs(2 * Math.PI / P - 2 * Math.PI / Pt);
+    const scan = wRel > 1e-9 ? Math.min(600000, Math.max(P, 2 * Math.PI / wRel)) : P;
+    return { host: bestH.p, period: scan };
+  };
+  const enterTransfer = (tr) => {
+    trHost = tr.host; trPeriod = tr.period; trStartT = timeTotal; trTimer = 0; trBest = null;
+    trStage = 1; trMinSeen = Infinity; trPrevDist = null; trArmed = false;
+    phase = 'transfer';
+  };
+  /* 遷移の採用（#145 第2段）: 第1噴射で遷移楕円に載せた後もフェーズは
+     遷移のまま滑空し、目標の軌道半径の横切り（または近/遠点の通過）で
+     目標の速度に一致させる第2噴射を撃ってから巡航へ渡す。これで到着側は
+     「同じ軌道の位相追跡」になり、浅い角度の横切り接近で捕捉帯に入れない
+     事故（実測: std が成立/不成立に揺れた）を避ける */
+  const adoptTransfer = (b) => {
+    restoreState(b.snap);
+    phase = 'cruise'; /* 第1噴射の帳簿は巡航（出発）側に付ける（orbitdep と同規則） */
+    applyDv({ dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost });
+    phase = 'transfer';
+    /* 第2段の発火点は候補の弾道予測が示した最接近時刻。半径の横切りで
+       判断すると目標の摂動で揺れる軌道半径に引きずられて早発する
+       （実測: 横切り扱いで 12.9 の一致噴射になった）ため、実距離の
+       極小で発火させる */
+    trStage = 2; trStage2T = timeTotal; trArrT = timeTotal + (b.tAtMin || 0);
+    trMinSeen = Infinity; trPrevDist = null; trArmed = false; trTimer = 1e9;
+  };
+  if(phase === 'cruise'){
+    const tr0 = findTransferHost();
+    if(tr0) enterTransfer(tr0);
+  }
   const snapState = () => ({
     s: { x: s.x, y: s.y, z: s.z, vx: s.vx, vy: s.vy, vz: s.vz },
     t: { x: t.x, y: t.y, z: t.z, vx: t.vx, vy: t.vy, vz: t.vz },
@@ -1712,6 +1803,93 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     }
     return dv + relAtMin + Math.max(0, minDist - 20000) / 2000 + tAtMin / 25000;
   };
+  /* 軌道遷移の弾道スコア（#145）: 接線噴射後の状態を遷移半周期の 1.45 倍
+     まで伝播し、目標への最接近とその時の相対速度で採点する。伝播は
+     ballisticScore と同じ積分器・刻み規律。母天体まわりの半径が目標軌道
+     半径を横切った後は 25,000 秒で打ち切り、離れていく候補も早期に切る */
+  const ballisticScoreTransfer = (es, dv, aTr, aTgt) => {
+    const H = trHost, hIdx = pls.indexOf(H);
+    const cs = { x: es.x, y: es.y, z: es.z, vx: es.vx, vy: es.vy, vz: es.vz };
+    const ct = { x: t.x, y: t.y, z: t.z, vx: t.vx, vy: t.vy, vz: t.vz };
+    const cpls = pls.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, isMoon: !!p.isMoon }));
+    const cplsT = cpls.filter(p => Math.hypot(p.x - ct.x, p.y - ct.y, p.z - ct.z) > 1);
+    const acc = fullAccFn(starGM, cpls);
+    const accT = fullAccFn(starGM, cplsT);
+    const accs = cpls.map((_, i) => accExcluding(starGM, cpls, i));
+    const sAcc = starAccFn(starGM);
+    const stepB = (b, hh, accFn) => {
+      if(eulerTwin){ const a = accFn(b.x, b.y, b.z); b.vx += a[0] * hh; b.vy += a[1] * hh; b.vz += a[2] * hh; b.x += b.vx * hh; b.y += b.vy * hh; b.z += b.vz * hh; }
+      else rk4StepState(b, hh, accFn);
+    };
+    const halfT = Math.PI * Math.sqrt(Math.pow(aTr, 3) / H.gm);
+    const horizon = Math.min(500000, Math.max(30000, halfT * 1.45));
+    let minDist = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z), relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz), tt = 0, tAtMin = 0;
+    let prevRad = Math.hypot(cs.x - cpls[hIdx].x, cs.y - cpls[hIdx].y, cs.z - cpls[hIdx].z) - aTgt, crossed = false, tCross = 0;
+    while(tt < horizon){
+      let hh = 120;
+      const dT = Math.hypot(cs.x - ct.x, cs.y - ct.y, cs.z - ct.z);
+      if(dT < 300000) hh = 20;
+      else for(const p of cpls){ if(p.gm && Math.hypot(cs.x - p.x, cs.y - p.y, cs.z - p.z) < 300000){ hh = 20; break; } }
+      hh = Math.min(hh, horizon - tt);
+      stepB(cs, hh, acc); stepB(ct, hh, accT);
+      for(let i = 0; i < cpls.length; i++){
+        if(i === targetPlIdx){ cpls[i].x = ct.x; cpls[i].y = ct.y; cpls[i].z = ct.z; cpls[i].vx = ct.vx; cpls[i].vy = ct.vy; cpls[i].vz = ct.vz; }
+        else stepB(cpls[i], hh, cpls[i].isMoon ? accs[i] : sAcc);
+      }
+      tt += hh;
+      const d = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z);
+      if(d < minDist){ minDist = d; relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz); tAtMin = tt; }
+      const rad = Math.hypot(cs.x - cpls[hIdx].x, cs.y - cpls[hIdx].y, cs.z - cpls[hIdx].z) - aTgt;
+      if(!crossed && prevRad !== 0 && (rad > 0) !== (prevRad > 0)){ crossed = true; tCross = tt; }
+      prevRad = rad;
+      if(crossed && tt > tCross + 25000) break;
+      /* 横切り前の「離れていく」区間で打ち切らない: 遷移楕円でも位相の
+         関係で目標との距離は一度増える（実測: 打ち切りが先に効いて
+         最接近が初期距離のままになり候補が全滅した） */
+      if(crossed && tt > 30000 && d > minDist + 60000) break;
+    }
+    /* 目標表面への衝突コースは候補にしない（実測: 最接近 1,672＝表面
+       2,600 の内側を掠める候補が位相一致だけで残った） */
+    const srT = surfaceRadius(t), floorT = srT + impactMargin(srT);
+    if(minDist < floorT) return { score: 1e9, minDist, relAtMin, tAtMin };
+    return { score: dv + relAtMin + Math.max(0, minDist - 20000) / 2000 + tAtMin / 25000, minDist, relAtMin, tAtMin };
+  };
+  /* 軌道遷移の候補評価（#145）: 現在状態から、母天体まわりの接線方向に
+     「もう一方の近/遠点が目標の軌道半径に一致する楕円」へ載せる噴射を作る。
+     動径速度成分は消える（遷移楕円の近点/遠点からの出発になる）のが正道 */
+  const evalTransfer = () => {
+    const H = trHost;
+    if(!H) return;
+    const rx = s.x - H.x, ry = s.y - H.y, rz = s.z - H.z;
+    const r = Math.hypot(rx, ry, rz) || 1;
+    const rvx = s.vx - H.vx, rvy = s.vy - H.vy, rvz = s.vz - H.vz;
+    const rux = rx / r, ruy = ry / r, ruz = rz / r;
+    const vRad = rvx * rux + rvy * ruy + rvz * ruz;
+    let tx = rvx - vRad * rux, ty = rvy - vRad * ruy, tz = rvz - vRad * ruz;
+    const tm = Math.hypot(tx, ty, tz);
+    if(tm < 1e-6) return;
+    tx /= tm; ty /= tm; tz /= tm;
+    const trx = t.x - H.x, tryy = t.y - H.y, trz = t.z - H.z;
+    const rt = Math.hypot(trx, tryy, trz) || 1;
+    const etx = t.vx - H.vx, ety = t.vy - H.vy, etz = t.vz - H.vz;
+    const Et = (etx * etx + ety * ety + etz * etz) / 2 - H.gm / rt;
+    const aTgt = Et < 0 ? -H.gm / (2 * Et) : rt;
+    const aTr = (r + aTgt) / 2;
+    if(!(aTr > 0)) return;
+    const vNeed = Math.sqrt(Math.max(0.01, H.gm * (2 / r - 1 / aTr)));
+    const dvx = tx * vNeed - rvx, dvy = ty * vNeed - rvy, dvz = tz * vNeed - rvz;
+    const cost = Math.hypot(dvx, dvy, dvz);
+    if(cost < 0.05 || cost > 12) return; /* 既に遷移楕円上／接線噴射として不健全 */
+    const es = { x: s.x, y: s.y, z: s.z, vx: s.vx + dvx, vy: s.vy + dvy, vz: s.vz + dvz };
+    const sc = ballisticScoreTransfer(es, cost, aTr, aTgt);
+    /* 採用の品質ゲート: この系の横切り会合は最接近時の相対速度が 8〜18に
+       なるのが実測の常態（ダイブ到着の 8.4 と同水準）で、それを超える候補は
+       到着側で結局高くつく。会合周期まで走査すれば位相の合った候補
+       （最接近 5,000〜80,000）が必ず通るので、通らなければ滑空で位相が
+       改善した状態のまま従来の巡航に渡す */
+    if(sc.score >= 1e8 || sc.minDist > 80000 || sc.relAtMin > 20) return;
+    if(!trBest || sc.score < trBest.score) trBest = { score: sc.score, minDist: sc.minDist, relAtMin: sc.relAtMin, tAtMin: sc.tAtMin, snap: snapState(), dvx, dvy, dvz, cost };
+  };
   const job = { done: false, result: null, iterCount: 0, timeTotal: 0, maxT };
   job.step = function(maxIter, maxMs){
     if(job.done) return true;
@@ -1728,7 +1906,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     }
     if(n++ >= maxIter || ((n & 15) === 0 && maxMs != null && performance.now() - sliceStart > maxMs)) break;
     const infoDistApprox = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
-    const phaseCap = phase === 'cruise' ? (needDock && infoDistApprox < 300 ? Math.min(1.5, Math.max(0.25, checkTimer)) : Math.max(1, checkTimer)) : ((phase === 'final' || phase === 'join') ? 8 : BIG);
+    const phaseCap = phase === 'cruise' ? (needDock && infoDistApprox < 300 ? Math.min(1.5, Math.max(0.25, checkTimer)) : Math.max(1, checkTimer)) : phase === 'transfer' ? Math.max(1, trTimer) : ((phase === 'final' || phase === 'join') ? 8 : BIG);
     h = Math.min(dynStep(s.x, s.y, s.z, starGM, pls, BIG), encounterCap(s, t), phaseCap, maxT - timeTotal);
     /* 実飛行との刻み一致（2026-11-19）: 実飛行は天体 300,000 以内で刻みを
        20 秒に cap する（game.html stepWorld）。推定側が井戸の中で ~52 秒
@@ -1862,6 +2040,37 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
           phase = 'cruise'; checkTimer = 0;
           applyDv({ dvx: b.dvx, dvy: b.dvy, dvz: b.dvz, cost: b.cost });
         } else { phase = 'cruise'; checkTimer = 0; }
+        /* 月脱出の後は母惑星まわりの系内ホップになることがある（#145）:
+           接線遷移の対象なら巡航でなく遷移フェーズへ渡す */
+        if(phase === 'cruise'){ const trN = findTransferHost(); if(trN) enterTransfer(trN); }
+      }
+    } else if(phase === 'transfer'){
+      if(trStage === 2){
+        /* 第2段は噴射しない: 遷移楕円の最接近点までは弾道で運び、そこで
+           巡航誘導へ渡す。一致噴射で速度を殺すと接近の幾何まで壊れて
+           終端が高くつく（実測: 一致噴射 12.9＋終端 30 超）。横切り会合の
+           終端処理は巡航誘導（Tier 2）の本領で、ダイブ到着と同じ条件で
+           捕捉まで持っていける。受け渡しは「実距離が増えに転じた」
+           （＝最接近を過ぎた）か予測最接近時刻＋20,000 秒のどちらか */
+        const distNow = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
+        if(distNow < trMinSeen) trMinSeen = distNow;
+        let done = false;
+        if(trPrevDist !== null && distNow > trPrevDist && trMinSeen < 80000) done = true;
+        if(timeTotal > trArrT + 20000) done = true;
+        trPrevDist = distNow;
+        if(done){ phase = 'cruise'; checkTimer = 0; }
+      } else {
+        trTimer -= h;
+        if(trTimer <= 0){
+          trTimer = trCadence();
+          evalTransfer();
+          /* 弾道滑空そのもので会合圏に届く候補は待たずに採用する */
+          if(trBest && trBest.minDist <= Math.max(arrivalDist * 1.5, 8000) && trBest.relAtMin <= 20) adoptTransfer(trBest);
+        }
+        if(phase === 'transfer' && trStage === 1 && timeTotal - trStartT >= trPeriod){
+          if(trBest) adoptTransfer(trBest);
+          else { phase = 'cruise'; checkTimer = 0; }
+        }
       }
     } else if(phase === 'cruise'){
       checkTimer -= h;
