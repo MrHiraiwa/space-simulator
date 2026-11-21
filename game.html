@@ -6201,6 +6201,7 @@ ModelLib.buildShip = buildShipDisplay;
    updatePortCraft と同じ基底なので、バース・レーンの相対配置がモデルと一致する */
 const _attR = new THREE.Vector3(), _attT = new THREE.Vector3(), _attN = new THREE.Vector3();
 const _attM = new THREE.Matrix4();
+const _burnDirV = new THREE.Vector3(), _burnQ = new THREE.Quaternion(); /* 噴射ベクトルの船体軸分解用 */
 function orientStationAtt(att, st){
   const rp = Math.hypot(st.x, st.y, st.z) || 1;
   _attR.set(st.x / rp, st.y / rp, st.z / rp);
@@ -8561,12 +8562,54 @@ function syncMeshes(){
     } else shipMarker.visible = false;
   }
   if(shipMesh.userData.flames){
-    const active = isThrusting && S.dv > 0 && S.warp > 0;
-    const flicker = active ? (0.85 + Math.random()*0.45) : 0.18;
+    /* 噴射の光は方向で分ける（2026-11-21、台帳の RCS ノズル光）: 噴射ベクトルを
+       船体軸（船首 +Z＝速度方向に lookAt される）へ分解し、前方成分は主ノズルの
+       炎、逆向き・横・縦の成分は反対側の RCS ノズルの小さなパフで示す。微修正は
+       横成分が主になるため自然にパフだけが光る。activeBurn が無い噴射（降下の
+       最終制動など）は従来どおり主炎だけを点ける */
+    if(!shipMesh.userData.rcs){
+      const mkPuff = (px, py, pz, dx, dy, dz) => {
+        const fl = new THREE.Mesh(new THREE.ConeGeometry(0.16, 1.6, 8),
+          new THREE.MeshBasicMaterial({ color: 0xbfe8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+        fl.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), new THREE.Vector3(dx, dy, dz));
+        fl.position.set(px + dx * 0.35, py + dy * 0.35, pz + dz * 0.35);
+        fl.visible = false;
+        shipMesh.add(fl);
+        return fl;
+      };
+      shipMesh.userData.rcs = {
+        bow: mkPuff(0, 0, 8.3, 0, 0, 1),       /* 逆噴（−Z 成分）: 船首から前へ */
+        port: mkPuff(-1.3, 0, 3.0, -1, 0, 0),  /* +X 成分: 左舷から外へ */
+        stbd: mkPuff(1.3, 0, 3.0, 1, 0, 0),    /* −X 成分: 右舷から外へ */
+        top: mkPuff(0, 1.1, 3.0, 0, 1, 0),     /* −Y 成分: 甲板から上へ */
+        bot: mkPuff(0, -1.1, 3.0, 0, -1, 0),   /* +Y 成分: 船底から下へ */
+      };
+    }
+    const burn = (S.activeBurn && S.activeBurn.tLeft > 0 && S.dv > 0 && S.warp > 0) ? S.activeBurn : null;
+    let lx = 0, ly = 0, lz = 0;
+    if(burn){
+      const rv = Math.hypot(burn.remX || 0, burn.remY || 0, burn.remZ || 0);
+      if(rv > 1e-6){
+        _burnDirV.set((burn.remX || 0) / rv, (burn.remY || 0) / rv, (burn.remZ || 0) / rv);
+        _burnQ.copy(shipMesh.quaternion).invert();
+        _burnDirV.applyQuaternion(_burnQ);
+        lx = _burnDirV.x; ly = _burnDirV.y; lz = _burnDirV.z;
+      }
+    }
+    const fwd = burn ? Math.max(0, lz) : 0;
+    const mainOn = burn ? fwd > 0.05 : (isThrusting && S.dv > 0 && S.warp > 0);
+    const flicker = mainOn ? (0.7 + 0.6 * (burn ? Math.max(fwd, 0.25) : 1)) * (0.85 + Math.random() * 0.3) : 0.18;
     shipMesh.userData.flames.forEach(fl=>{
-      fl.scale.set(active?1.15:0.55, flicker, active?1.15:0.55);
-      fl.material.opacity = active ? 0.92 : 0.25;
+      fl.scale.set(mainOn ? (0.6 + 0.55 * (burn ? Math.max(fwd, 0.25) : 1)) : 0.55, flicker, mainOn ? (0.6 + 0.55 * (burn ? Math.max(fwd, 0.25) : 1)) : 0.55);
+      fl.material.opacity = mainOn ? 0.92 : 0.25;
     });
+    const rcs = shipMesh.userData.rcs;
+    const puff = (fl, v) => {
+      const on = burn && v > 0.05;
+      fl.visible = !!on;
+      if(on){ const s = 0.35 + 0.85 * v; fl.scale.set(s, s * (0.8 + Math.random() * 0.45), s); fl.material.opacity = 0.25 + 0.55 * v; }
+    };
+    puff(rcs.bow, -lz); puff(rcs.port, lx); puff(rcs.stbd, -lx); puff(rcs.top, -ly); puff(rcs.bot, ly);
   }
 
   S.wings.forEach((w,i)=>{
