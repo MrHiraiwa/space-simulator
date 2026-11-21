@@ -262,6 +262,15 @@
           return;
         }
         if (f.departed && !f.arrived && f.descent) {
+          /* 計画噴射は降下フェーズでも有効（巡航→軌道投入→降下の複合便、
+             2026-11-22。従来は descent 付きだと burns が一切発射されず、
+             巡航できない制約があった） */
+          const pb = f.burns[f.firedBurns];
+          if (pb && s.t >= f.departT + pb.atT) {
+            s.vx += pb.dvx; s.vy += pb.dvy; s.vz += pb.dvz;
+            s.dvUsed = (s.dvUsed || 0) + (pb.cost || 0); f.firedBurns++;
+            world.events.push({ t: s.t, type: 'burn', shipId: s.id, cost: pb.cost || 0 });
+          }
           /* 降下の状態機械（game.html updateDescent と同じ規則） */
           const moon = bodyByName(world, f.descent.bodyName);
           const bp = FC.moonBasePointIn(moon, world.planets);
