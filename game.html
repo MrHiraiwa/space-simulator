@@ -9710,10 +9710,19 @@ function renderTimelinePanel(){
   const baseT = pe.trackT0 != null ? pe.trackT0 : depT + (pe.planHarborTime || 0);
   const arrLabel = pe.needDock ? '到着（接舷）' : ((pe.targetBody && pe.targetBody.isMoon) ? '到着（捕捉軌道）' : '到着');
   const rows = [{ t: depT, ev: '出発', place: origin }];
+  /* 待機の行（#148）: 窓待ちがある航程では、出発行だけでは「なぜ出発が
+     その時刻なのか」が読めない。待機の開始を独立した行として出す */
+  if(pe.waitUntil && pe.waitUntil > pe.startT) rows.push({ t: pe.startT, ev: '待機（出発窓待ち）', place: origin });
   for(const r of planLegRows({ legs: pd.legs || [], firstBurn: 0 })){
     if(r.phase === 'cruise') continue;
     rows.push({ t: baseT + (r.t0 || 0), ev: r.name, place: '—' });
   }
+  /* 航路中間点の行（#148）: 航路表示には中間点チップがあるのに時刻表に
+     無かった。planDoc.waypoints の中間点（推定起点からの経過秒）を絶対
+     時刻へ直して足す。data-relt は既存の仕組みで baseT 基準になるため、
+     行タップの視点ジャンプ（#140）もそのまま効く */
+  const midWp = (pd.waypoints || []).find(w => w && w.name === '航路中間点');
+  if(midWp && isFinite(midWp.t)) rows.push({ t: baseT + midWp.t, ev: '航路中間点', place: '—' });
   rows.push({ t: baseT + (pd.plannedTime || pe.trackDur || 0), ev: arrLabel, place: dest });
   rows.sort((a, b) => a.t - b.t);
   /* 行を選ぶと、その地点へ視点が移動する（2026-11-21 本人要望）。地点は
