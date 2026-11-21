@@ -2937,6 +2937,20 @@ function applyVoyageWear(){
   for(const k in inc) w[k] = Math.min(100, r1(w[k] + inc[k]));
   return inc;
 }
+/* 計画承認時の支出見込み（経済設計 §2.3: 承認と同時に内訳つきで示し、枠に
+   収まるかが判断材料の一つになる）。単価・区分は精算（computeM0Settlement）と
+   同じ物差しで、精算は実績で組み直される。推進剤 0.3/Δv、食料は乗員数×日数、
+   接舷 20・定例整備 20 は航宙ごとの定型費 */
+function voyageCostEstimate(plannedDv, plannedTimeSec, waitSec){
+  const crewN = (S.officers ? S.officers.length : 5) + 1;
+  const days = Math.max(0, ((plannedTimeSec || 0) + (waitSec || 0)) / 86400);
+  const propellant = Math.round((plannedDv || 0) * 0.3);
+  const food = Math.max(1, Math.round(crewN * days));
+  const berthing = 20, maintenance = 20;
+  const total = propellant + berthing + maintenance + food;
+  const frame = (S.econ && S.econ.frame) || 80;
+  return { crewN, days, propellant, food, berthing, maintenance, total, frame, residual: frame - total };
+}
 function settleRecompute(st){
   st.total = st.propellant + st.berthing + st.maintenance + st.food;
   st.residual = st.frame - st.total;
@@ -3468,7 +3482,8 @@ function renderPlanDetail(){
     '<div class="pd-summary">' +
     '<div class="pd-row"><span>🧭 ' + courseLabel(v.id) + '</span><span></span><span>総Δv ' + est.dvTotal.toFixed(1) + '</span><span>所要 ' + fmtDuration(est.timeTotal) + '</span></div>' +
     '<div class="pd-row"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? 'ゲート12以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時（予測 約' + est.finalRel.toFixed(2) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2)) + '</span></div>' +
-    '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + ' ／ 到着時残量 Δv ' + remain.toFixed(1) + (resOk ? '（予備 ' + st.reserve + '% ✓）' : '（⚠ 予備 ' + st.reserve + '% を割ります）') + '</span></div></div>' +
+    '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + ' ／ 到着時残量 Δv ' + remain.toFixed(1) + (resOk ? '（予備 ' + st.reserve + '% ✓）' : '（⚠ 予備 ' + st.reserve + '% を割ります）') + '</span></div>' +
+    (() => { const ce = voyageCostEstimate(est.dvTotal + steerAllow, est.timeTotal, tOff); return '<div class="pd-row"><span>支出見込み</span><span></span><span>' + ce.total + ' cred</span><span>運航枠 ' + ce.frame + ' cred に対し ' + (ce.residual >= 0 ? '残 ' + ce.residual + ' cred ✓' : '⚠ ' + (-ce.residual) + ' cred 超過') + '</span></div>'; })() + '</div>' +
     /* 図化: Δv予算バー（残量に対する計画消費と予備ライン）と航路図を、要約の直下に置く */
     '<div class="pd-fig"><div class="pd-fig-title">⛽ Δv予算（現在の残量 ' + S.dv.toFixed(1) + ' に対して）</div>' +
     '<div class="pd-bar"><i class="use" style="width:' + Math.min(100, (est.dvTotal + steerAllow) / Math.max(1, S.dv) * 100).toFixed(1) + '%"></i><span class="pd-bar-res" style="left:' + (100 - (st.reserve || 10)) + '%"></span></div>' +
@@ -3486,6 +3501,13 @@ function renderPlanDetail(){
     '<div class="pd-row"><span>重力補償噴射（うち数）</span><span></span><span>Δv ' + dvGrav.toFixed(1) + '</span><span></span></div>' +
     '<div class="pd-row"><span>現在の残量</span><span></span><span>Δv ' + S.dv.toFixed(1) + '</span><span></span></div>' +
     '<div class="pd-row"><span>到着時残量見込み</span><span></span><span>Δv ' + remain.toFixed(1) + '</span><span>' + (resOk ? '予備 ' + st.reserve + '% 確保 ✓' : '⚠ 予備 ' + st.reserve + '% を割ります') + '</span></div></details>' +
+    (() => { const ce = voyageCostEstimate(est.dvTotal + steerAllow, est.timeTotal, tOff); return '<details class="pd-details"><summary>💴 支出見込みの内訳（運航予算）</summary>' +
+    '<div class="pd-row"><span>推進剤（計画Δv × 0.3）</span><span></span><span>' + ce.propellant + ' cred</span><span></span></div>' +
+    '<div class="pd-row"><span>食料（乗員 ' + ce.crewN + ' 名 × ' + ce.days.toFixed(1) + ' 日）</span><span></span><span>' + ce.food + ' cred</span><span></span></div>' +
+    '<div class="pd-row"><span>接舷料（定型）</span><span></span><span>' + ce.berthing + ' cred</span><span></span></div>' +
+    '<div class="pd-row"><span>定例整備（定型）</span><span></span><span>' + ce.maintenance + ' cred</span><span></span></div>' +
+    '<div class="pd-row total"><span>見込み合計 ／ 運航枠 ' + ce.frame + ' cred</span><span></span><span>' + ce.total + ' cred</span><span>' + (ce.residual >= 0 ? '枠内（残 ' + ce.residual + ' cred）' : '⚠ 枠を ' + (-ce.residual) + ' cred 超過') + '</span></div>' +
+    '<div class="pd-note">精算は航宙の終わりに実績（実消費Δv・実日数）で組み直されます。見込みと実績の差は精算時の説明対象です。</div></details>'; })() +
     '<div class="pd-sec"><div class="pd-title">📡 航路上の注意</div><div class="pd-note">港内は出発レーンを制限速度で航行。惑星・衛星近傍の航行では重力補償噴射を予算に含みます。' + nearTxt + '</div></div>';
 }
 function openPlanTracking(){
