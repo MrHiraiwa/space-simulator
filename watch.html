@@ -162,7 +162,10 @@ const shipLabels = {}; for (const s of SCHED.ships) shipLabels[s.id] = makeLabel
 const tmpV = new THREE.Vector3();
 function placeLabel(el, pos, show, dy) {
   tmpV.copy(pos).project(camera);
-  if (!show || tmpV.z > 1 || tmpV.z < -1) { el.style.display = 'none'; return; }
+  /* 画面外のラベルを大きな座標で配置すると、モバイルブラウザが
+     ページ全体を縮小表示してしまう（こよみ近傍で 100% 再現した）。
+     範囲外は配置せず隠す */
+  if (!show || tmpV.z > 1 || tmpV.z < -1 || tmpV.x < -1.1 || tmpV.x > 1.1 || tmpV.y < -1.1 || tmpV.y > 1.1) { el.style.display = 'none'; return; }
   el.style.display = 'block';
   el.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px';
   el.style.top = ((-tmpV.y * 0.5 + 0.5) * innerHeight + (dy || 0)) + 'px';
