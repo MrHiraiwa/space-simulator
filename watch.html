@@ -305,15 +305,24 @@ function frame() {
     const mk = shipMarks[sh.id];
     mk.position.copy(p); mk.scale.setScalar(markSize * 0.8); mk.rotation.y -= 0.013;
     const tr = shipTrails[sh.id];
-    if (!sh.dockedAt && world.now - tr.lastT > 90) {
-      tr.lastT = world.now;
-      tr.pts.push(p.x - hostPos.x, p.y - hostPos.y, p.z - hostPos.z);
-      if (tr.pts.length > 6000 * 3) tr.pts.splice(0, 3 * 600);
-      const attr = tr.line.geometry.getAttribute('position');
-      for (let i = 0; i < tr.pts.length; i++) attr.array[i] = tr.pts[i];
-      attr.needsUpdate = true;
-      tr.line.geometry.setDrawRange(0, tr.pts.length / 3);
-      tr.line.position.copy(hostPos);
+    if (!sh.dockedAt) {
+      /* 航跡のアンカーは船に最も近い天体。絶対座標で残すと、天体の公転に
+         置いていかれて「月と競争している」ような引きずられた線になる。
+         アンカーが変わったら航跡は作り直す */
+      let anchorName = host.name, anchorPos = hostPos, aDist = p.distanceTo(hostPos);
+      const dm = p.distanceTo(moonPos); if (dm < aDist) { anchorName = moon.name; anchorPos = moonPos; aDist = dm; }
+      const ds = p.distanceTo(stPos); if (ds < aDist) { anchorName = snap.station.name; anchorPos = stPos; aDist = ds; }
+      if (tr.anchor !== anchorName) { tr.anchor = anchorName; tr.pts.length = 0; tr.lastT = -1; tr.line.geometry.setDrawRange(0, 0); }
+      if (world.now - tr.lastT > 90) {
+        tr.lastT = world.now;
+        tr.pts.push(p.x - anchorPos.x, p.y - anchorPos.y, p.z - anchorPos.z);
+        if (tr.pts.length > 6000 * 3) tr.pts.splice(0, 3 * 600);
+        const attr = tr.line.geometry.getAttribute('position');
+        for (let i = 0; i < tr.pts.length; i++) attr.array[i] = tr.pts[i];
+        attr.needsUpdate = true;
+        tr.line.geometry.setDrawRange(0, tr.pts.length / 3);
+      }
+      tr.line.position.copy(anchorPos);
     }
     if (sh.dockedAt && tr.pts.length) { tr.pts.length = 0; tr.line.geometry.setDrawRange(0, 0); }
   }
