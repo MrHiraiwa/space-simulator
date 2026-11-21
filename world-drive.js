@@ -41,7 +41,12 @@
   /* 申告を登録する。filing:
      { id, shipId, fromName, toName, departT, initState:{x,y,z,vx,vy,vz},
        burns:[{ atT（出発からの経過秒）, dvx, dvy, dvz, cost }], arriveT, arriveBodyName }
-     状態は保存しない——船の位置はこの申告と時刻から導出される。 */
+     状態は保存しない——船の位置はこの申告と時刻から導出される。
+     filing.guidance = { fromT, arrivalDist } を付けると、fromT 以後の
+     噴射列は使わず、駆動が推定器の final と同じ誘導則を再実行する
+     （終端誘導の再実行型、2026-11-22 の設計追記 A 案）。到着は誘導側の
+     エンベロープ判定（dist ≤ max(arrivalDist×3, 300) かつ rel ≤ 4）で
+     決まり、arriveT の固定到着は使わない。 */
   function filePlan(world, filing) {
     const ship = world.ships.find(s => s.id === filing.shipId);
     if (!ship) throw new Error('ship not found: ' + filing.shipId);
@@ -82,9 +87,15 @@
         const f = s.filing; if (!f) continue;
         if (!f.departed && f.departT > world.now && f.departT < nextEv) nextEv = f.departT;
         if (f.departed && !f.arrived) {
-          const b = f.burns[f.firedBurns];
-          if (b) { const bt = f.departT + b.atT; if (bt > world.now && bt < nextEv) nextEv = bt; }
-          if (f.arriveT > world.now && f.arriveT < nextEv) nextEv = f.arriveT;
+          const guiding = f.guidance && world.now >= f.departT + f.guidance.fromT;
+          if (!guiding) {
+            const b = f.burns[f.firedBurns];
+            if (b) { const bt = f.departT + b.atT; if (bt > world.now && bt < nextEv) nextEv = bt; }
+          }
+          if (f.guidance) {
+            const gt = f.departT + f.guidance.fromT;
+            if (gt > world.now && gt < nextEv) nextEv = gt;
+          } else if (f.arriveT > world.now && f.arriveT < nextEv) nextEv = f.arriveT;
         }
       }
       const flying = world.ships.filter(s => !s.dockedAt);
@@ -99,6 +110,8 @@
           let dMin = Infinity;
           for (const p of world.planets) { if (!p.gm) continue; const d = Math.hypot(s.x - p.x, s.y - p.y, s.z - p.z); if (d < dMin) dMin = d; }
           if (dMin < 300000) h = Math.min(h, 20);
+          /* 終端誘導中は推定器の final と同じ 8 秒刻みにする */
+          if (s.filing && s.filing.guidance && s.filing.departed && world.now >= s.filing.departT + s.filing.guidance.fromT) h = Math.min(h, 8);
         }
       } else {
         h = Math.min(h, 900);
@@ -141,18 +154,56 @@
           return advanceTo(world, T);
         }
         if (f.departed && !f.arrived) {
-          const b = f.burns[f.firedBurns];
-          if (b && world.now >= f.departT + b.atT) {
-            s.vx += b.dvx; s.vy += b.dvy; s.vz += b.dvz;
-            s.dvUsed = (s.dvUsed || 0) + (b.cost || 0); f.firedBurns++;
-            world.events.push({ t: world.now, type: 'burn', shipId: s.id, cost: b.cost || 0 });
-          }
-          if (world.now >= f.arriveT) {
-            f.arrived = true;
+          if (f.guidance && world.now >= f.departT + f.guidance.fromT) {
+            /* 終端誘導の再実行（推定器 final の誘導則、needDock=false）:
+               エンベロープ内なら到着、接近が鈍ければ接近噴射、速すぎれば
+               ブレーキ。噴射列の fromT 以後は読まない */
             const dest = bodyByName(world, f.arriveBodyName);
-            if (dest) s.dockedAt = dest;
-            world.events.push({ t: world.now, type: 'arrive', shipId: s.id, at: f.arriveBodyName });
-            return advanceTo(world, T);
+            const info = FC.relInfo(s, dest);
+            const ad = f.guidance.arrivalDist || 90;
+            if (info.dist <= Math.max(ad * 3, 300) && info.rel <= 4) {
+              f.arrived = true;
+              s.dockedAt = dest;
+              world.events.push({ t: world.now, type: 'arrive', shipId: s.id, at: f.arriveBodyName, guided: true });
+              return advanceTo(world, T);
+            }
+            /* 接近目標は距離連動（推定器 cruise の approachClosing）。
+               0.9 固定だと開始位置が遠い時に接近が遅れ、0.2 級の小噴射が
+               何百発も積み上がる（2026-11-22 の効率診断）。ブレーキの
+               上限も同じ目標に連動させる */
+            let dv = null;
+            const tgtClose = FC.approachClosing(info.dist);
+            if (info.closing < tgtClose * 0.85) {
+              const pm = info.dist || 1;
+              const dvx = dest.vx + (info.dx / pm) * tgtClose - s.vx;
+              const dvy = dest.vy + (info.dy / pm) * tgtClose - s.vy;
+              const dvz = dest.vz + (info.dz / pm) * tgtClose - s.vz;
+              dv = { dvx, dvy, dvz, cost: Math.hypot(dvx, dvy, dvz) };
+            } else if (info.rel > Math.max(FC.V_CONTACT, tgtClose * 1.6)) {
+              const limit = Math.max(FC.V_CONTACT, tgtClose * 1.6);
+              const scale = (info.rel - limit) / info.rel;
+              dv = { dvx: -info.rvx * scale, dvy: -info.rvy * scale, dvz: -info.rvz * scale, cost: info.rel - limit };
+            }
+            if (dv && dv.cost > 0.01) {
+              s.vx += dv.dvx; s.vy += dv.dvy; s.vz += dv.dvz;
+              s.dvUsed = (s.dvUsed || 0) + dv.cost;
+              f.lastGuideBurnT = world.now;
+              world.events.push({ t: world.now, type: 'burn', shipId: s.id, cost: dv.cost, guided: true });
+            }
+          } else {
+            const b = f.burns[f.firedBurns];
+            if (b && world.now >= f.departT + b.atT) {
+              s.vx += b.dvx; s.vy += b.dvy; s.vz += b.dvz;
+              s.dvUsed = (s.dvUsed || 0) + (b.cost || 0); f.firedBurns++;
+              world.events.push({ t: world.now, type: 'burn', shipId: s.id, cost: b.cost || 0 });
+            }
+            if (!f.guidance && world.now >= f.arriveT) {
+              f.arrived = true;
+              const dest = bodyByName(world, f.arriveBodyName);
+              if (dest) s.dockedAt = dest;
+              world.events.push({ t: world.now, type: 'arrive', shipId: s.id, at: f.arriveBodyName });
+              return advanceTo(world, T);
+            }
           }
         }
       }
