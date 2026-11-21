@@ -811,6 +811,7 @@
 
   <!-- 画面上ターゲットマーカー -->
   <div id="npc-labels"></div>
+  <svg id="label-leaders" style="position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:14"></svg>
   <div id="dest-labels"><div class="npc-label dest-label" id="dest-body-label"></div><div class="npc-label dest-label ghost" id="dest-ghost-label"></div></div>
   <div id="target-marker">
     <div class="tm-box">
@@ -7677,12 +7678,32 @@ function placeLabelClamped(el, fx, fy, fz){
   _proj.set(fx, fy, fz).project(camera);
   const rect = container.getBoundingClientRect();
   let nx = _proj.x, ny = _proj.y;
-  if(_proj.z > 1){ nx = -nx; ny = -ny; }
-  nx = Math.max(-0.94, Math.min(0.94, nx));
-  ny = Math.max(-0.90, Math.min(0.90, ny));
-  el.style.left = (rect.left + (nx * 0.5 + 0.5) * rect.width) + 'px';
-  el.style.top = (rect.top + (-ny * 0.5 + 0.5) * rect.height) + 'px';
+  let clamped = false;
+  if(_proj.z > 1){ nx = -nx; ny = -ny; clamped = true; }
+  const cx = Math.max(-0.94, Math.min(0.94, nx)), cy = Math.max(-0.90, Math.min(0.90, ny));
+  if(cx !== nx || cy !== ny) clamped = true;
+  const px = rect.left + (cx * 0.5 + 0.5) * rect.width;
+  const py = rect.top + (-cy * 0.5 + 0.5) * rect.height;
+  el.style.left = px + 'px';
+  el.style.top = py + 'px';
   el.style.display = 'block';
+  /* 吹き出し線用: クランプされていない時だけ、錨点（投影そのままの位置）を返す */
+  return { px, py, ax: rect.left + (nx * 0.5 + 0.5) * rect.width, ay: rect.top + (-ny * 0.5 + 0.5) * rect.height, clamped };
+}
+/* 目的地ラベルの重なり回避: 通常ラベルの台帳（labelBoxes）を見て、重なる
+   場合はずらして吹き出し線を引く。クランプ表示（画面外の方向表示）の時は
+   錨点が画面外なので対象外 */
+function declutterDestLabel(el, placedInfo, text){
+  if(!placedInfo || placedInfo.clamped) return;
+  const w = text.length * 10 + 14;
+  const yy = placeLabelBox(labelBoxes, placedInfo.px, placedInfo.py, w);
+  if(yy === null) return;
+  labelBoxes.push({ x: placedInfo.px, y: yy, w });
+  if(yy !== placedInfo.py){
+    el.style.top = yy + 'px';
+    leaderSegs.push({ ax: placedInfo.ax, ay: placedInfo.ay, x: placedInfo.px, y: yy });
+    renderLeaderLines();
+  }
 }
 function updateDestLabels(){
   const bl = document.getElementById('dest-body-label'), gl = document.getElementById('dest-ghost-label');
@@ -7692,10 +7713,10 @@ function updateDestLabels(){
   const ref = getFrameRefPos();
   const tb = cd.targetBody;
   const dBody = Math.hypot(tb.x - S.ship.x, tb.y - S.ship.y, tb.z - S.ship.z);
-  if(dBody > 2600){ bl.textContent = tb.name; placeLabelClamped(bl, tb.x - ref.x, tb.y - ref.y, tb.z - ref.z); }
+  if(dBody > 2600){ bl.textContent = tb.name; declutterDestLabel(bl, placeLabelClamped(bl, tb.x - ref.x, tb.y - ref.y, tb.z - ref.z), tb.name); }
   else bl.style.display = 'none';
   gl.textContent = '会合点 ' + fmtEtaShort(destArcCache ? destArcCache.arrivalAbs : S.time);
-  placeLabelClamped(gl, destGhostPos[0] - ref.x, destGhostPos[1] - ref.y, destGhostPos[2] - ref.z);
+  declutterDestLabel(gl, placeLabelClamped(gl, destGhostPos[0] - ref.x, destGhostPos[1] - ref.y, destGhostPos[2] - ref.z), gl.textContent);
 }
 /* #66: 描くレーンの向き。順番は「航路が決まってからゲート」（2026-11-19 本人裁定）：
    実行中計画の depSep、または計画パネルで提示中の候補航路から計算した方向だけを返す。
@@ -10739,6 +10760,31 @@ function updatePortCraft(){
 }
 let laneBeaconMeshes = [];
 
+/* ラベルの吹き出し線（2026-11-21 本人提案）: 重なりを避けてずらしたラベルは、
+   錨点（天体・船の投影点）から細い線で結び、どれがどれの名前か分かるように
+   する。labelBoxes は updateNpcLabels が毎フレーム置いた箱の台帳で、
+   updateDestLabels（目的地ラベル）も同じ台帳を見て重なりを避ける */
+let labelBoxes = [];
+let leaderSegs = [];
+const LABEL_SHIFT_STEPS = [0, 19, -19, 38, -38, 57, -57, 76, -76, 95, -95];
+function placeLabelBox(placed, x, y, w){
+  for(const dy of LABEL_SHIFT_STEPS){
+    const yy = y + dy;
+    if(!placed.some(p => Math.abs(p.x - x) < (p.w + w) / 2 && Math.abs(p.y - yy) < 19)) return yy;
+  }
+  return null;
+}
+function renderLeaderLines(){
+  const svg = document.getElementById('label-leaders');
+  if(!svg) return;
+  let h = '';
+  for(const s of leaderSegs){
+    h += '<line x1="' + s.ax + '" y1="' + s.ay + '" x2="' + s.x + '" y2="' + (s.y - 4) + '" stroke="rgba(147,197,253,0.75)" stroke-width="1"/>';
+    h += '<circle cx="' + s.ax + '" cy="' + s.ay + '" r="2.5" fill="rgba(147,197,253,0.9)"/>';
+  }
+  svg.innerHTML = h;
+}
+
 // ---------- 3D 名前ラベル ----------
 const npcLabelPool = [];
 const bodyLabelPool = []; /* ラベル階層の最上位（太陽・惑星）専用プール */
@@ -10746,8 +10792,8 @@ let shipLabelEl = null; /* 自船ラベル（広域でも落とさない） */
 function updateNpcLabels(){
   const wrap = document.getElementById('npc-labels');
   if(!wrap) return;
-  if(!labelsOn){ wrap.style.display = 'none'; return; }
-  if(!camera || !S || !gameStarted){ wrap.style.display = 'none'; return; }
+  if(!labelsOn){ wrap.style.display = 'none'; leaderSegs = []; renderLeaderLines(); return; }
+  if(!camera || !S || !gameStarted){ wrap.style.display = 'none'; leaderSegs = []; renderLeaderLines(); return; }
   wrap.style.display = 'block';
   const ref = getFrameRefPos();
   const focus = cam.target || { x:0, y:0, z:0 };
@@ -10764,6 +10810,7 @@ function updateNpcLabels(){
     : csAll;
   const rect = container.getBoundingClientRect();
   const placed = [];
+  leaderSegs = [];
   /* ラベル階層の最上位: 星系表示では太陽と惑星のラベルを常時表示する（小物に
      ラベルがあって最大の天体に無い、という階層の逆転をなくす）。焦点距離や
      コンタクト一覧の対象外であることを理由に落とさない。先に置いて、通常
@@ -10782,11 +10829,15 @@ function updateNpcLabels(){
       if(_proj.z > 1 || Math.abs(_proj.x) > 0.97 || Math.abs(_proj.y) > 0.97){ el.style.display = 'none'; return; }
       const lx = rect.left + (_proj.x * 0.5 + 0.5) * rect.width;
       const ly = rect.top + (-_proj.y * 0.5 + 0.5) * rect.height;
+      const wTop = t.name.length * 12 + 18;
+      let yyT = placeLabelBox(placed, lx, ly, wTop);
+      if(yyT === null) yyT = ly; /* 最上位ラベルは落とさない（重なっても出す） */
       el.style.display = 'block';
       el.textContent = t.name;
       el.style.left = lx + 'px';
-      el.style.top = ly + 'px';
-      placed.push({ x: lx, y: ly, w: t.name.length * 8 + 18 });
+      el.style.top = yyT + 'px';
+      if(yyT !== ly) leaderSegs.push({ ax: lx, ay: ly, x: lx, y: yyT });
+      placed.push({ x: lx, y: yyT, w: wTop });
     });
     for(let i = tops.length; i < bodyLabelPool.length; i++) bodyLabelPool[i].style.display = 'none';
   } else {
@@ -10805,11 +10856,15 @@ function updateNpcLabels(){
     } else {
       const lx = rect.left + (_proj.x * 0.5 + 0.5) * rect.width;
       const ly = rect.top + (-_proj.y * 0.5 + 0.5) * rect.height;
+      const bxS = lx + 10, byS = ly - 8;
+      let yyS = placeLabelBox(placed, bxS, byS, 76);
+      if(yyS === null) yyS = byS; /* 自船ラベルも落とさない */
       shipLabelEl.style.display = 'block';
       shipLabelEl.textContent = '自船 さくら';
-      shipLabelEl.style.left = (lx + 10) + 'px';
-      shipLabelEl.style.top = (ly - 8) + 'px';
-      placed.push({ x: lx, y: ly, w: 76 });
+      shipLabelEl.style.left = bxS + 'px';
+      shipLabelEl.style.top = yyS + 'px';
+      if(yyS !== byS) leaderSegs.push({ ax: lx, ay: ly, x: bxS, y: yyS });
+      placed.push({ x: bxS, y: yyS, w: 76 });
     }
   }
   cs.forEach((c, i) => {
@@ -10819,14 +10874,11 @@ function updateNpcLabels(){
     if(_proj.z > 1 || Math.abs(_proj.x) > 0.95 || Math.abs(_proj.y) > 0.95){ el.style.display = 'none'; return; }
     const lx = rect.left + (_proj.x * 0.5 + 0.5) * rect.width;
     let ly = rect.top + (-_proj.y * 0.5 + 0.5) * rect.height;
-    const w = c.name.length * 7 + 14, h = 17;
-    let ok = false;
-    for(let k = 0; k < 3 && !ok; k++){
-      const yy = ly + k * 18;
-      ok = !placed.some(p => Math.abs(p.x - lx) < (p.w + w) / 2 && Math.abs(p.y - yy) < h);
-      if(ok) ly = yy;
-    }
-    if(!ok){ el.style.display = 'none'; return; }
+    const w = c.name.length * 10 + 14;
+    const yy = placeLabelBox(placed, lx, ly, w);
+    if(yy === null){ el.style.display = 'none'; return; }
+    if(yy !== ly) leaderSegs.push({ ax: lx, ay: ly, x: lx, y: yy });
+    ly = yy;
     placed.push({ x: lx, y: ly, w });
     el.style.display = 'block';
     el.textContent = c.name;
@@ -10840,6 +10892,8 @@ function updateNpcLabels(){
     el.title = okKey ? 'タップで軌道線の表示を切り替え' : '';
   });
   for(let i = cs.length; i < npcLabelPool.length; i++) npcLabelPool[i].style.display = 'none';
+  labelBoxes = placed;
+  renderLeaderLines();
 }
 
 /* #77: 名前ラベルのタップで軌道線を切り替える（委譲で1回だけ登録） */
