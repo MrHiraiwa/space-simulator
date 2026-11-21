@@ -1385,7 +1385,23 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       for(const q of pls){ if(q !== p && q.gm > 0){ const d = Math.hypot(p.x - q.x, p.y - q.y, p.z - q.z); if(d > 1 && q.gm / (d * d) > bGm / Math.max(1, bD * bD)){ bGm = q.gm; bD = d; } } }
       if(bGm > 0 && bD > 0) capP = Math.min(capP, Math.max(20, 2 * Math.PI * Math.sqrt(Math.pow(bD, 3) / bGm) * 0.01));
     }
-    const nSub = Math.min(400, Math.max(1, Math.ceil(h / Math.max(1, capP))));
+    /* 目標も同じ刻み制限の対象にする（2026-11-22、帰投の実測対応）: 目標が
+       天体でない（ステーション等）場合、上のループでは拾われず、速い目標
+       （あおば 周期 2,567 秒）が月の周期基準（約 1,353 秒＝周期の半分）の
+       刻みで進んで位相が壊れ、予測（20 秒刻み）との最接近が 13,332 対
+       316,578 まで発散した。目標の最強重力源まわりの周期も 1% 制限に加える */
+    {
+      let bGm = starGM, bD = Math.hypot(t.x, t.y, t.z);
+      for(const q of pls){ if(q.gm > 0){ const d = Math.hypot(t.x - q.x, t.y - q.y, t.z - q.z); if(d > 1 && q.gm / (d * d) > bGm / Math.max(1, bD * bD)){ bGm = q.gm; bD = d; } } }
+      if(bGm > 0 && bD > 0) capP = Math.min(capP, Math.max(20, 2 * Math.PI * Math.sqrt(Math.pow(bD, 3) / bGm) * 0.01));
+    }
+    /* サブステップ幅は駆動の天体グリッド（10 秒）以下に揃える（2026-11-22）:
+       旧上限 400 ではメインステップが大きい局面で速い目標（あおば周期
+       2,567 秒）が 25 秒超の刻みで進み位相が遅れ、その遅れた目標に対して
+       計画された噴射列が実飛行（10 秒グリッド）で会合しなかった（実測:
+       噴射直前の目標位置差 18,044、終端の再現距離 21,748→刻み統一後は
+       9,318 まで改善し、推定の到着自体も 87,408→約66,200 秒に早まった） */
+    const nSub = Math.min(100000, Math.max(1, Math.ceil(h / Math.max(1, Math.min(capP, 10)))));
     const hs = h / nSub;
     for(let k = 0; k < nSub; k++){
       if(eulerTwin){
@@ -1674,9 +1690,14 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      満たす候補が無ければ従来の巡航へ落ちる（推定は正直なまま）。
      対象外: 目標自身に束縛されている（到着系の領分）、母天体が恒星だけの
      惑星間巡航、軌道出発が先行する帰投の月脱出そのもの（脱出後に再判定）。 */
-  let trHost = null, trPeriod = 0, trStartT = 0, trTimer = 0, trBest = null;
-  let trStage = 1, trStage2T = 0, trArrT = 0, trMinSeen = Infinity, trPrevDist = null, trArmed = false;
-  const trCadence = () => Math.max(300, Math.min(7200, trPeriod / 32));
+  let trHost = null, trPeriod = 0, trTgtPeriod = 0, trStartT = 0, trTimer = 0, trBest = null;
+  let trStage = 1, trStage2T = 0, trArrT = 0, trMinSeen = Infinity, trPrevDist = null, trArmed = false, trRetry = 0, trMatched = false;
+  /* 評価刻みは目標の軌道周期にも連動させる（2026-11-21、帰投の実測対応）:
+     あおば（周期 2,567 秒）のような速い目標では、走査期間基準の刻み
+     （最大 7,200 秒）では位相の合う瞬間を拾えず候補が全滅した（実測:
+     評価 66 回で最接近の最良 143,224、ゲート 80,000 に届かない）。
+     目標周期の 1/16 を上限に加え、下限は評価コストの暴走防止に 120 秒 */
+  const trCadence = () => Math.max(120, Math.min(7200, trPeriod / 32, trTgtPeriod > 0 ? trTgtPeriod / 16 : 7200));
   const findTransferHost = () => {
     /* 速達（scale > 1.1）は位相合わせの滑空そのものが目的と矛盾する
        （実測: 遷移採用で速達が 3.25 日・不成立に化けた）。速達は従来の
@@ -1726,11 +1747,11 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const Pt = 2 * Math.PI * Math.sqrt(Math.pow(bestH.aT, 3) / bestH.p.gm);
     const wRel = Math.abs(2 * Math.PI / P - 2 * Math.PI / Pt);
     const scan = wRel > 1e-9 ? Math.min(600000, Math.max(P, 2 * Math.PI / wRel)) : P;
-    return { host: bestH.p, period: scan };
+    return { host: bestH.p, period: scan, tgtPeriod: Pt };
   };
   const enterTransfer = (tr) => {
-    trHost = tr.host; trPeriod = tr.period; trStartT = timeTotal; trTimer = 0; trBest = null;
-    trStage = 1; trMinSeen = Infinity; trPrevDist = null; trArmed = false;
+    trHost = tr.host; trPeriod = tr.period; trTgtPeriod = tr.tgtPeriod || 0; trStartT = timeTotal; trTimer = 0; trBest = null;
+    trStage = 1; trMinSeen = Infinity; trPrevDist = null; trArmed = false; trRetry = 0;
     phase = 'transfer';
   };
   /* 遷移の採用（#145 第2段）: 第1噴射で遷移楕円に載せた後もフェーズは
@@ -1748,7 +1769,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
        （実測: 横切り扱いで 12.9 の一致噴射になった）ため、実距離の
        極小で発火させる */
     trStage = 2; trStage2T = timeTotal; trArrT = timeTotal + (b.tAtMin || 0);
-    trMinSeen = Infinity; trPrevDist = null; trArmed = false; trTimer = 1e9;
+    trMinSeen = Infinity; trPrevDist = null; trArmed = false; trTimer = 1e9; trMatched = false;
   };
   if(phase === 'cruise'){
     const tr0 = findTransferHost();
@@ -1831,7 +1852,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const halfT = Math.PI * Math.sqrt(Math.pow(aTr, 3) / H.gm);
     const horizon = Math.min(500000, Math.max(30000, halfT * 1.45));
     let minDist = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z), relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz), tt = 0, tAtMin = 0;
-    let prevRad = Math.hypot(cs.x - cpls[hIdx].x, cs.y - cpls[hIdx].y, cs.z - cpls[hIdx].z) - aTgt, crossed = false, tCross = 0;
+    let prevRad = Math.hypot(cs.x - cpls[hIdx].x, cs.y - cpls[hIdx].y, cs.z - cpls[hIdx].z) - aTgt, crossed = false, tCross = 0, crossDist = null, crossRel = null;
     while(tt < horizon){
       let hh = 120;
       const dT = Math.hypot(cs.x - ct.x, cs.y - ct.y, cs.z - ct.z);
@@ -1847,7 +1868,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
       const d = Math.hypot(ct.x - cs.x, ct.y - cs.y, ct.z - cs.z);
       if(d < minDist){ minDist = d; relAtMin = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz); tAtMin = tt; }
       const rad = Math.hypot(cs.x - cpls[hIdx].x, cs.y - cpls[hIdx].y, cs.z - cpls[hIdx].z) - aTgt;
-      if(!crossed && prevRad !== 0 && (rad > 0) !== (prevRad > 0)){ crossed = true; tCross = tt; }
+      if(!crossed && prevRad !== 0 && (rad > 0) !== (prevRad > 0)){ crossed = true; tCross = tt; crossDist = d; crossRel = Math.hypot(cs.vx - ct.vx, cs.vy - ct.vy, cs.vz - ct.vz); }
       prevRad = rad;
       if(crossed && tt > tCross + 25000) break;
       /* 横切り前の「離れていく」区間で打ち切らない: 遷移楕円でも位相の
@@ -1859,7 +1880,21 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
        2,600 の内側を掠める候補が位相一致だけで残った） */
     const srT = surfaceRadius(t), floorT = srT + impactMargin(srT);
     if(minDist < floorT) return { score: 1e9, minDist, relAtMin, tAtMin };
-    return { score: dv + relAtMin + Math.max(0, minDist - 20000) / 2000 + tAtMin / 25000, minDist, relAtMin, tAtMin };
+    /* 採点は横切り点での会合を主とする（2026-11-22、帰投の実測対応）:
+       最接近ベースの採点では「目標軌道半径を横切る点と会合点がずれた楕円」
+       が残り、受け渡し時点で船が半径 44,771（目標 25,600）にいて終端の
+       局所誘導では合流できなかった。横切り時に位相が合っている候補は
+       横切り点≈最接近点となり、そのまま同じ軌道への合流に繋がる。
+       横切りが無い候補は従来の最接近採点にペナルティを付けて残す */
+    /* 横切り採点は目標が軌道体（重力なし）の場合に限る: 目標が天体
+       （月・惑星）の場合は到着を捕捉系が担い、遷移の役割は「天体の近傍まで
+       運ぶ」ことなので、従来の最接近採点が適する（実測: 横切り採点を
+       往路にも適用すると Δv 37.13 → 97.42 に悪化した） */
+    if(crossDist !== null && !(t.gm > 0)){
+      if(crossDist < floorT) return { score: 1e9, minDist, relAtMin, tAtMin };
+      return { score: dv + crossRel + Math.max(0, crossDist - 20000) / 2000 + tCross / 25000, minDist: crossDist, relAtMin: crossRel, tAtMin: tCross };
+    }
+    return { score: dv + relAtMin + Math.max(0, minDist - 20000) / 2000 + tAtMin / 25000 + 50, minDist, relAtMin, tAtMin };
   };
   /* 軌道遷移の候補評価（#145）: 現在状態から、母天体まわりの接線方向に
      「もう一方の近/遠点が目標の軌道半径に一致する楕円」へ載せる噴射を作る。
@@ -1886,7 +1921,17 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     const vNeed = Math.sqrt(Math.max(0.01, H.gm * (2 / r - 1 / aTr)));
     const dvx = tx * vNeed - rvx, dvy = ty * vNeed - rvy, dvz = tz * vNeed - rvz;
     const cost = Math.hypot(dvx, dvy, dvz);
-    if(cost < 0.05 || cost > 12) return; /* 既に遷移楕円上／接線噴射として不健全 */
+    /* 健全性ゲートは無次元で引く（2026-11-21、台帳#158 の申告生成対応）:
+       旧い絶対値 12 は旧幾何（あおば 520,000）の実測から決めた値で、新幾何
+       （25,600）の正攻法ホーマン第1噴射 22.98 を不健全として全候補を弾き、
+       推定が直行迎撃に落ちて Δv 121〜192 の不成立になっていた。当初は
+       (√2−1)×接線速度 tm を境界にしたが、楕円の遠点で遅くなる船（月脱出後の
+       帰投）では tm が小さく、正攻法の噴射（実測 cost 最大 20.3）が落ちた。
+       基準はその地点の脱出速度 vEsc = √(2gm/r) に取る: 楕円から楕円への
+       遷移噴射は噴射前後の速度がどちらも vEsc 未満で、cost が vEsc を超える
+       候補は遷移の候補ではない、という物理の境界（往路 23 < 88.6、帰投の
+       遠点 20.3 < 23.6 でどちらも内側） */
+    if(cost < 0.05 || cost > Math.sqrt(2 * H.gm / r)) return; /* 既に遷移楕円上／接線噴射として不健全 */
     const es = { x: s.x, y: s.y, z: s.z, vx: s.vx + dvx, vy: s.vy + dvy, vz: s.vz + dvz };
     const sc = ballisticScoreTransfer(es, cost, aTr, aTgt);
     /* 採用の品質ゲート: この系の横切り会合は最接近時の相対速度が 8〜18に
@@ -2067,10 +2112,48 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
         const distNow = Math.hypot(t.x - s.x, t.y - s.y, t.z - s.z);
         if(distNow < trMinSeen) trMinSeen = distNow;
         let done = false;
-        if(trPrevDist !== null && distNow > trPrevDist && trMinSeen < 80000) done = true;
-        if(timeTotal > trArrT + 20000) done = true;
+        /* 距離反転での受け渡しは予測最接近時刻の手前では発火させない
+           （2026-11-22 実測: 噴射直後の一時的な距離増加で誤発火し、
+           予測 4,789 の会合を 63,349 の地点で巡航へ渡してしまった。
+           予測が外れた場合の立て直しは trArrT 超過後の再評価が担う） */
+        if(trPrevDist !== null && distNow > trPrevDist && trMinSeen < 80000 && timeTotal >= trArrT - 1500) done = true;
+        if(timeTotal > trArrT + 20000 && trMinSeen < 80000) done = true;
+        /* 予測が外れた場合の立て直し（2026-11-21、帰投の実測対応）: 速い目標
+           （あおば 周期 2,567 秒）では粗い積分の位相誤差で予測の最接近
+           （13,332）と実軌道（316,578）が発散し得る。予測最接近時刻を過ぎても
+           会合圏（80,000）に届いていなければ、大きく離れてから巡航が大噴射で
+           回収する前に、第1段の候補評価からやり直す。再試行は2回までで、
+           使い切ったら従来どおり巡航へ渡す */
+        if(!done && timeTotal > trArrT && trMinSeen >= 80000){
+          if(trRetry < 2){
+            trRetry++; trStage = 1; trStartT = timeTotal; trBest = null; trTimer = 0;
+            trMinSeen = Infinity; trPrevDist = null;
+          } else if(timeTotal > trArrT + 20000) done = true;
+        }
         trPrevDist = distNow;
-        if(done){ phase = 'cruise'; checkTimer = 0; }
+        if(done){
+          /* 小半径到着（ステーション等）では、横切り会合の相対速度を終端に
+             持ち込むと「熱い到着」（termPeak5 > V_FINAL）で不成立になる
+             （2026-11-22 実測: 受け渡し dist 2,284・rel 18.25 のまま final に
+             入り、744 まで寄せても不成立）。会合が近距離で成立している
+             場合は、受け渡しの瞬間に目標速度への一致噴射を打って相対速度を
+             落としてから渡す。コストは横切り時の相対速度そのもので、
+             final が少しずつ殺す（実測 35 超）より安い */
+          let matched = trMatched;
+          if(arrivalDist <= 1000 && trMinSeen < 10000 && !trMatched){
+            const relNow = Math.hypot(s.vx - t.vx, s.vy - t.vy, s.vz - t.vz);
+            if(relNow > V_FINAL){ applyDv(computeMatch(s, t)); matched = true; }
+          }
+          /* 一致噴射が計画に含まれる場合、終端ピークの記録は噴射後から
+             数え直す（2026-11-22）: 噴射前の rel は計画された速度一致で
+             落とす前提の値で、実飛行の接近段が見る到着の熱さとは別物。
+             直行迎撃など transfer を経由しない計画には影響しない */
+          if(matched){ termPeak20 = 0; termPeak5 = 0; }
+          /* 一致噴射を打った場合は巡航へ渡さない: 巡航の迎撃誘導が即座に
+             大噴射で幾何を壊す（実測: 一致 18.25 の直後に 10＋8.55）。
+             低相対速度からの接近は final の領分なので直接渡す */
+          phase = matched ? 'final' : 'cruise'; checkTimer = 0;
+        }
       } else {
         trTimer -= h;
         if(trTimer <= 0){
