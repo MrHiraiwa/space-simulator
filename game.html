@@ -558,6 +558,9 @@
   .sched td{padding:5px 6px;border-bottom:1px solid var(--line);color:#cbd5e1}
   .sched td.st-t{white-space:nowrap;color:#e0f2fe;font-weight:700}
   .sched tr.past{opacity:.45}
+  .sched tr.sched-jump{cursor:pointer}
+  .sched tr.sched-jump:hover td{background:rgba(45,212,191,.12)}
+  .tl-hint{font-size:11px;color:var(--dim,#94a3b8);margin-top:5px}
   .tl-row{display:flex;gap:8px;font-size:12.5px;margin:2.5px 0;align-items:baseline}
   .tl-t{color:var(--teal);white-space:nowrap;font-variant-numeric:tabular-nums;flex:none}
   .ship-sec{font-size:11px;color:var(--teal);font-weight:800;letter-spacing:.08em;margin:14px 0 5px}
@@ -1290,6 +1293,7 @@ const OFFICER_DEFS = [
 const PORT_NETWORK = [
   { name:'あおば', host:'惑星「つむぎ」', type:'軌道ステーション', role:'貨物・旅客・補給・管制', berths:'バース×36（第3は到着船用、第6は自船定位置）', classes:'全船級（大型船はここが終点）' },
   { name:'しんこう', host:'惑星「つむぎ」地表', type:'地表港', role:'旅客・軽貨物', berths:'バース×12（降下パッド）', classes:'降下可能船級のみ（シャトル・小型艇）', connection:'あおば⇄しんこう 定期シャトル便（大気圏往復）' },
+  { name:'こよみ地表基地', host:'衛星「こよみ」地表', type:'地表港（小規模）', role:'補給・マスドライバー射出', berths:'降下パッド×2', classes:'降下可能船級のみ', connection:'射出は進行方向（順行）・公表出口速度 14.0' },
   { name:'あかね資源港', host:'資源惑星「あかね」', type:'軌道ステーション（小規模）', role:'資源・貨物', berths:'バース×10', classes:'貨物船級まで' },
   { name:'採掘プラットフォーム「タロス」', host:'資源惑星「あかね」', type:'資源衛星（採掘プラットフォーム）', role:'採掘・一次精製', berths:'バース×6', classes:'貨物船級まで' },
   { name:'うずしお観測所', host:'惑星「うずしお」', type:'軌道観測ステーション', role:'科学観測・少量補給', berths:'バース×4', classes:'小型船級のみ' }
@@ -3127,7 +3131,7 @@ function toggleHoldMode(){
 }
 
 /* 天体の状態スナップショット（推定への受け渡し用: 位置と速度だけを複写する） */
-function snapBodyState(b){ return b ? { x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz } : null; }
+function snapBodyState(b){ return b ? { x: b.x, y: b.y, z: b.z, vx: b.vx, vy: b.vy, vz: b.vz, name: b.name || null, gm: b.gm || 0, radius: b.radius || 0, dispR: b.dispR || 0, isMoon: !!b.isMoon, moonOf: b.moonOf || null } : null; }
 
 // ---------- 航宙計画パネル & 計画実行 ----------
 let planPanelState = null;
@@ -3223,11 +3227,14 @@ function buildWaypoints(cfg, est, opts){
   const wasDocked = (opts && opts.fromDocked !== undefined) ? opts.fromDocked : !!(S && S.docked);
   const depAnchor = (opts && opts.depAnchor) || (S && (S.dockedTo || S.station)) || null;
   const depSep = (opts && opts.depSep) || (depAnchor ? computeDepSep(depAnchor, cfg.targetBody) : null);
+  const depOffset = (opts && opts.depOffset) || null;
   /* #69: レーンの起点マーカーはコースのサンプル点（smp[0]）でなくステーション自身に結びつける。
      サンプル起点だと金色マーカーがステーションから離れた宙に浮いて見え、「レーンは港の外なのか」
      と読まれた。レーン帯・ビーコン（updatePortCraft）は元々ステーション相対で描かれており、
      起点チップも同じ錨に揃える */
-  const laneWp = { name: '出発レーン（港内）', t: 0, pos: (wasDocked && depAnchor) ? [depAnchor.x, depAnchor.y, depAnchor.z] : (smp.length ? smp[0] : null), note: '離舷→港内航行（制限速度）→出域' };
+  const laneWp = depOffset
+    ? { name: '射出レーン（マスドライバー）', t: 0, pos: (wasDocked && depAnchor) ? [depAnchor.x, depAnchor.y, depAnchor.z] : (smp.length ? smp[0] : null), note: '地表基地のマスドライバー射出→本航行' }
+    : { name: '出発レーン（港内）', t: 0, pos: (wasDocked && depAnchor) ? [depAnchor.x, depAnchor.y, depAnchor.z] : (smp.length ? smp[0] : null), note: '離舷→港内航行（制限速度）→出域' };
   /* 港内レーンはステーション相対の構造物なので、接舷起点では位置を焼き込まず
      港の錨に結びつける（resolveFixPos kind:'port' が現在位置で解決する）。
      焼き込みのままだと、港中心のビューでステーションの公転につれて後ろへ流れて見える */
@@ -3235,7 +3242,7 @@ function buildWaypoints(cfg, est, opts){
   wps.push(laneWp);
   if(wasDocked && depAnchor && depSep){
     const depEta = 30;
-    const off = { x: depSep.x * 80, y: depSep.y * 80, z: depSep.z * 80 };
+    const off = depOffset || { x: depSep.x * 80, y: depSep.y * 80, z: depSep.z * 80 };
     wps.push({
       id: 'departFix', name: '出域点', kind: 'depart', fix: true, eta: depEta, t: depEta,
       anchor: depAnchor, offset: off,
@@ -3592,7 +3599,7 @@ function propagateWorldSnapshots(dt, targetBody){
   const planets = S.planets.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, dispR: p.dispR || 0, name: p.name || '', isMoon: !!p.isMoon, moonOf: p.moonOf || null }));
   const station = S.station ? { x: S.station.x, y: S.station.y, z: S.station.z, vx: S.station.vx, vy: S.station.vy, vz: S.station.vz, gm: 0, radius: S.station.radius || 11, dispR: S.station.dispR || 0, name: S.station.name || '', isMoon: false } : null;
   const target = (targetBody === S.station && station) ? station : (planets.find(p => p.name === (targetBody && targetBody.name)) || planets[0]);
-  const anchorLive = S.docked ? (S.dockedTo || S.station) : null;
+  const anchorLive = S.docked ? (S.dockedTo || S.station) : (S.landed ? S.landed.body : null);
   const anchor = anchorLive ? (anchorLive === S.station ? station : planets.find(p => p.name === anchorLive.name)) : null;
   const ship = { x: S.ship.x, y: S.ship.y, z: S.ship.z, vx: S.ship.vx, vy: S.ship.vy, vz: S.ship.vz };
   const accFull = fullAccFn(starGM, planets);
@@ -3617,7 +3624,7 @@ function propagateWorldSnapshots(dt, targetBody){
       b.x += b.vx * he; b.y += b.vy * he; b.z += b.vz * he;
     }
   };
-  const shipRef = S.docked ? (anchor || ship) : ship;
+  const shipRef = (S.docked || S.landed) ? (anchor || ship) : ship;
   for(let k = 0; k < nSub; k++){
     const dTgt = Math.hypot(shipRef.x - target.x, shipRef.y - target.y, shipRef.z - target.z);
     const capShip = dTgt < 300000 ? 20 : 120;
@@ -3626,7 +3633,12 @@ function propagateWorldSnapshots(dt, targetBody){
       else rk4StepState(planets[i], hs, sAcc);
     }
     if(station) eulerSnap(station, accFull, capShip);
-    if(!S.docked) eulerSnap(ship, accFull, capShip);
+    if(!S.docked && !S.landed) eulerSnap(ship, accFull, capShip);
+  }
+  /* 着陸中の船は伝播後の基地点に置く（地表接舷は天体と一緒に動く） */
+  if(S.landed && anchor){
+    const bp = moonBasePointIn(anchor, planets);
+    ship.x = bp.x; ship.y = bp.y; ship.z = bp.z; ship.vx = bp.vx; ship.vy = bp.vy; ship.vz = bp.vz;
   }
   return { planets, station, target, anchor, ship };
 }
@@ -3662,7 +3674,7 @@ function openPlanPanel(cfg){
      から推定する。承認されれば接舷したまま待機し、その時刻に承認した計画
      のまま自動で出発する——出発直後の積み直しで航路が描き替わることは
      しない。伝播に失敗した場合は従来どおり現在配置の推定に倒す。 */
-  if(S.docked){
+  if(S.docked || S.landed){
     planPanelState.depEpoch = S.time + 1800;
     try { planPanelState.depSnap = propagateWorldSnapshots(1800, cfg.targetBody); }
     catch(e){ planPanelState.depSnap = null; planPanelState.depEpoch = null; }
@@ -3870,10 +3882,11 @@ function openPlanPanel(cfg){
     const snapPlanets = S.planets.map(p => ({ x: p.x, y: p.y, z: p.z, vx: p.vx, vy: p.vy, vz: p.vz, gm: p.gm, radius: p.radius || 7, dispR: p.dispR || 0, name: p.name || '', isMoon: !!p.isMoon, moonOf: p.moonOf || null }));
     const snapStation = S.station ? { x: S.station.x, y: S.station.y, z: S.station.z, vx: S.station.vx, vy: S.station.vy, vz: S.station.vz, gm: 0, radius: S.station.radius || 11, dispR: S.station.dispR || 0, name: S.station.name || '', isMoon: false } : null;
     const targetSnap = (cfg.targetBody === S.station && snapStation) ? snapStation : (snapPlanets.find(p => p.name === (cfg.targetBody && cfg.targetBody.name)) || snapPlanets[0]);
-    const anchorLive = S.docked ? (S.dockedTo || S.station) : null;
+    const anchorLive = S.docked ? (S.dockedTo || S.station) : (S.landed ? S.landed.body : null);
     const anchorSnap = anchorLive ? (anchorLive === S.station ? snapStation : snapPlanets.find(p => p.name === anchorLive.name)) : null;
     const shipSnap = { x: S.ship.x, y: S.ship.y, z: S.ship.z, vx: S.ship.vx, vy: S.ship.vy, vz: S.ship.vz };
     const wasDocked = !!S.docked;
+    const wasLanded = !!S.landed;
     /* 相対幾何の周期: 目標と自船の所在地（錨／滞在天体）が同じ主天体を回る場合は
        会合周期、そうでなければ長い方の公転周期。いずれも刻んで走査する */
     const primaryOf = (b) => {
@@ -4038,9 +4051,9 @@ function openPlanPanel(cfg){
       propSnap(thisChunk);
       waitSoFar += thisChunk;
       planPanelState.windowScanSpan = waitSoFar;
-      const shipState = (wasDocked && anchorSnap) ? { x: anchorSnap.x, y: anchorSnap.y, z: anchorSnap.z, vx: anchorSnap.vx, vy: anchorSnap.vy, vz: anchorSnap.vz } : shipSnap;
-      const snapDepSep = wasDocked ? computeDepSep(anchorSnap, targetSnap) : null;
-      const estOpts = { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: snapDepSep, depAnchor: (wasDocked && anchorSnap) ? snapBodyState(anchorSnap) : null, mdExitV: wasDocked ? mdExitVFor() : null };
+      const shipState = (wasLanded && anchorSnap) ? moonBasePointIn(anchorSnap, snapPlanets) : ((wasDocked && anchorSnap) ? { x: anchorSnap.x, y: anchorSnap.y, z: anchorSnap.z, vx: anchorSnap.vx, vy: anchorSnap.vy, vz: anchorSnap.vz } : shipSnap);
+      const scanOpts = (wasDocked || wasLanded) && anchorSnap ? departureEstOpts(anchorSnap, targetSnap, snapPlanets) : { depSep: null, depAnchor: null, mdExitV: null, mdExitOffset: null };
+      const estOpts = { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: snapPlanets, depSep: scanOpts.depSep, depAnchor: scanOpts.depAnchor, mdExitV: scanOpts.mdExitV, mdExitOffset: scanOpts.mdExitOffset };
       const nextStep = () => { renderVars(); renderChecklist(false); setTimeout(probeStep, 30); };
       pumpWinJob(createPlanEstimateJob(shipState, targetSnap, starGM, 1.0, estOpts), (estStd) => {
         if(!probeFeasible(estStd)){ nextStep(); return; }
@@ -4115,8 +4128,8 @@ function openPlanPanel(cfg){
     /* 出発時刻を固定した計画では、出発便の時刻まで伝播した配置から推定する
        （自船は錨の状態＝接舷したままその時刻を迎える前提） */
     const ds = planPanelState.depSnap;
-    const job = ds ? createPlanEstimateEnsembleJob(ds.anchor, ds.target, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: ds.planets, depSep: computeDepSep(ds.anchor, ds.target), depAnchor: snapBodyState(ds.anchor), mdExitV: mdExitVFor() })
-      : createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null, mdExitV: mdExitVFor() });
+    const job = ds ? createPlanEstimateEnsembleJob((S.landed && ds.ship) ? ds.ship : ds.anchor, ds.target, S.sys.starGM, v.scale, Object.assign({ arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: ds.planets }, departureEstOpts(ds.anchor, ds.target, ds.planets)))
+      : createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, Object.assign({ arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets }, departureEstOpts(currentAnchorBody(), cfg.targetBody, S.planets)));
     const pumpEst = () => {
       if(!planPanelState || planPanelState.cfg !== cfg) return;
       if(stepJobBudget(job, 120)){
@@ -4191,7 +4204,7 @@ function confirmDeparture(){
     const btn = document.getElementById('btn-depart');
     const btnLabel = btn ? btn.textContent : '';
     if(btn){ btn.disabled = true; btn.textContent = '⏳ 承認時点の状態で再推定しています…'; }
-    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, { arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets, depSep: S.docked ? computeDepSep(S.dockedTo || S.station, cfg.targetBody) : null, depAnchor: S.docked ? snapBodyState(S.dockedTo || S.station) : null, mdExitV: mdExitVFor() });
+    const job = createPlanEstimateEnsembleJob(S.ship, cfg.targetBody, S.sys.starGM, v.scale, Object.assign({ arrivalDist: cfg.arrivalDist, needDock: cfg.needDock, planets: S.planets }, departureEstOpts(currentAnchorBody(), cfg.targetBody, S.planets)));
     let lastPaint = 0;
     const tick = () => {
       if(!S || !planPanelState || planPanelState.cfg !== cfg) return; /* パネルが閉じた／別計画 */
@@ -4240,7 +4253,8 @@ function confirmDepartureRest(ctx){
   closePlanPanel();
   playSfx('click');
   const wasDocked = !!S.docked;
-  const depAnchor = S.dockedTo || S.station || null;
+  const wasLanded = !!S.landed;
+  const depAnchor = S.landed ? S.landed.body : (S.dockedTo || S.station || null);
   if(S.docked && !wp){
     S.docked = false; S.dockedTo = null;
     logEvent('⚓ 離舷作業開始 — 係留を解除し、内部電源へ切り替えます。');
@@ -4257,14 +4271,14 @@ function confirmDepartureRest(ctx){
   S.planSamples = v.est.samples;
   S.planFullSamples = v.est.samples;
   updatePlanLineMesh();
-  const depSep = wasDocked && depAnchor ? computeDepSep(depAnchor, cfg.targetBody) : null;
-  const finalWps = wps || buildWaypoints(cfg, v.est, { fromDocked: wasDocked, depAnchor, depSep });
+  const depSep = wasLanded && depAnchor ? surfaceLaunchDir(depAnchor, S.planets) : (wasDocked && depAnchor ? computeDepSep(depAnchor, cfg.targetBody) : null);
+  const finalWps = wps || buildWaypoints(cfg, v.est, { fromDocked: wasDocked || wasLanded, depAnchor, depSep, depOffset: wasLanded && depAnchor ? surfaceExitOffset(depAnchor, S.planets) : null });
   /* 計画文書の会計は表示・成立判定と揃える（v0.6.4）: 接舷出発の計画消費には
      港内操船の見込みを含め、計画対実績の乖離計測が港内分で誤報しないようにする */
-  const harborDv = wasDocked ? harborDvFor(v.est) : 0;
+  const harborDv = (wasDocked || wasLanded) ? harborDvFor(v.est) : 0;
   const docRows = planLegRows(v.est);
   if(harborDv) docRows.unshift({ name: '港内操船（離舷・分離）', t0: 0, t1: 30, dv: harborDv, phase: 'harbor' });
-  if(wasDocked && v.est && v.est.mdUse) docRows.unshift({ name: 'マスドライバー射出（あおば・港の設備）', t0: 0, t1: 30, dv: 0, phase: 'harbor' });
+  if((wasDocked || wasLanded) && v.est && v.est.mdUse) docRows.unshift({ name: wasLanded ? 'マスドライバー射出（こよみ基地・港の設備）' : 'マスドライバー射出（あおば・港の設備）', t0: 0, t1: 30, dv: 0, phase: 'harbor' });
   const fixes = finalWps.filter(w => w.fix);
   const departFix = fixes.find(f => f.kind === 'depart') || null;
   const iaf = fixes.find(f => f.kind === 'iaf') || null;
@@ -4277,7 +4291,7 @@ function confirmDepartureRest(ctx){
     targetBody: cfg.targetBody,
     arrivalDist: cfg.arrivalDist,
     needDock: cfg.needDock,
-    phase: wp ? 'waitwin' : (wasDocked ? 'undock' : 'depart'),
+    phase: wp ? 'waitwin' : ((wasDocked || wasLanded) ? 'undock' : 'depart'),
     departBurn: departBurn,
     reserve: reservePct,
     waitUntil: wp ? S.time + wp.waitSec : 0,
@@ -4295,10 +4309,11 @@ function confirmDepartureRest(ctx){
     waitPromisedDv: wp ? wp.est.dvTotal : 0,
     waitCycle: winCycle,
     waitRetries: 0,
-    depAnchor: wasDocked ? depAnchor : null,
+    depAnchor: (wasDocked || wasLanded) ? depAnchor : null,
     depT: 0,
     depSep: depSep,
     mdUse: !!(v.est && v.est.mdUse),
+    surfaceLaunch: wasLanded && depAnchor ? { moonName: depAnchor.name } : null,
     depFix: null,
     depFixDist0: 80,
     fixes: fixes,
@@ -4391,7 +4406,7 @@ function startWindowDeparture(){
      できない乖離は逸脱の流れで船長に上げる。下の再検証パスは、承認した
      計画を持たない旧セーブ用の互換として残す。 */
   if(pe.committedPlan && S.planFullSamples && S.planFullSamples.length > 1){
-    const wasDockedC = !!S.docked;
+    const wasDockedC = !!S.docked || !!S.landed;
     const depAnchorC = pe.depAnchor || S.dockedTo || S.station || null;
     if(S.docked){
       S.docked = false; S.dockedTo = null;
@@ -4402,8 +4417,9 @@ function startWindowDeparture(){
         setTimeout(()=>{ if(S) showOfficerPopup(GUIDE, '出発は一連の作業です。離舷、港内航行、出域、それから本航行に入ります。港の中は混んでいるので、ゆっくり進みます。'); }, 2600);
       }
     }
-    if(wasDockedC) logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。離舷後は港内コースを制限速度で進み、出域点で本航行へ移行せよ。');
-    pe.depSep = wasDockedC && depAnchorC ? computeDepSep(depAnchorC, pe.targetBody) : pe.depSep;
+    if(wasDockedC && S.docked) logEvent('📡 あおば管制: 「'+SHIP_CALLSIGN+'」、出航を許可する。離舷後は港内コースを制限速度で進み、出域点で本航行へ移行せよ。');
+    if(wasDockedC && S.landed) logEvent('📡 こよみ基地管制: 「'+SHIP_CALLSIGN+'」、射出を許可する。マスドライバー射出ののち、本航行へ移行せよ。');
+    pe.depSep = wasDockedC && depAnchorC ? (S.landed ? surfaceLaunchDir(depAnchorC, S.planets) : computeDepSep(depAnchorC, pe.targetBody)) : pe.depSep;
     pe.startT = S.time;
     /* 接舷の追従原点は分離完了の瞬間に置く（updateDepartureOps 側）。
        非接舷（捕捉軌道からの窓出発）は港内が無いので出発時刻が原点 */
@@ -4577,6 +4593,41 @@ const harborDvFor = (est) => (est && est.dvHarbor != null) ? est.dvHarbor : HARB
    公表出口速度を渡し、出口状態を港の公表値で固定する。装備のない港や
    接舷でない出発では null（従来の自力出発のまま——両航路を残す） */
 const mdExitVFor = () => (S && S.docked && (S.dockedTo || S.station) === S.station) ? MD_EXIT_V : null;
+/* こよみ地表基地のマスドライバー公表値（台帳#114/#116）: 射出方向は月の
+   進行方向（+T・順行）。出口速度 14.0 は地表の円軌道速度（約17.5）を
+   下回るため、射出だけでは周回に入らず船の初回噴射と一体の出発になる
+   （推定器の実測で決定: 初回噴射までの滑空でも地表へ落ちない範囲で、
+   帰投コストが捕捉軌道経由と同帯域に収まる値）。トラック長 400 は
+   基地点から射出方向へ進んだ出口点までの距離 */
+const KOYOMI_MD_EXIT_V = 14.0;
+const KOYOMI_MD_TRACK = 400;
+/* 射出方向 +T は月の母惑星まわりの順行方向（台帳#116）: 速度は母惑星に
+   対する相対速度で取る（絶対速度は母惑星自身の公転と混ざり、向きが違う） */
+function surfaceLaunchDir(moon, planets){
+  const host = moon.moonOf ? ((planets || (S && S.planets) || []).find(p => p.name === moon.moonOf) || null) : null;
+  const vx = moon.vx - (host ? host.vx : 0), vy = moon.vy - (host ? host.vy : 0), vz = moon.vz - (host ? host.vz : 0);
+  const v = Math.hypot(vx, vy, vz) || 1;
+  return { x: vx / v, y: vy / v, z: vz / v };
+}
+function surfaceExitOffset(moon, planets){
+  const bp = moonBasePointIn(moon, planets || (S && S.planets) || []);
+  const T = surfaceLaunchDir(moon, planets);
+  return { x: (bp.x - moon.x) + T.x * KOYOMI_MD_TRACK, y: (bp.y - moon.y) + T.y * KOYOMI_MD_TRACK, z: (bp.z - moon.z) + T.z * KOYOMI_MD_TRACK };
+}
+/* 出発の錨（接舷先／着陸天体）に対する推定オプションの単一入口。
+   推定器・実行側ともこの形で公表出口を渡す（#76 単一化） */
+function departureEstOpts(anchorBody, targetBody, planets){
+  if(!anchorBody) return { depSep: null, depAnchor: null, mdExitV: null, mdExitOffset: null };
+  if(anchorBody.isMoon) return { depSep: surfaceLaunchDir(anchorBody, planets), depAnchor: snapBodyState(anchorBody), mdExitV: KOYOMI_MD_EXIT_V, mdExitOffset: surfaceExitOffset(anchorBody, planets) };
+  const isStation = (anchorBody === S.station) || (S.station && anchorBody.name === S.station.name);
+  return { depSep: computeDepSep(anchorBody, targetBody), depAnchor: snapBodyState(anchorBody), mdExitV: isStation ? MD_EXIT_V : null, mdExitOffset: null };
+}
+function currentAnchorBody(){
+  if(!S) return null;
+  if(S.docked) return S.dockedTo || S.station;
+  if(S.landed) return S.landed.body;
+  return null;
+}
 function steerShipTo(dvx, dvy, dvz, accel, simDt){
   const cx = dvx - S.ship.vx, cy = dvy - S.ship.vy, cz = dvz - S.ship.vz;
   const mag = Math.hypot(cx, cy, cz);
@@ -4600,6 +4651,27 @@ function updateDepartureOps(simDt){
     pe.depSep = computeDepSep(anchor, pe.targetBody);
   }
   const distA = Math.hypot(S.ship.x - anchor.x, S.ship.y - anchor.y, S.ship.z - anchor.z);
+  /* 地表射出（台帳#114/#116）: 着陸した船の出発は港内操船ではなく、基地の
+     マスドライバーによる一括射出。出口状態は公表値そのものに置く（推定器も
+     同じ式で開始状態を置いているため、承認した計画と実飛行の出発状態が
+     一致する）。方向は射出時点の月の進行方向（+T）で、基地点はライブの
+     月状態から取り直す（待機中に月は公転し続けるため） */
+  if(pe.surfaceLaunch){
+    const moon = (S.planets || []).find(p => p.name === pe.surfaceLaunch.moonName) || null;
+    if(moon){
+      const bp = moonBasePoint(moon);
+      const T = surfaceLaunchDir(moon, S.planets);
+      S.landed = null;
+      S.ship.x = bp.x + T.x * KOYOMI_MD_TRACK; S.ship.y = bp.y + T.y * KOYOMI_MD_TRACK; S.ship.z = bp.z + T.z * KOYOMI_MD_TRACK;
+      S.ship.vx = moon.vx + T.x * KOYOMI_MD_EXIT_V; S.ship.vy = moon.vy + T.y * KOYOMI_MD_EXIT_V; S.ship.vz = moon.vz + T.z * KOYOMI_MD_EXIT_V;
+      if(pe.committedPlan && pe.trackT0 == null) pe.trackT0 = S.time;
+      setPlanPhase(pe, 'depart');
+      logEvent('🚀 三浦: 射出完了——出域点に公表値どおり乗りました。本航行の噴射に入ります。');
+      logEvent('📡 こよみ基地管制: 「'+SHIP_CALLSIGN+'」、射出を確認。航路管制へ移管する。良い航行を。');
+      showOfficerPopup(HELM, '射出完了。ここから本航行に入ります。');
+      return;
+    }
+  }
   /* 港内プロファイル（2026-11-19 出発モデル組み直し、推定器 simulateHarborExit
      と同一則）: バース（錨から depSep 方向に約60＝ステーションの縁）から
      同じ方向へ直線で離れ、錨から 80（バースの構造を離れる最小の分離）で
@@ -6313,6 +6385,24 @@ function adjustedCourseSamples(cd){
   for(let i = 0; i < n; i++) out[i] = [rel[i][0] + F.x, rel[i][1] + F.y, rel[i][2] + F.z];
   return out;
 }
+/* 航路上の任意の経過秒（分離起点）の表示位置。スケジュール表の行から視点を
+   その地点へ移すために使う（2026-11-21 本人要望）。表示サンプル列（基準枠
+   変換済み）をサンプル時刻で補間する。表示専用で飛行・判定には使わない */
+function coursePointAtRelT(cd, relT){
+  if(!cd || !cd.samples || cd.samples.length < 2) return null;
+  const adj = adjustedCourseSamples(cd);
+  if(!adj || adj.length < 2) return null;
+  const totalT = courseTotalT(cd);
+  const timeAt = courseSampleTimes(cd, totalT);
+  const n = adj.length;
+  if(!(relT > 0)) return adj[0];
+  if(relT >= timeAt(n - 1)) return adj[n - 1];
+  let lo = 0, hi = n - 1;
+  while(hi - lo > 1){ const mid = (lo + hi) >> 1; if(timeAt(mid) <= relT) lo = mid; else hi = mid; }
+  const t0 = timeAt(lo), t1 = timeAt(hi), f = (t1 > t0) ? (relT - t0) / (t1 - t0) : 0;
+  const a = adj[lo], b = adj[hi];
+  return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+}
 /* 表示用の会合点（基準枠変換済みの航路終端）。カメラの航路画・タップ判定はこちらを使う */
 function interceptPointDisplay(){
   const cd = courseDataCached();
@@ -6593,7 +6683,10 @@ function updatePlanLineMesh(){
         const prefix = isDest ? '🎯 ' : (isFix ? '◆ ' : '▶ ');
         const lbl = makeWpLabelSprite(prefix + w.name, 'ETA ' + fmtEtaShort(cd.baseTime + (w.t || 0)), cssCol);
         lbl.position.set(wpPos[0] - ref.x, wpPos[1] - ref.y, wpPos[2] - ref.z);
-        lbl.userData = { worldPos: wpPos, rawPos, tAbs, fixRef, isNext, isDest, isFix, isPassed, isLabel: true, wpIndex: i, origHex: hex };
+        /* userData は上書きでなくマージする: makeWpLabelSprite が入れた aspect
+           （#99 可変幅）を消すと、拡縮側が fallback の 4 に倒れて短い題の
+           チップが横に膨らむ（2026-11-21 特定） */
+        Object.assign(lbl.userData, { worldPos: wpPos, rawPos, tAbs, fixRef, isNext, isDest, isFix, isPassed, isLabel: true, wpIndex: i, origHex: hex });
         planWpGroup.add(lbl);
       }
     });
@@ -6723,7 +6816,7 @@ function rebuildTrafficTrajectories(){
     [[Math.floor(pts.length / 2), traj.times[Math.floor(pts.length / 2)] || 0], [pts.length - 1, traj.dur]].forEach(([idx, dt]) => {
       const sp = makeWpLabelSprite('🚢 ' + (n.name || '交通船'), fmtDayClock(S.time + dt) + ' 予定', css);
       sp.position.set(pts[idx][0] - ref.x, pts[idx][1] - ref.y, pts[idx][2] - ref.z);
-      sp.userData = { worldPos: pts[idx], isTrajChip: true };
+      Object.assign(sp.userData, { worldPos: pts[idx], isTrajChip: true }); /* aspect（#99）を残す */
       trafficTrajGroup.add(sp);
       npcChips.push(sp);
     });
@@ -7412,6 +7505,7 @@ function updateCourseRibbon(ref){
       tk.userData.tickKey = key;
       const sp = makeWpLabelSprite('⏱', fmtEtaShort(eta), '#7dd3fc');
       tk.material.map = sp.material.map; tk.material.needsUpdate = true;
+      tk.userData.aspect = sp.userData.aspect; /* #99: 可変幅を追随（出発チップと同作法。これが無く fallback 4 で横に膨らんでいた） */
     }
     const d = Math.max(10, camera.position.distanceTo(_lookTmp.set(p[0], p[1], p[2])));
     tk.position.set(p[0], p[1] + d * 0.03, p[2]);
@@ -7449,6 +7543,7 @@ function rebuildDestArcIfNeeded(cd){
     const chip = makeWpLabelSprite(tb.name, fmtEtaShort(S.time + T * 0.5), '#aebadd');
     destMidChip.material.map = chip.material.map;
     destMidChip.material.needsUpdate = true;
+    destMidChip.userData.aspect = chip.userData.aspect; /* #99: 可変幅を追随 */
   }
 }
 function updateDestOrbitViz(ref){
@@ -7620,6 +7715,7 @@ function makeShipMarkerTexture(){
   x.beginPath(); x.arc(64, 64, 11, 0, Math.PI * 2); x.fill();
   return new THREE.CanvasTexture(c);
 }
+
 function buildSystemMeshes(){
   if(!scene) return;
   if(sysGroup) scene.remove(sysGroup);
@@ -7934,6 +8030,12 @@ function updateCamera(){
       if(tb){ ax = tb.x - ref2.x; ay = tb.y - ref2.y; az = tb.z - ref2.z; }
     } else if(viewState.view === 'port' && S.station){
       ax = S.station.x - ref2.x; ay = S.station.y - ref2.y; az = S.station.z - ref2.z;
+    } else if(viewState.view === 'point'){
+      /* スケジュール表で行を選んだ地点（2026-11-21）。表示サンプル列から
+         毎フレーム引き直すので、基準天体の移動にもそのまま追随する */
+      const cd = courseDataCached();
+      const pt = cd ? coursePointAtRelT(cd, viewState.pointRelT || 0) : null;
+      if(pt){ ax = pt[0] - ref2.x; ay = pt[1] - ref2.y; az = pt[2] - ref2.z; }
     } else if(viewState.view === 'route'){
       const ip = interceptPointDisplay(); /* #80: 錨は表示と同じ基準枠で */
       if(ip){
@@ -8065,7 +8167,7 @@ function setCamButtons(){ refreshViewBar(); }
    カメラの錨（注視点）と距離だけを操る。角度（az/pol）は常に船長の自由。
    名前表示はビュー操作から分離した表示トグル（btn-view-labels） */
 let viewState = { mode: 'auto', view: null, _routeSep: 0 };
-const VIEW_NAMES = { ship: '自船の周辺', route: '航路の全体', dest: '目的地の周辺', port: '港の周辺' };
+const VIEW_NAMES = { ship: '自船の周辺', route: '航路の全体', dest: '目的地の周辺', port: '港の周辺', point: '予定の地点' };
 function currentAutoView(){
   if(S && S.docked) return { name: '港の周辺', reason: '接舷中' };
   const pe = S && S.planExec;
@@ -8122,6 +8224,28 @@ function selectView(v){
         camDistTarget = Math.max(1500, Math.min(4e6, sep * 0.45));
       }
     }
+  }
+  closeViewPicker();
+  refreshViewBar();
+}
+/* スケジュール表の行から、その地点へ視点を移す（2026-11-21 本人要望）。
+   既存の手動の見方の仕組みに 'point' として載せる。相は選んだ時点のものを
+   記録し、フェーズ変化で AUTO へ戻る作法（#80）も他の見方と揃える */
+function selectViewPoint(relT){
+  viewState.mode = 'manual'; viewState.view = 'point'; viewState.pointRelT = relT; viewState._routeSep = 0;
+  viewState._phaseAtPick = (S && S.planExec && S.planExec.active) ? S.planExec.phase : '';
+  cam.manualHold = true; camDistTarget = null;
+  cam.follow = false; camDistTarget = 4000;
+  /* 遠い地点はカットで寄せる: 注視点の lerp（0.10/フレーム）は数十万単位の
+     移動では収束まで何秒も残差が残り、「選んだ地点」が画角の外に居続ける。
+     5,000 以上離れていたら注視点を地点へ直接置き、残りは毎フレームの
+     追随（基準天体の移動分）に任せる */
+  const cd = courseDataCached();
+  const pt = cd ? coursePointAtRelT(cd, relT) : null;
+  if(pt && typeof cam !== 'undefined' && cam.target && typeof getFrameRefPos === 'function'){
+    const ref = getFrameRefPos();
+    const gx = pt[0] - ref.x, gy = pt[1] - ref.y, gz = pt[2] - ref.z;
+    if(Math.hypot(gx - cam.target.x, gy - cam.target.y, gz - cam.target.z) > 5000) cam.target.set(gx, gy, gz);
   }
   closeViewPicker();
   refreshViewBar();
@@ -8751,6 +8875,23 @@ function convResupplyPossible(){
   const reserve = S.maxDv * ((planPanelState && planPanelState.reserve) || 10) / 100;
   return (S.maxDv - need) >= reserve;
 }
+/* 着陸路を提示してよいか（台帳#115）: 捕捉軌道にいて（接舷・着陸・計画
+   実行中のいずれでもなく）、月へ束縛された軌道にあり、降下の照準が作れて、
+   降下の見積もりを払っても推進剤が残る時だけ true。満たさない着陸路は
+   「無い窓」と同じく提示しない */
+function descentAvailable(){
+  if(!S || S.docked || S.landed || S.failed) return false;
+  if(S.planExec && S.planExec.active) return false;
+  const moon = (S.planets || []).find(p => p.isMoon);
+  if(!moon) return false;
+  const info = relInfo(S.ship, moon);
+  if(!info || info.dist > 18000) return false;
+  const e = (info.rel * info.rel) / 2 - moon.gm / Math.max(1, info.dist);
+  if(e >= 0) return false;
+  const plan = findDescentBurn(S.ship, moon, S.planets, S.sys.starGM, S.time);
+  if(!plan || plan.miss > 1500) return false;
+  return S.dv > plan.totalEst + 5;
+}
 function convVarFeasible(vv){
   if(!vv || !vv.est || !vv.est.ok) return false;
   const r = vv.est.impactRisk;
@@ -8838,6 +8979,8 @@ function convCond(expr){
   if(expr === 'state:plan.window_none == true') return !!(planPanelState && planPanelState.windowNone && !planPanelState.windowPick);
   if(expr === 'state:plan.resupply_possible == true') return convResupplyPossible();
   if(expr === 'state:resupply.executable == true') return resupplyExecutableHere();
+  if(expr === 'state:plan.descent_available == true') return descentAvailable();
+  if(expr === 'state:ship.landed == true') return !!(S && S.landed);
   if(expr === 'state:resupply.stock_ok == true') return !!(S.res && S.res.prop >= 15 && S.res.sup >= 10 && S.res.cred >= 20);
   if(expr === 'state:tutorial.delegated == true') return !!(S.tutorial && S.tutorial.delegated);
   if(expr === 'state:tutorial.delegated == false') return !(S.tutorial && S.tutorial.delegated);
@@ -8908,6 +9051,7 @@ function convApplyEffects(effects){
         logEvent('⚠️ 補給を実施できませんでした（接舷状態でないか、在庫が不足しています）。');
       }
     }
+    else if(e.descent){ cs.afterEnd = () => { startDescentPlan(); }; }
     else if(e.start_conv){ const nid = e.start_conv; cs.afterEnd = () => { startConversation(nid); }; }
     else if(e.open_tracking){ cs.afterEnd = () => { if(typeof openPlanTracking === 'function') openPlanTracking(); }; }
     else if(e.open_requests){ cs.afterEnd = () => { if(typeof openRequestPanel === 'function') openRequestPanel(); }; }
@@ -9423,9 +9567,14 @@ function renderTimelinePanel(){
      着くかを表で出す。オンライン化した時、公示された時刻表が世界の予測の
      土台になる（定期便の世界では予定は公開情報） */
   const pd = pe.planDoc;
-  const fixes = (pd.fixes || '').split('→').map(s => s.trim()).filter(Boolean);
-  const origin = fixes.length ? fixes[0] : '出発地';
-  const dest = fixes.length ? fixes[fixes.length - 1] : (pe.targetBody ? pe.targetBody.name : '目的地');
+  /* planDoc.fixes はフィックス点オブジェクトの配列（commit 側の実装）。文字列
+     前提で split して例外になり、計画がある間スケジュール表が一切描けなく
+     なっていた（2026-11-21 特定）。旧セーブの文字列形式も受けられるよう両対応 */
+  const fixNames = typeof pd.fixes === 'string'
+    ? pd.fixes.split('→').map(s => s.trim()).filter(Boolean)
+    : (Array.isArray(pd.fixes) ? pd.fixes.map(f => (f && f.name) || '').filter(Boolean) : []);
+  const origin = fixNames.length ? fixNames[0] : '出発地';
+  const dest = fixNames.length ? fixNames[fixNames.length - 1] : (pe.targetBody ? pe.targetBody.name : '目的地');
   const depT = (pe.waitUntil && pe.waitUntil > pe.startT) ? pe.waitUntil : pe.startT;
   const baseT = pe.trackT0 != null ? pe.trackT0 : depT + (pe.planHarborTime || 0);
   const arrLabel = pe.needDock ? '到着（接舷）' : ((pe.targetBody && pe.targetBody.isMoon) ? '到着（捕捉軌道）' : '到着');
@@ -9436,12 +9585,18 @@ function renderTimelinePanel(){
   }
   rows.push({ t: baseT + (pd.plannedTime || pe.trackDur || 0), ev: arrLabel, place: dest });
   rows.sort((a, b) => a.t - b.t);
+  /* 行を選ぶと、その地点へ視点が移動する（2026-11-21 本人要望）。地点は
+     航路サンプル列上の経過秒（分離起点）で持ち、描画のたびに付け直す */
+  const cdJump = courseDataCached();
+  const canJump = !!(cdJump && cdJump.samples && cdJump.samples.length > 1);
   h += '<div class="ship-sec">' + (pd.routeName || '航程') + (pd.course ? ' — ' + pd.course : '') + '</div>';
   h += '<table class="sched"><tr><th>時刻</th><th>出来事</th><th>場所</th></tr>';
   for(const r of rows){
-    h += '<tr' + (r.t < S.time ? ' class="past"' : '') + '><td class="st-t">' + fmtDayClock(r.t) + '</td><td>' + r.ev + '</td><td>' + r.place + '</td></tr>';
+    const cls = (r.t < S.time ? 'past' : '') + (canJump ? ' sched-jump' : '');
+    h += '<tr' + (cls ? ' class="' + cls.trim() + '"' : '') + (canJump ? ' data-relt="' + Math.max(0, Math.round(r.t - baseT)) + '"' : '') + '><td class="st-t">' + fmtDayClock(r.t) + '</td><td>' + r.ev + '</td><td>' + r.place + '</td></tr>';
   }
   h += '</table>';
+  if(canJump) h += '<div class="tl-hint">行を選ぶと、その地点へ視点が移動します</div>';
   /* 船長の日課（2026-11-20、台帳#92）: 指示を受けていない時間に船長が何を
      しているかを予測できるよう、日課を公示する。夜間は当直と航行AIが運航し、
      判断が要る場面でのみ船長を呼ぶ（資料「時間と当直」の作法） */
@@ -9589,7 +9744,9 @@ plan_m0_outbound: { title: '計画会議（M0往路）', start: 'n01', nodes: {
   n9d: { type: 'log', next: 'end', text: '航宙計画は判断保留 —— 出発窓での待機を見送り。条件（積荷・予備）の見直し後に再計算する。' }
 } },
 plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
-  n01: { type: 'say', who: 'takahashi_ren', next: 'n02', text: '船長、補給の高橋です。「あけぼの」からの受け取りは完了、積荷は固定まで済んでいます。点検も完了しています。それより前には、どのみち出られません。' },
+  n01: { type: 'say_variants', who: 'takahashi_ren', next: 'n02', variants: [
+    { when: 'state:ship.landed == true', text: '船長、補給の高橋です。基地での受け入れは完了、積荷は固定まで済んでいます。地表での点検も完了しています。射出の準備はできています。' },
+    { when: 'default', text: '船長、補給の高橋です。「あけぼの」からの受け取りは完了、積荷は固定まで済んでいます。点検も完了しています。それより前には、どのみち出られません。' } ] },
   n02: { type: 'say', who: 'miura_aoi', next: 'n03', text: '航法の三浦です。帰投便の出発時刻を計算します。定期便ですから、出発は窓の時刻に合わせるのが本筋です。候補を根拠つきで出します。' },
   n03: { type: 'calc', title: '帰投計画を計算中', sub: '出発時刻の候補を走査しています。窓がなければ、会合周期の次の周期へ走査を延ばします。', next: 'n03b', stages: [
     { name: '最速出発の推定', task: 'estimate:immediate' }, { name: '帰投窓の走査', task: 'scan:return_window_one_period' }, { name: '安全性の検証', task: 'verify:impact_and_reserve' } ] },
@@ -9597,6 +9754,7 @@ plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n05i: { type: 'say', who: 'miura_aoi', next: 'n06i', text: '計算時点すぐに出発できる案があります。必要量は {est.ret.now.need}、最良の案で出発できます。窓の時刻まで待てば安くなる可能性はあります。時刻は船長のお決めで。' },
   n06i: { type: 'choice', options: [
     { label: '最良の案でこの時刻に出発する', primary: true, goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] },
+    { label: '地表基地へ降下して補給を受ける（着陸路）', when: 'state:plan.descent_available == true', goto: 'n20d' },
     { label: '計画パネルで窓も確認する', goto: 'n07i' } ] },
   n10i: { type: 'say', who: 'miura_aoi', next: 'n13i', text: '承知しました。{choice.variant_name}で帰投します。所要 {choice.time}、Δv {choice.dv}、到着 {choice.arr}。' },
   n13i: { type: 'log', next: 'end', text: '帰投計画を承認 —— 計算時点出発（{choice.variant_name}／必要Δv {choice.dv}／残量 {dv.remaining}）。' },
@@ -9608,13 +9766,15 @@ plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n06: { type: 'choice', options: [
     { label: '最良窓の時刻で出発する（それまで捕捉軌道で待機）', primary: true, when: 'state:plan.window_found == true', goto: 'n10' },
     { label: '次の周期の窓まで待つ', when: 'state:plan.next_window_feasible == true', goto: 'n11' },
-    { label: '計算時点の案で出発する', when: 'state:plan.any_feasible == true', goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] } ] },
+    { label: '計算時点の案で出発する', when: 'state:plan.any_feasible == true', goto: 'n10i', effects: [ { plan_diff: { kind: 'set_variant', variant: 'recommended' } }, { commit: true } ] },
+    { label: '地表基地へ降下して補給を受ける（着陸路）', when: 'state:plan.descent_available == true', goto: 'n20d' } ] },
   n04n: { type: 'grounds', title: '帰投 — 出発時刻ごとの必要量（根拠）', next: 'n05n', rows: [
     [ '計算時点の出発', '{est.ret.now.need}' ], [ '走査範囲内の成立する窓', 'なし' ], [ '走査した範囲', '{est.ret.scan.span} 先まで' ], [ '現在の残量', '{dv.remaining}' ] ],
     note: '走査は {est.ret.scan.span} 先まで行いましたが、予備を確保して成立する出発窓はありませんでした。即時出発も残量では足りません。実在しない窓は提示しません。' },
   n05n: { type: 'say', who: 'miura_aoi', next: 'n06n', text: '正直に言います。{est.ret.scan.span} 先まで出発時刻を探しましたが、成立する窓はありませんでした。計算時点の出発も {est.ret.now.need} かかって、残量 {dv.remaining} では足りません。嘘の窓は出せません。' },
   n06n: { type: 'choice', options: [
     { label: '捕捉軌道で待機し、改めて計算させる', primary: true, goto: 'n10n' },
+    { label: '地表基地へ降下して補給を受ける（着陸路）', when: 'state:plan.descent_available == true', goto: 'n20d' },
     { label: '計画パネルで根拠を確認する', goto: 'n07n' } ] },
   n10n: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } } ], next: 'n13n' },
   n13n: { type: 'log', next: 'end', text: '帰投計画は保留 —— {est.ret.scan.span} 先まで走査して成立する窓なし（計算時点 {est.ret.now.need}／残量 {dv.remaining}）。捕捉軌道で待機し、幾何が変われば再計算する（計画パネルからいつでも再計算できる）。' },
@@ -9631,7 +9791,12 @@ plan_m0_return: { title: '計画会議（帰投）', start: 'n01', nodes: {
   n10: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n11: { type: 'effect', effects: [ { plan_diff: { kind: 'hold_position' } }, { plan_diff: { kind: 'set_departure' } }, { schedule: { action: 'publish', ref: 'self_plan' } } ], next: 'n12' },
   n12: { type: 'say', who: 'miura_aoi', next: 'n13', text: '承知しました。{choice.depart} までは捕捉軌道で待機し、その時刻に出発します。待機中は軌道の維持だけ当直が見ています。何かあれば、その時点でお伺いします。' },
-  n13: { type: 'log', next: 'end', text: '帰投計画を承認 —— 捕捉軌道待機のうえ {choice.depart} に出発（必要Δv {choice.need}／残量 {dv.remaining}）。計算時点の案は {est.ret.now.need} で不成立のため、窓の時刻を採用。' }
+  n13: { type: 'log', next: 'end', text: '帰投計画を承認 —— 捕捉軌道待機のうえ {choice.depart} に出発（必要Δv {choice.need}／残量 {dv.remaining}）。計算時点の案は {est.ret.now.need} で不成立のため、窓の時刻を採用。' },
+  n20d: { type: 'say', who: 'miura_aoi', next: 'n21d', text: '地表基地への着陸路ですね。捕捉軌道から動力降下して、こよみ地表基地に着陸します。着陸すれば、基地で補給が受けられます。補給のあとは、基地のマスドライバーで射出して帰投する形になります。降下の見積もりは、開始時に日誌へ出します。' },
+  n21d: { type: 'choice', options: [
+    { label: '降下する', primary: true, goto: 'n22d', effects: [ { descent: true } ] },
+    { label: 'やめておく', goto: 'n03' } ] },
+  n22d: { type: 'log', next: 'end', text: '帰投は地表経由に変更 —— 捕捉軌道からこよみ地表基地へ降下し、補給のうえ射出して帰投する。' }
 } },
 delegation_scope: { title: '委任範囲の確認', start: 'n01', nodes: {
   n01: { type: 'say', who: 'miura_aoi', next: 'n02', text: '船長、当直に任せる範囲を確認させてください。計画の範囲内の定型——噴射の実施、軌道の維持、予定どおりの手順——は、こちらで進めて事後にまとめて報告します。' },
@@ -10221,6 +10386,19 @@ bindPadHold('vpad-zoom-i', () => padZoom(1 / 1.18));
 bindPadHold('vpad-zoom-o', () => padZoom(1.18));
 document.getElementById('vpad-auto').addEventListener('click', ()=>{ playSfx('click'); backToAuto(); closeViewPad(); });
 document.getElementById('vpad-route').addEventListener('click', ()=>{ playSfx('click'); selectView('route'); closeViewPad(); });
+/* スケジュール表の行タップ → その地点へ視点移動（2026-11-21）。表は1秒ごとに
+   再描画されるため、行ではなく表の器に委譲で付ける */
+{ const _tlBody = document.getElementById('timeline-body');
+  if(_tlBody) _tlBody.addEventListener('click', (e) => {
+    const tr = e.target && e.target.closest ? e.target.closest('tr.sched-jump') : null;
+    if(!tr) return;
+    const relT = parseFloat(tr.getAttribute('data-relt'));
+    if(!isFinite(relT)) return;
+    playSfx('click');
+    selectViewPoint(relT);
+    const tp = document.getElementById('timeline-panel');
+    if(tp) tp.classList.remove('open');
+  }); }
 document.getElementById('btn-view-auto').addEventListener('click', ()=>{ playSfx('click'); backToAuto(); });
 document.querySelectorAll('.vp-card').forEach(b=>b.addEventListener('click', ()=>{ playSfx('click'); selectView(b.dataset.view); }));
 document.getElementById('btn-tap-hint-x').addEventListener('click', ()=>{ playSfx('click'); dismissTapHint(); });

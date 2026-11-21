@@ -1020,6 +1020,11 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw, md){
      出域点・出口速度に着地する */
   const a = (md && md.anchor0) ? { x: md.anchor0.x, y: md.anchor0.y, z: md.anchor0.z, vx: md.anchor0.vx, vy: md.anchor0.vy, vz: md.anchor0.vz }
     : { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
+  /* 錨が pls 内の天体そのものの場合（月の地表射出）、錨の伝播に全天体の
+     加速度を使うと自分自身の重力（距離 0）で発散する。錨自身を除いた
+     加速度で進める（ステーション錨は pls に無いため従来どおり） */
+  const aIdx = (md && md.anchor0 && md.anchor0.name) ? pls.findIndex(p => p.name === md.anchor0.name) : -1;
+  const aAcc = aIdx >= 0 ? accs[aIdx] : accFull;
   const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   const h = 2;
   let t = 0, dvHarbor = 0;
@@ -1044,7 +1049,7 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw, md){
      引き継ぐ（横向きの速度をため込まない）。 */
   while(t < 600){
     for(let i = 0; i < pls.length; i++) rk4StepState(pls[i], h, pls[i].isMoon ? accs[i] : sAcc);
-    rk4StepState(a, h, accFull);
+    rk4StepState(a, h, aAcc);
     rk4StepState(s, h, accFull);
     t += h;
     const distA = Math.hypot(s.x - a.x, s.y - a.y, s.z - a.z);
@@ -1055,8 +1060,12 @@ function simulateHarborExit(ship, depSep, starGM, planetsRaw, md){
       if(md){
         /* 出口状態は港の公表値で固定（台帳#113）: 位置＝錨＋depSep×80、
            速度＝錨の速度＋depSep×公表出口速度。射出は港の設備のため
-           港内 Δv は 0（従来の自力出発は dvHarbor を数え、両航路を残す） */
-        s.x = a.x + depSep.x * 80; s.y = a.y + depSep.y * 80; s.z = a.z + depSep.z * 80;
+           港内 Δv は 0（従来の自力出発は dvHarbor を数え、両航路を残す）。
+           地表射出（台帳#114/#116）では出口点が錨中心から depSep×80 では
+           なく基地点＋射出方向×トラック長になるため、md.exitOffset が
+           渡された場合はそのオフセット（錨中心相対）を出口点に使う */
+        const off = md.exitOffset || { x: depSep.x * 80, y: depSep.y * 80, z: depSep.z * 80 };
+        s.x = a.x + off.x; s.y = a.y + off.y; s.z = a.z + off.z;
         s.vx = a.vx + depSep.x * md.exitV; s.vy = a.vy + depSep.y * md.exitV; s.vz = a.vz + depSep.z * md.exitV;
         dvHarbor = 0;
       }
@@ -1254,6 +1263,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   const arrivalDist = o.arrivalDist != null ? o.arrivalDist : 12;
   /* 出発母港のスナップショット（2026-11-19）: 初回噴射のクリアランス判定に使う */
   const depAnchor = o.depAnchor ? { x: o.depAnchor.x, y: o.depAnchor.y, z: o.depAnchor.z, vx: o.depAnchor.vx, vy: o.depAnchor.vy, vz: o.depAnchor.vz } : null;
+  const depAnchorName = o.depAnchor ? (o.depAnchor.name || null) : null;
   const needDock = o.needDock !== false;
   const scale = closingScale || 1.0;
   const kScale = typeof SCALE_K !== 'undefined' ? SCALE_K : 386700;
@@ -1261,7 +1271,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
   const s = { x: ship.x, y: ship.y, z: ship.z, vx: ship.vx, vy: ship.vy, vz: ship.vz };
   let dvHarbor = 0, harborTime = 0;
   if(o.depSep){ /* v0.6.4: 接舷出発は港内航行を実操船則で回し、出域状態から始める（下記注記） */
-    const har = simulateHarborExit(ship, o.depSep, starGM, o.planets, o.mdExitV != null ? { exitV: o.mdExitV, anchor0: o.depAnchor || null } : null);
+    const har = simulateHarborExit(ship, o.depSep, starGM, o.planets, o.mdExitV != null ? { exitV: o.mdExitV, anchor0: o.depAnchor || null, exitOffset: o.mdExitOffset || null } : null);
     s.x = har.state.x; s.y = har.state.y; s.z = har.state.z;
     s.vx = har.state.vx; s.vy = har.state.vy; s.vz = har.state.vz;
     dvHarbor = har.dvHarbor; harborTime = har.time;
@@ -1407,9 +1417,12 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      含まれず recordBody の対象外だったため、impactRisk にも載らなかった） */
   let departClearMin = null;
   const departClearBurn = (d) => {
-    const KEEP = 200, HORIZON = 900; /* 55→200（2026-11-21 #137: 実飛行は出発噴射の幾何ずれで推定軌道から最大 ~460 逸れるため、衝突半径 40＋初期ずれ許容 ~160 を見込む。届かなければ遅延・回転でも届かず、案は窓待ちへ倒れる＝#90/#122 の設計どおり） */
+    const aBody = depAnchorName ? pls.find(p => p.name === depAnchorName) : null;
+    const KEEP = (aBody && surfaceRadius(aBody) > 100) ? surfaceRadius(aBody) + 15 : 200, HORIZON = 900; /* 小錨（ステーション等）の KEEP は 55→200（2026-11-21 #137: 実飛行は出発噴射の幾何ずれで推定軌道から最大 ~460 逸れるため、衝突半径 40＋初期ずれ許容 ~160 を見込む。届かなければ遅延・回転でも届かず、案は窓待ちへ倒れる＝#90/#122 の設計どおり） */
     if(Math.hypot(depAnchor.x - s.x, depAnchor.y - s.y, depAnchor.z - s.z) > 3000) return d;
-    const acc = fullAccFn(starGM, pls);
+    /* 錨が pls 内の天体なら、錨の伝播は自身の重力を除く（地表射出の錨＝月） */
+    const aIdx2 = depAnchorName ? pls.findIndex(p => p.name === depAnchorName) : -1;
+    const acc = aIdx2 >= 0 ? accExcluding(starGM, pls, aIdx2) : fullAccFn(starGM, pls);
     /* 錨を指定時刻まで進めた状態 */
     const anchorAt = (epochT) => {
       const pa = { x: depAnchor.x, y: depAnchor.y, z: depAnchor.z, vx: depAnchor.vx, vy: depAnchor.vy, vz: depAnchor.vz };
@@ -1525,9 +1538,10 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
        会議・窓の仕組みが次の窓や他案へ倒れる。bestRisk は最小高度の記録なので
        錨の高度（最接近 − 40）がそれより小さい時だけ差し替える */
     if(departClearMin != null){
-      const altA = departClearMin - 40;
+      const aSurf = anchorBody ? surfaceRadius(anchorBody) : 40;
+      const altA = departClearMin - aSurf;
       if(!bestRisk || altA < bestRisk.minDist - bestRisk.surfaceR){
-        bestRisk = { body: (depAnchor && depAnchor.name) || '出発地', minDist: departClearMin, surfaceR: 40, margin: 160 }; /* KEEP 200 と一致（margin = KEEP − 表面半径 40）。承認可否（minDist < surfaceR + margin で不成立）が KEEP 判定と揃う */
+        bestRisk = { body: depAnchorName || '出発地', minDist: departClearMin, surfaceR: aSurf, margin: aSurf > 100 ? 15 : 160 }; /* 小錨は departClearBurn の KEEP 200 と一致させる（margin = KEEP − 表面半径）。これで承認可否（minDist < surfaceR + margin で不成立）が KEEP 判定と揃う */
         bestAlt = altA;
       }
     }
@@ -1544,6 +1558,13 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
      反転する境界があった（v0.6.5 残件4）。反復上限 400,000 が歯止めであることは
      旧コメントの整理どおり。刻み実行（job.step）は壁時計を結果に使わない。 */
   let iterCount = 0, lastRel = 0;
+  /* 公表出口での出発（マスドライバー）では、出発母港の安全は出口状態の
+     構成と初回噴射のクリアランス判定が担う。地表射出のように母港天体の
+     擦過マージン圏内から始まる計画では、上昇中の最接近が計画全体の
+     impactRisk を毒するため、圏外へ抜けるまでは母港を擦過台帳から外す
+     （地表そのものへの衝突は引き続き検出する）。台帳#114/#116 */
+  const anchorBody = depAnchorName ? (pls.find(p => p.name === depAnchorName) || null) : null;
+  let anchorCleared = !(anchorBody && o.mdExitV != null);
   const recordBody = (b, ax0, ay0, az0) => {
     const sr = surfaceRadius(b), mg = impactMargin(sr);
     const bx0 = s.x - b.x, by0 = s.y - b.y, bz0 = s.z - b.z;
@@ -1721,6 +1742,13 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     propStar();
     timeTotal += h;
     for(let i = 0; i < pls.length; i++){
+      if(!anchorCleared && pls[i] === anchorBody){
+        const srA = surfaceRadius(pls[i]);
+        const ddA = Math.hypot(s.x - pls[i].x, s.y - pls[i].y, s.z - pls[i].z);
+        if(ddA < srA){ surfaceHit = true; hitCount++; }
+        if(ddA > srA + impactMargin(srA)) anchorCleared = true;
+        else continue;
+      }
       recordBody(pls[i], prevRel[i][0], prevRel[i][1], prevRel[i][2]);
     }
     recordBody(starBody, prevStar[0], prevStar[1], prevStar[2]);
