@@ -23,7 +23,7 @@
 <body>
 <div id="view"></div>
 <div id="labels"></div>
-<div id="hud"><div class="clock" id="clock">—</div><div>つむぎ宙域（観覧モード）</div></div>
+<div id="hud"><div class="clock" id="clock">—</div><div id="viewLabel">つむぎ宙域（観覧モード）</div></div>
 <div id="ships"></div>
 <div id="log"></div>
 <div id="views">
@@ -299,6 +299,19 @@ function frame() {
   } else {
     off = new THREE.Vector3(Math.sin(pol) * Math.cos(az), Math.cos(pol), Math.sin(pol) * Math.sin(az)).multiplyScalar(dist);
     camera.up.set(0, 1, 0);
+  }
+  /* 現在のビューと基準を HUD に出す（基準の切り替えはビューのボタンで
+     行うこと、その対応が画面から分かるように） */
+  {
+    const vl = document.getElementById('viewLabel');
+    const nearMoonNow = viewMode === 'moon'
+      || (viewMode === 'ship' && focusShip && V3(focusShip).distanceTo(moonPos) < 50000);
+    let txt = 'つむぎ宙域（観覧モード）';
+    if (viewMode === 'wide') txt = '宙域全体 — 星基準';
+    else if (viewMode === 'host') txt = 'つむぎ近傍 — つむぎ基準';
+    else if (viewMode === 'moon') txt = 'こよみ近傍 — 月基準（公転に同期）';
+    else if (viewMode === 'ship') txt = '追尾中：' + (focusShip ? (focusShip.name || focusShip.id) : '') + (nearMoonNow ? ' — 月基準（公転に同期）' : ' — 絶対座標');
+    if (vl.textContent !== txt) vl.textContent = txt;
   }
   camera.position.copy(center).add(off);
   camera.lookAt(center);
