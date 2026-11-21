@@ -3,21 +3,38 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>観覧 — 運行中の世界</title>
+<title>観覧 — 運行中の世界（3D）</title>
 <style>
   html, body { margin: 0; padding: 0; background: #060a14; color: #dfe8f5; font-family: sans-serif; height: 100%; overflow: hidden; }
-  #view { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  #hud { position: absolute; top: 10px; left: 12px; font-size: 13px; line-height: 1.6; pointer-events: none; text-shadow: 0 1px 3px #000; }
+  #view { position: absolute; inset: 0; }
+  #view canvas { display: block; }
+  #hud { position: absolute; top: 10px; left: 12px; font-size: 13px; line-height: 1.6; pointer-events: none; text-shadow: 0 1px 3px #000; z-index: 5; }
   #hud .clock { font-size: 18px; font-weight: bold; }
-  #log { position: absolute; left: 12px; bottom: 10px; font-size: 12px; line-height: 1.7; pointer-events: none; text-shadow: 0 1px 3px #000; opacity: 0.92; }
-  #ships { position: absolute; top: 10px; right: 12px; font-size: 12px; line-height: 1.7; text-align: right; pointer-events: none; text-shadow: 0 1px 3px #000; }
+  #log { position: absolute; left: 12px; bottom: 10px; font-size: 12px; line-height: 1.7; pointer-events: none; text-shadow: 0 1px 3px #000; opacity: 0.92; z-index: 5; }
+  #ships { position: absolute; top: 10px; right: 12px; font-size: 12px; line-height: 1.7; text-align: right; pointer-events: none; text-shadow: 0 1px 3px #000; z-index: 5; }
+  #views { position: absolute; bottom: 10px; right: 12px; z-index: 6; display: flex; gap: 6px; }
+  #views button { background: rgba(20,32,54,0.85); color: #cfe0f5; border: 1px solid #3a5070; border-radius: 6px; padding: 6px 10px; font-size: 12px; cursor: pointer; }
+  #views button.on { background: #2b4a73; border-color: #6f9fd8; color: #fff; }
+  .lbl { position: absolute; transform: translate(18px, -50%); font-size: 12px; color: #d7e6fa; text-shadow: 0 1px 3px #000; pointer-events: none; white-space: nowrap; z-index: 4; }
+  .lbl small { color: #93a9c8; font-size: 11px; }
+  #hint { position: absolute; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #7d92b2; pointer-events: none; z-index: 5; text-shadow: 0 1px 3px #000; }
 </style>
 </head>
 <body>
-<canvas id="view"></canvas>
+<div id="view"></div>
+<div id="labels"></div>
 <div id="hud"><div class="clock" id="clock">—</div><div>つむぎ宙域（観覧モード）</div></div>
 <div id="ships"></div>
 <div id="log"></div>
+<div id="views">
+  <button data-v="wide" class="on">宙域全体</button>
+  <button data-v="host">つむぎ近傍</button>
+  <button data-v="moon">こよみ近傍</button>
+  <button data-v="ship">船を追う</button>
+</div>
+<div id="hint">ドラッグで回転／ホイールで拡大縮小</div>
+<script src="three.min.js"></script>
+<script>if(!window.THREE){document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"><\/script>');}</script>
 <script src="flight-core.js"></script>
 <script src="world-drive.js"></script>
 <script src="schedule.js"></script>
@@ -27,18 +44,118 @@ const SCHED = window.WATCH_SCHEDULE;
 const world = WorldDrive.createWorld(SCHED.sys, SCHED.stationDef);
 for (const s of SCHED.ships) WorldDrive.addShip(world, s.id, s.name);
 for (const f of SCHED.filings) WorldDrive.filePlan(world, f);
+const shipNames = {}; for (const s of SCHED.ships) shipNames[s.id] = s.name;
+const shipRoutes = {}; for (const f of SCHED.filings) shipRoutes[f.shipId] = f.fromName + ' → ' + f.toName;
 
 const SPEED = 8; /* 世界の基準速度（#149） */
 const t0 = performance.now();
 let shownEvents = 0;
-const trails = {}; /* shipId -> [[x,y],...] つむぎ相対 */
-for (const s of SCHED.ships) trails[s.id] = [];
-let lastTrailT = -1;
 
-const cv = document.getElementById('view');
-const ctx = cv.getContext('2d');
-function resize() { cv.width = innerWidth; cv.height = innerHeight; }
-addEventListener('resize', resize); resize();
+/* 世界座標 → Three 座標：軌道面が XZ 平面になるよう (x, z, -y) へ置く */
+const V3 = (b) => new THREE.Vector3(b.x, b.z, -b.y);
+
+/* --- Three.js の場 --- */
+const container = document.getElementById('view');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+container.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x060a14);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 1, 20000000);
+scene.add(new THREE.AmbientLight(0x8899bb, 0.7));
+const sunLight = new THREE.DirectionalLight(0xfff2d8, 1.1);
+scene.add(sunLight);
+
+/* 星空（背景の点） */
+{
+  const n = 900, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const u = Math.random() * 2 - 1, th = Math.random() * Math.PI * 2, r = Math.sqrt(1 - u * u) * 6000000;
+    pos.set([r * Math.cos(th), u * 6000000, r * Math.sin(th)], i * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xaFC4e8, size: 9000, sizeAttenuation: true, fog: false })));
+}
+
+/* 天体は実寸で描く（表示ドクトリン）。見えない大きさの対象には情報層の
+   マーカーとラベルを重ねる */
+function bodyMesh(radius, color) {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(Math.max(radius, 1), 40, 28),
+    new THREE.MeshStandardMaterial({ color, roughness: 0.9, metalness: 0.05 }));
+  scene.add(m); return m;
+}
+function orbitLine(radius, color, opacity) {
+  const pts = [];
+  for (let i = 0; i <= 180; i++) { const a = i / 180 * Math.PI * 2; pts.push(new THREE.Vector3(Math.cos(a) * radius, 0, Math.sin(a) * radius)); }
+  const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),
+    new THREE.LineBasicMaterial({ color, transparent: true, opacity }));
+  scene.add(l); return l;
+}
+function marker(color) {
+  const m = new THREE.Mesh(new THREE.OctahedronGeometry(1),
+    new THREE.MeshBasicMaterial({ color }));
+  scene.add(m); return m;
+}
+
+const hostMesh = bodyMesh(6400, 0x8fe3a0);
+const moonMesh = bodyMesh(2600, 0x9fb4c8);
+const stationMesh = bodyMesh(40, 0x2dd4bf);
+const moonOrbit = orbitLine(360000, 0x5f7ca6, 0.35);
+const stationOrbit = orbitLine(25600, 0x2dd4bf, 0.4);
+const stationMark = marker(0x2dd4bf);
+const shipMarks = {}, shipTrails = {};
+for (const s of SCHED.ships) {
+  shipMarks[s.id] = marker(0xffbe78);
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(3 * 6000), 3));
+  const line = new THREE.Line(g, new THREE.LineBasicMaterial({ color: 0xffbe78, transparent: true, opacity: 0.45 }));
+  line.frustumCulled = false;
+  scene.add(line);
+  shipTrails[s.id] = { line, pts: [], lastT: -1 };
+}
+
+/* ラベル（情報層：画面上で大きさ一定の HTML） */
+const labelBox = document.getElementById('labels');
+function makeLabel(html) { const d = document.createElement('div'); d.className = 'lbl'; d.innerHTML = html; labelBox.appendChild(d); return d; }
+const hostLabel = makeLabel('つむぎ');
+const moonLabel = makeLabel('こよみ');
+const stationLabel = makeLabel('あおば <small>ステーション</small>');
+const shipLabels = {}; for (const s of SCHED.ships) shipLabels[s.id] = makeLabel(s.name);
+const tmpV = new THREE.Vector3();
+function placeLabel(el, pos, show) {
+  tmpV.copy(pos).project(camera);
+  if (!show || tmpV.z > 1 || tmpV.z < -1) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.style.left = (tmpV.x * 0.5 + 0.5) * innerWidth + 'px';
+  el.style.top = (-tmpV.y * 0.5 + 0.5) * innerHeight + 'px';
+}
+
+/* --- 視点 --- */
+let viewMode = 'wide';
+let az = 0.7, pol = 1.05, dist = 780000;
+const DIST = { wide: 780000, host: 90000, moon: 60000, ship: 26000 };
+{ const q = new URLSearchParams(location.search).get('v');
+  if (q && DIST[q]) { viewMode = q; dist = DIST[q];
+    document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === q)); } }
+document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => {
+  viewMode = b.dataset.v;
+  document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x === b));
+  dist = DIST[viewMode];
+}));
+let dragging = false, lx = 0, ly = 0;
+const cv = renderer.domElement;
+cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
+cv.addEventListener('pointermove', e => {
+  if (!dragging) return;
+  az -= (e.clientX - lx) * 0.005; pol -= (e.clientY - ly) * 0.005;
+  pol = Math.max(0.08, Math.min(Math.PI - 0.08, pol));
+  lx = e.clientX; ly = e.clientY;
+});
+cv.addEventListener('pointerup', () => { dragging = false; });
+cv.addEventListener('wheel', e => { e.preventDefault(); dist *= (e.deltaY > 0 ? 1.12 : 0.89); dist = Math.max(3000, Math.min(3000000, dist)); }, { passive: false });
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 
 function fmtClock(t) {
   const d = Math.floor(t / 86400), h = Math.floor(t % 86400 / 3600), m = Math.floor(t % 3600 / 60), s = Math.floor(t % 60);
@@ -51,50 +168,76 @@ function frame() {
   const snap = WorldDrive.snapshot(world);
   const host = snap.planets.find(p => p.name === 'つむぎ');
   const moon = snap.planets.find(p => p.name === '衛星「こよみ」') || snap.planets.find(p => p.name === 'こよみ');
-  const W = cv.width, H = cv.height;
-  const scale = Math.min(W, H) / 2 / 460000; /* 月軌道が収まる範囲 */
-  const px = (x) => W / 2 + (x - host.x) * scale;
-  const py = (y) => H / 2 - (y - host.y) * scale;
-  ctx.fillStyle = '#060a14'; ctx.fillRect(0, 0, W, H);
+  const hostPos = V3(host), moonPos = V3(moon), stPos = V3(snap.station);
 
-  /* 軌道の目安（月軌道） */
-  ctx.strokeStyle = 'rgba(140,170,220,0.18)'; ctx.beginPath(); ctx.arc(px(host.x), py(host.y), 360000 * scale, 0, Math.PI * 2); ctx.stroke();
+  hostMesh.position.copy(hostPos);
+  moonMesh.position.copy(moonPos);
+  stationMesh.position.copy(stPos);
+  moonOrbit.position.copy(hostPos);
+  stationOrbit.position.copy(hostPos);
+  /* 軌道ガイドは近似（円）として宿主中心に置く。あおばの軌道面はつむぎの
+     赤道面に近い前提の簡易表示 */
+  stationMark.position.copy(stPos);
 
-  /* 船の軌跡 */
-  if (world.now - lastTrailT > 120) {
-    lastTrailT = world.now;
-    for (const sh of snap.ships) { const tr = trails[sh.id]; tr.push([sh.x - host.x, sh.y - host.y]); if (tr.length > 4000) tr.shift(); }
+  /* 光源は恒星の方向（原点）から */
+  sunLight.position.set(-hostPos.x * 0.1 + 500000, 300000, -hostPos.z * 0.1 + 200000);
+
+  /* 視点の中心 */
+  let center = hostPos, focusShip = null;
+  if (viewMode === 'moon') center = moonPos;
+  if (viewMode === 'ship') {
+    focusShip = snap.ships.find(s => !s.dockedAt) || snap.ships[0];
+    if (focusShip) center = V3(focusShip);
   }
-  ctx.lineWidth = 1;
+  const off = new THREE.Vector3(Math.sin(pol) * Math.cos(az), Math.cos(pol), Math.sin(pol) * Math.sin(az)).multiplyScalar(dist);
+  camera.position.copy(center).add(off);
+  camera.lookAt(center);
+  camera.near = Math.max(1, dist / 1000); camera.far = dist * 40 + 8000000;
+  camera.updateProjectionMatrix();
+
+  /* マーカーはカメラ距離に応じた大きさ（情報層：見かけ一定） */
+  const markSize = dist * 0.012;
+  stationMark.scale.setScalar(markSize);
+  stationMark.rotation.y += 0.01;
+
   for (const sh of snap.ships) {
-    const tr = trails[sh.id]; if (tr.length < 2) continue;
-    ctx.strokeStyle = 'rgba(255,190,120,0.5)'; ctx.beginPath();
-    tr.forEach((pt, i) => { const X = W / 2 + pt[0] * scale, Y = H / 2 - pt[1] * scale; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); });
-    ctx.stroke();
+    const p = V3(sh);
+    const mk = shipMarks[sh.id];
+    mk.position.copy(p); mk.scale.setScalar(markSize * 0.8); mk.rotation.y -= 0.013;
+    const tr = shipTrails[sh.id];
+    if (!sh.dockedAt && world.now - tr.lastT > 90) {
+      tr.lastT = world.now;
+      tr.pts.push(p.x - hostPos.x, p.y - hostPos.y, p.z - hostPos.z);
+      if (tr.pts.length > 6000 * 3) tr.pts.splice(0, 3 * 600);
+      const attr = tr.line.geometry.getAttribute('position');
+      for (let i = 0; i < tr.pts.length; i++) attr.array[i] = tr.pts[i];
+      attr.needsUpdate = true;
+      tr.line.geometry.setDrawRange(0, tr.pts.length / 3);
+      tr.line.position.copy(hostPos);
+    }
+    if (sh.dockedAt && tr.pts.length) { tr.pts.length = 0; tr.line.geometry.setDrawRange(0, 0); }
   }
 
-  /* 天体 */
-  const dot = (x, y, r, color, label) => {
-    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(px(x), py(y), Math.max(r, 2), 0, Math.PI * 2); ctx.fill();
-    if (label) { ctx.fillStyle = '#cfe0f5'; ctx.font = '12px sans-serif'; ctx.fillText(label, px(x) + 8, py(y) - 6); }
-  };
-  dot(host.x, host.y, 6400 * scale, '#8fe3a0', 'つむぎ');
-  if (moon) dot(moon.x, moon.y, 2600 * scale, '#9fb4c8', 'こよみ');
-  dot(snap.station.x, snap.station.y, 2.5, '#2dd4bf', 'あおば');
-  for (const sh of snap.ships) {
-    if (sh.dockedAt) continue;
-    dot(sh.x, sh.y, 2.5, '#ffbe78', sh.name || sh.id);
-  }
+  /* ラベル */
+  placeLabel(hostLabel, hostPos, true);
+  placeLabel(moonLabel, moonPos, true);
+  placeLabel(stationLabel, stPos, true);
+  for (const sh of snap.ships) placeLabel(shipLabels[sh.id], V3(sh), true);
+
+  renderer.render(scene, camera);
 
   document.getElementById('clock').textContent = fmtClock(world.now) + '（×8）';
   document.getElementById('ships').innerHTML = snap.ships.map(sh =>
-    (sh.name || sh.id) + '：' + (sh.dockedAt ? sh.dockedAt + ' に係留' : '航行中') + '　Δv ' + (Math.round(sh.dvUsed * 100) / 100)).join('<br>');
+    (sh.name || sh.id) + '：' + (sh.dockedAt ? sh.dockedAt + ' に係留' : '航行中（' + (shipRoutes[sh.id] || '') + '）') + '　Δv ' + (Math.round(sh.dvUsed * 100) / 100)).join('<br>');
   if (world.events.length > shownEvents) {
     shownEvents = world.events.length;
-    const names = {}; for (const s of SCHED.ships) names[s.id] = s.name;
     document.getElementById('log').innerHTML = world.events.slice(-6).map(e => {
-      const what = e.type === 'depart' ? (e.from + ' を出発 → ' + e.to) : e.type === 'arrive' ? (e.at + ' に到着') : '噴射 ' + (e.cost != null ? Math.round(e.cost * 100) / 100 : '');
-      return fmtClock(e.t) + '　' + (names[e.shipId] || e.shipId) + '　' + what;
+      const what = e.type === 'depart' ? (e.from + ' を出発 → ' + e.to)
+        : e.type === 'arrive' ? (e.at + ' に到着')
+        : e.type === 'land' ? (e.at + ' に着陸')
+        : e.type === 'filed' ? '次の便を申告'
+        : '噴射 ' + (e.cost != null ? Math.round(e.cost * 100) / 100 : '');
+      return fmtClock(e.t) + '　' + (shipNames[e.shipId] || e.shipId) + '　' + what;
     }).join('<br>');
   }
   requestAnimationFrame(frame);
