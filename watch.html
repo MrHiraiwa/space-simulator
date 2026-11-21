@@ -203,7 +203,10 @@ function fmtClock(t) {
 
 function frame() {
   const target = T_OFFSET + (performance.now() - t0) / 1000 * SPEED;
-  if (target > world.now) WorldDrive.advanceTo(world, target);
+  /* 追いつきは1フレームあたり上限を設けて分割する: タブが背面に回ると
+     rAF が止まり、復帰時に数千秒分を一度に進めることになって画面が
+     固まる/飛ぶ。遅れは数フレームかけて取り戻す */
+  if (target > world.now) WorldDrive.advanceTo(world, Math.min(target, world.now + 240));
   const snap = WorldDrive.snapshot(world);
   const host = snap.planets.find(p => p.name === 'つむぎ');
   const moon = snap.planets.find(p => p.name === '衛星「こよみ」') || snap.planets.find(p => p.name === 'こよみ');
