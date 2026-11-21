@@ -2674,8 +2674,10 @@ function physics(simDt){
     /* 接舷・着陸中は自船の航跡を記録しない（2026-11-20 本人指摘の「線」対策）:
        泊まっている船に自分の軌跡はなく、記録すると母天体の公転弧が船から
        伸びる意味のない線になって残る。接舷中は空に保ち、離舷から記録する */
-    if(S.docked || S.landed){ if(S.ship.trail.length) S.ship.trail.length = 0; }
-    else push(S.ship);
+    /* 自船の航跡線も廃止（2026-11-21）: 実績区間は航路リボンの実績帯が担う。
+       記録自体を止め、配列は空に保つ（惑星・目標天体の軌跡は意味のある
+       データなので従来どおり記録・表示する） */
+    if(S.ship.trail.length) S.ship.trail.length = 0;
     push(S.target); S.wings.forEach(push);
   }
   updateApproachCourse();
@@ -7546,6 +7548,11 @@ function updateTrail(line, ptsArray, ref){
   line.geometry.computeBoundingSphere();
 }
 function updatePredictedTrajectory(ref){
+  /* 自船の予測軌道線は廃止（2026-11-21 本人指摘）: これから飛ぶ区間は航路
+     リボンが担っており、船から伸びる薄い線は役割が重なる上に「何の線か」
+     分からない表示だった。関数は呼び出し互換のため残し、常時非表示にする */
+  if(predLine) predLine.visible = false;
+  return;
   if(!predLine || !S || S.docked){ if(predLine) predLine.visible=false; return; }
   const r = ref || getFrameRefPos();
   const sim = { x:S.ship.x, y:S.ship.y, z:S.ship.z, vx:S.ship.vx, vy:S.ship.vy, vz:S.ship.vz };
@@ -8429,7 +8436,7 @@ function syncMeshes(){
       }
     }
   });
-  updateTrail(trailLines.ship, S.ship.trail, ref);
+  if(trailLines.ship) trailLines.ship.visible = false; /* 自船の航跡線は廃止（2026-11-21） */
   updateTrail(trailLines.target, S.target.trail, ref);
   if(frameCount % 3 === 0) updatePredictedTrajectory(ref);
   if(typeof updateFrameChips === 'function') updateFrameChips();
