@@ -6316,6 +6316,7 @@ let trafficTrajFrameKey = ''; /* #80: 基準天体が変わったら申告軌道
 let ribbonHalo = null, ribbonCore = null, ribbonPast = null, ribbonArrows = [], ribbonTicks = [], destArcLine = null, destArcArrows = [], destGhostGroup = null, destGhostSphere = null, destGhostRing = null, destMidChip = null, stationSymbol = null, tapPulseSprite = null;
 let departChip = null, departRing = null, departChipKey = ''; /* #77: 出発窓待機中の出発点マーカー */
 let orbitGroup = null, orbitLines = [], orbitBuiltAt = -1e18, orbitRealAt = 0; const orbitOff = new Set(); /* #77: 全階層の軌道線。orbitOff はラベルタップで消した天体名の集合 */
+const _orbR = new THREE.Vector3(), _orbH = new THREE.Vector3(), _orbT = new THREE.Vector3(), _orbM = new THREE.Matrix4(); /* 回転系の相対軌跡線を現在の回転系へ回す作業変数 */
 let tapPulse = null; /* {pos:[x,y,z] 絶対座標, t0: performance.now()} */
 let destArcCache = null; /* {key, tb, arrivalAbs, builtAt, T, pts:[[x,y,z]...]} */
 let destGhostPos = null; /* 絶対座標 [x,y,z] */
@@ -6894,13 +6895,15 @@ function orbitPeriodOf(r, v2, gm){
   return 2 * Math.PI * Math.sqrt(a * a * a / gm);
 }
 /* 2惑星の会合周期（相対軌跡が閉じる周期）。惑星基準で他惑星の相対軌道を
-   焼く時の伝播時間に使う。上限は焼き込みコストの歯止め（400日） */
+   焼く時の伝播時間に使う。上限は焼き込みコストの歯止め（1500日）。2026-11-21
+   までは 400 日で、あかね（876日）・うずしお（565日）の窓が途中で切れて
+   閉じ弦が大きな折れになっていた */
 function synodicPeriodOf(pa, pb, starGM){
   const per = (b) => orbitPeriodOf(Math.hypot(b.x, b.y, b.z), b.vx * b.vx + b.vy * b.vy + b.vz * b.vz, starGM);
   const t1 = per(pa), t2 = per(pb);
   if(!t1 || !t2) return 0;
   if(Math.abs(t1 - t2) < 1) return t1;
-  return Math.min(1 / Math.abs(1 / t1 - 1 / t2), 400 * 86400);
+  return Math.min(1 / Math.abs(1 / t1 - 1 / t2), 1500 * 86400);
 }
 /* 表示専用の系クローンと連成 RK4 ステッパ（#77 の焼き込みと #80 のエフェメリスで共用）。
    階層モデルは実シムと同一（惑星=恒星重力のみ／衛星・駅・船=全重力）。全重力側の
@@ -6952,7 +6955,7 @@ function makeCoupledStepper(all, stC){
     }
   };
 }
-function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip, periodOverride){
+function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip, periodOverride, rot, meta){
   const { stC, all } = systemClones(includeShip);
   const tgt = all.find(b => b.ref === targetRef);
   const host = hostRef ? all.find(b => b.ref === hostRef) : null;
@@ -6976,12 +6979,56 @@ function propagateOrbitRel(targetRef, hostRef, gmHost, includeShip, periodOverri
   const nSub = Math.max(1, Math.min(32, Math.ceil(macroH / Math.max(20, tau / 24))));
   const h = macroH / nSub;
   const stepAll = makeCoupledStepper(all, stC);
-  const N = 160, raw = [], rawV = [];
-  for(let i = 0; i <= N; i++){
-    raw.push([tgt.x - (host ? host.x : 0), tgt.y - (host ? host.y : 0), tgt.z - (host ? host.z : 0)]);
-    rawV.push([tgt.vx - (host ? host.vx : 0), tgt.vy - (host ? host.vy : 0), tgt.vz - (host ? host.vz : 0)]);
-    if(i < N) for(let k = 0; k < nSub; k++) stepAll(h);
+  /* 閉じ目の処理（2026-11-21 実機報告で是正）: 従来は公称周期ちょうどで焼いて
+     LineLoop で閉じていたため、戻りズレがそのまま閉じ弦になり、弧の潰れや
+     大きな折れになっていた。公称窓の 0.75〜1.25 倍で「始点への最接近」を探して
+     そこを終端とし、残りのズレは全弧へ線形に均して消す（歪みはズレ以下に
+     分散し、折れは残らない）。
+     rot（惑星同士の相対軌跡）は宿主の回転座標系（恒星方向／軌道角運動量／
+     進行方向）で記録する: 相対位置は慣性系では会合周期で元に戻らない（始点が
+     宿主の公転ぶん回る）が、回転系では会合周期で閉じる。描画側は現在の回転系へ
+     毎フレーム回して重ねる（updateOrbitLines） */
+  const NMAX = 200, raw = [], rawV = [];
+  const hostAxes = () => {
+    const px = host.x, py = host.y, pz = host.z;
+    const pl = Math.hypot(px, py, pz) || 1;
+    const er = [px / pl, py / pl, pz / pl];
+    let ax = py * host.vz - pz * host.vy, ay = pz * host.vx - px * host.vz, az = px * host.vy - py * host.vx;
+    const al = Math.hypot(ax, ay, az) || 1; ax /= al; ay /= al; az /= al;
+    /* 第3軸は er × hh（右手系にする。hh × er だと左手系になり、描画側の
+       makeBasis＋quaternion が反射を表せず線が壊れる） */
+    const et = [er[1] * az - er[2] * ay, er[2] * ax - er[0] * az, er[0] * ay - er[1] * ax];
+    return { er, hh: [ax, ay, az], et };
+  };
+  for(let i = 0; i <= NMAX; i++){
+    const px = tgt.x - (host ? host.x : 0), py = tgt.y - (host ? host.y : 0), pz = tgt.z - (host ? host.z : 0);
+    if(rot && host){
+      const a = hostAxes();
+      raw.push([px * a.er[0] + py * a.er[1] + pz * a.er[2], px * a.hh[0] + py * a.hh[1] + pz * a.hh[2], px * a.et[0] + py * a.et[1] + pz * a.et[2]]);
+      rawV.push([0, 0, 0]); /* 回転系の接線は閉じ目処理の後に数値微分で作る */
+    } else {
+      raw.push([px, py, pz]);
+      rawV.push([tgt.vx - (host ? host.vx : 0), tgt.vy - (host ? host.vy : 0), tgt.vz - (host ? host.vz : 0)]);
+    }
+    if(i < NMAX) for(let k = 0; k < nSub; k++) stepAll(h);
   }
+  let M = 160, bestD = Infinity;
+  for(let i = 120; i <= NMAX; i++){
+    const d = Math.hypot(raw[i][0] - raw[0][0], raw[i][1] - raw[0][1], raw[i][2] - raw[0][2]);
+    if(d < bestD){ bestD = d; M = i; }
+  }
+  raw.length = M + 1; rawV.length = M + 1;
+  const gapX = raw[M][0] - raw[0][0], gapY = raw[M][1] - raw[0][1], gapZ = raw[M][2] - raw[0][2];
+  for(let i = 1; i <= M; i++){ const f = i / M; raw[i][0] -= gapX * f; raw[i][1] -= gapY * f; raw[i][2] -= gapZ * f; }
+  if(rot){
+    for(let i = 0; i <= M; i++){
+      const ia = Math.max(0, i - 1), ib = Math.min(M, i + 1);
+      const span = (ib - ia) * macroH || macroH;
+      rawV[i] = [(raw[ib][0] - raw[ia][0]) / span, (raw[ib][1] - raw[ia][1]) / span, (raw[ib][2] - raw[ia][2]) / span];
+    }
+  }
+  const N = M;
+  if(meta) meta.rotating = !!rot;
   /* 頂点の稠密化（検収差し戻し対応）: 161 頂点のままでは頂点間隔（こよみで約 14,100）が
      そのまま「輪までの距離」の下限になり、頂点基準で測ると曲線として正しい輪でも
      最大で 2r・sin(π/320) ≈ 7,068（こよみ）外れて見える。マクロサンプル間を両端の
@@ -7026,14 +7073,14 @@ function rebuildOrbitLines(){
   const pe = S.planExec;
   const frameInfo0 = (typeof getFrameRefInfo === 'function') ? getFrameRefInfo() : { ref: 'star', body: null };
   orbitPhaseKey = (pe && pe.active ? pe.phase : '') + '|' + (pe && pe.targetBody ? pe.targetBody.name : '') + '|' + frameInfo0.ref + ':' + (frameInfo0.body && frameInfo0.body.name ? frameInfo0.body.name : '');
-  const addLine = (key, hostBody, relPts, color, opacity) => {
+  const addLine = (key, hostBody, relPts, color, opacity, rotating) => {
     if(!relPts || relPts.length < 8) return;
     const pos = new Float32Array(relPts.length * 3);
     relPts.forEach((p, i) => { pos[i * 3] = p[0]; pos[i * 3 + 1] = p[1]; pos[i * 3 + 2] = p[2]; });
     const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     const line = new THREE.LineLoop(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity, depthWrite: false }));
     line.renderOrder = 5; line.frustumCulled = false;
-    line.userData = { key, hostBody: hostBody || null };
+    line.userData = { key, hostBody: hostBody || null, rotating: !!rotating };
     orbitGroup.add(line); orbitLines.push(line);
   };
   const framePlanet = (typeof getFrameRefPlanet === 'function') ? getFrameRefPlanet() : null;
@@ -7049,7 +7096,7 @@ function rebuildOrbitLines(){
          周転円の曲線）を描く。恒星基準の画面では従来の楕円がその枠の真実 */
       if(p === framePlanet) return;
       const syn = synodicPeriodOf(p, framePlanet, S.sys.starGM);
-      if(syn) addLine('orbit:' + p.name, framePlanet, propagateOrbitRel(p, framePlanet, S.sys.starGM, false, syn), p.color || 0x64748b, 0.30);
+      if(syn){ const meta = {}; const pts = propagateOrbitRel(p, framePlanet, S.sys.starGM, false, syn, true, meta); addLine('orbit:' + p.name, framePlanet, pts, p.color || 0x64748b, 0.30, meta.rotating); }
     } else {
       addLine('orbit:' + p.name, null, propagateOrbitRel(p, null, S.sys.starGM, false), p.color || 0x64748b, 0.30);
     }
@@ -7091,6 +7138,16 @@ function updateOrbitLines(ref){
   orbitLines.forEach(line => {
     const host = line.userData.hostBody;
     line.position.set((host ? host.x : 0) - ref.x, (host ? host.y : 0) - ref.y, (host ? host.z : 0) - ref.z);
+    if(line.userData.rotating && host){
+      /* 回転系で焼いた相対軌跡は、宿主の現在の回転系（恒星方向／角運動量／
+         進行方向）へ回して重ねる。天体は常に線の上に乗り続ける */
+      const pl = Math.hypot(host.x, host.y, host.z) || 1;
+      _orbR.set(host.x / pl, host.y / pl, host.z / pl);
+      _orbH.set(host.y * host.vz - host.z * host.vy, host.z * host.vx - host.x * host.vz, host.x * host.vy - host.y * host.vx).normalize();
+      _orbT.crossVectors(_orbR, _orbH); /* er × hh（右手系。焼き込み側と一致させる） */
+      _orbM.makeBasis(_orbR, _orbH, _orbT);
+      line.quaternion.setFromRotationMatrix(_orbM);
+    }
     line.visible = !orbitOff.has(line.userData.key);
     if(line.visible) any = true;
   });
