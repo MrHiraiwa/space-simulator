@@ -27,6 +27,7 @@
 <div id="ships"></div>
 <div id="log"></div>
 <div id="views">
+  <button id="flipBtn" title="視点を軌道面の反対側へ回す">上下反転</button>
   <button data-v="wide" class="on">宙域全体</button>
   <button data-v="host">つむぎ近傍</button>
   <button data-v="moon">こよみ近傍</button>
@@ -173,12 +174,14 @@ let az = 0.7, pol = 1.05, dist = 1080000;
 const DIST = { wide: 1080000, host: 90000, moon: 60000, ship: 26000 };
 { const q = new URLSearchParams(location.search).get('v');
   if (q && DIST[q]) { viewMode = q; dist = DIST[q];
-    document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x.dataset.v === q)); } }
-document.querySelectorAll('#views button').forEach(b => b.addEventListener('click', () => {
+    document.querySelectorAll('#views button[data-v]').forEach(x => x.classList.toggle('on', x.dataset.v === q)); } }
+document.querySelectorAll('#views button[data-v]').forEach(b => b.addEventListener('click', () => {
   viewMode = b.dataset.v;
-  document.querySelectorAll('#views button').forEach(x => x.classList.toggle('on', x === b));
+  document.querySelectorAll('#views button[data-v]').forEach(x => x.classList.toggle('on', x === b));
   dist = DIST[viewMode];
 }));
+/* 上下反転: 極角を反対側へ倒し、軌道面の下から見上げる角度に切り替える */
+document.getElementById('flipBtn').addEventListener('click', () => { pol = Math.PI - pol; });
 let dragging = false, lx = 0, ly = 0;
 const cv = renderer.domElement;
 cv.addEventListener('pointerdown', e => { dragging = true; lx = e.clientX; ly = e.clientY; cv.setPointerCapture(e.pointerId); });
@@ -228,6 +231,11 @@ function frame() {
   let center = hostPos, focusShip = null, pole = null;
   if (viewMode === 'host') pole = orbitNormals.station;
   if (viewMode === 'moon') { center = moonPos; pole = orbitNormals.moon; }
+  /* 宙域全体と船追従でも系の公転面法線を極軸にする: 世界の y 軸基準だと
+     軌道面の下側に回った時に up が反転して上下感覚が壊れる（2026-11-22
+     本人指摘「下からの角度で見れない」）。法線を up に固定すれば、
+     下側からでも軌道面を基準に見上げられる */
+  if (viewMode === 'wide' || viewMode === 'ship') pole = orbitNormals.moon;
   if (viewMode === 'ship') {
     focusShip = snap.ships.find(s => !s.dockedAt) || snap.ships[0];
     if (focusShip) center = V3(focusShip);
