@@ -5043,6 +5043,18 @@ function updateDescent(pe, simDt){
 }
 
 function updatePlanExecution(simDt){
+  /* 最接近の記録（台帳#137: 本人の最接近報告をログから復元できなかった教訓）:
+     待機中・接舷中も含め、計画が生きている間は目標とステーションへの
+     最小距離とその時刻を保持し、デバッグログへ出す */
+  if(S && S.planExec && S.planExec.active && S.planExec.targetBody && S.ship){
+    const pe0 = S.planExec;
+    const inf0 = relInfo(S.ship, pe0.targetBody);
+    if(!pe0.minDist || inf0.dist < pe0.minDist.d) pe0.minDist = { d: inf0.dist, t: S.time, rel: inf0.rel };
+    if(S.station && pe0.targetBody !== S.station){
+      const dSt = Math.hypot(S.ship.x - S.station.x, S.ship.y - S.station.y, S.ship.z - S.station.z);
+      if(!pe0.minStationDist || dSt < pe0.minStationDist.d) pe0.minStationDist = { d: dSt, t: S.time };
+    }
+  }
   /* 出発窓の待機（v0.6.4、台帳#49）: 接舷中でも捕捉軌道上でも、窓の時刻までは
      誘導も再推定も走らせず、時刻が来たら再検証のうえ自動出発する */
   if(S && S.planExec && S.planExec.active && S.planExec.phase === 'waitwin' && !S.failed){
@@ -11985,6 +11997,8 @@ function buildDebugLog(){
   push('--- planExec ---');
   push(scalars(S.planExec));
   if(S.planExec && S.planExec.targetBody) push('  targetBody = ' + (S.planExec.targetBody.name || '(名称なし)'));
+  if(S.planExec && S.planExec.minDist) push('  minTargetDist = ' + Math.round(S.planExec.minDist.d) + ' at ' + formatShipTime(S.planExec.minDist.t) + ' (rel ' + (S.planExec.minDist.rel || 0).toFixed(2) + ')');
+  if(S.planExec && S.planExec.minStationDist) push('  minStationDist = ' + Math.round(S.planExec.minStationDist.d) + ' at ' + formatShipTime(S.planExec.minStationDist.t));
   push('');
   push('--- approach ---');
   push(scalars(S.approach));
