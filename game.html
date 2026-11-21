@@ -3484,7 +3484,7 @@ function renderPlanDetail(){
     (tOff > 0 ? '<div class="pd-sec"><div class="pd-note">🕐 出発窓の計画： 約 ' + fmtDuration(tOff) + ' 待機したのち自動出発します（出発予定 ' + fmtDayClock(S.time + tOff) + '）。時刻は待機開始時点の計算で、出発時に再検証します。</div></div>' : '') +
     '<div class="pd-summary">' +
     '<div class="pd-row"><span>🧭 ' + courseLabel(v.id) + '</span><span></span><span>総Δv ' + est.dvTotal.toFixed(1) + '</span><span>所要 ' + fmtDuration(est.timeTotal) + '</span></div>' +
-    '<div class="pd-row"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? 'ゲート12以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時（予測 約' + est.finalRel.toFixed(2) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2)) + '</span></div>' +
+    '<div class="pd-row"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? 'ゲート12以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時（予測 約' + est.finalRel.toFixed(2) + '／接近ピーク（2万以内）約' + (est.termPeak20 || 0).toFixed(1) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2) + '（捕捉前ピーク（2万以内）約' + (est.termPeak20 || 0).toFixed(1) + '）') + '</span></div>' +
     '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + ' ／ 到着時残量 Δv ' + remain.toFixed(1) + (resOk ? '（予備 ' + st.reserve + '% ✓）' : '（⚠ 予備 ' + st.reserve + '% を割ります）') + '</span></div>' +
     (() => { const ce = voyageCostEstimate(est.dvTotal + steerAllow, est.timeTotal, tOff); return '<div class="pd-row"><span>支出見込み</span><span></span><span>' + ce.total + ' cred</span><span>運航枠 ' + ce.frame + ' cred に対し ' + (ce.residual >= 0 ? '残 ' + ce.residual + ' cred ✓' : '⚠ ' + (-ce.residual) + ' cred 超過') + '</span></div>'; })() + '</div>' +
     /* 図化: Δv予算バー（残量に対する計画消費と予備ライン）と航路図を、要約の直下に置く */
@@ -3497,7 +3497,7 @@ function renderPlanDetail(){
     '<details class="pd-details"><summary>🧭 航路の詳細（通過点・フィックス）</summary>' + wpHtml +
     '<div class="pd-row"><span>最接近</span><span></span><span></span><span>' + irTxt + '</span></div></details>' +
     '<details class="pd-details"><summary>🔥 噴射計画の詳細</summary>' + legHtml +
-    '<div class="pd-row total"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? '接舷は接舷ゲート（目標）から 12 以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時のみ（予測相対速度 約' + est.finalRel.toFixed(2) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2)) + '</span></div></details>' +
+    '<div class="pd-row total"><span>到着条件</span><span>' + fmtDayClock(S.time + tOff + est.timeTotal) + '</span><span></span><span>' + (cfg.needDock ? '接舷は接舷ゲート（目標）から 12 以内・相対速度 ' + V_CONTACT.toFixed(1) + ' 以下・進入コース確立時のみ（予測相対速度 約' + est.finalRel.toFixed(2) + '／接近ピーク（2万以内）約' + (est.termPeak20 || 0).toFixed(1) + '）' : '通過時相対速度 約' + est.finalRel.toFixed(2) + '（捕捉前ピーク（2万以内）約' + (est.termPeak20 || 0).toFixed(1) + '）') + '</span></div></details>' +
     '<details class="pd-details"><summary>⛽ 推進剤予算の詳細</summary>' +
     '<div class="pd-row"><span>計画消費</span><span></span><span>Δv ' + est.dvTotal.toFixed(1) + '</span><span></span></div>' +
     (steerAllow ? '<div class="pd-row"><span>港内操船（離舷・港内、見込み）</span><span></span><span>Δv ' + steerAllow.toFixed(1) + '</span><span></span></div>' : '') +

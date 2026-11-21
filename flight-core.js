@@ -1523,7 +1523,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     if(firstBurn === null && d.cost > 0.001){ firstBurn = d.cost; firstBurnVec = { dvx: d.dvx, dvy: d.dvy, dvz: d.dvz, cost: d.cost }; firstBurnT = timeTotal; }
     phaseDv[phase] = (phaseDv[phase] || 0) + d.cost;
   };
-  const split = rel => ({ dvDepart: dvCruise, dvArrival: dvTotal - dvCruise, dvGravityComp, finalRel: rel });
+  const split = rel => ({ dvDepart: dvCruise, dvArrival: dvTotal - dvCruise, dvGravityComp, finalRel: rel, termPeak60, termPeak20, termPeak5, hotArrival: hotArrival() });
   let firstBurn = null, firstBurnVec = null, firstBurnT = null;
   const burns = [];
   const phaseDv = {}, phaseT0 = {};
@@ -1548,6 +1548,13 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     return Object.assign(split(rel), { legs: mkLegs(), firstBurn: firstBurn || 0, firstBurnVec, firstBurnT, impactRisk: bestRisk, dvHarbor, harborTime, mdUse: (o.mdExitV != null && !!o.depSep), sampleTimes, burns });
   };
   let planetCross = false, surfaceHit = false, bestRisk = null, bestAlt = Infinity;
+  /* 到着プロファイルの段階上限（#90）の実測用: 終端（捕捉成立前）の距離帯ごとの
+     相対速度ピーク。提示可否の判定とパネル表示に使う */
+  let termPeak60 = 0, termPeak20 = 0, termPeak5 = 0;
+  /* #90 到着の作法: ランデブー級の到着（接舷・会合）では、段階上限を超える
+     接近プロファイルの計画は成立として提示しない。捕捉軌道への到着（月等）は
+     軌道速度そのものが相対速度になるため対象外（捕捉の帯・安定性が統制する） */
+  const hotArrival = () => (arrivalDist <= 1000 && (termPeak20 > V_IAF || termPeak5 > V_FINAL));
   let hitCount = 0, crossCount = 0, capHitBase = 0, capCrossBase = 0;
   /* 推定の暴走ガード（v0.6.1 #5）: シミュレーション上の艦が天体に捕捉される軌道に入ると、
      ステップが極小のまま maxT（5.8億秒）まで回り続け、実測で135秒の同期ブロックになった。
@@ -1932,6 +1939,11 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
     recordBody(starBody, prevStar[0], prevStar[1], prevStar[2]);
     const info = relInfo(s, t);
     lastRel = info.rel;
+    if(!capDone){
+      if(info.dist < 60000 && info.rel > termPeak60) termPeak60 = info.rel;
+      if(info.dist < 20000 && info.rel > termPeak20) termPeak20 = info.rel;
+      if(info.dist < 5000 && info.rel > termPeak5) termPeak5 = info.rel;
+    }
     if(capDone){
       /* 捕捉後の確認滑空（設計規則 台帳#44/#47）: 捕捉が済んだら誘導はもう触らない
          （捕捉軌道の圏出入りに通常段が反応して噴射を打ち合った実測がある）。
@@ -1995,7 +2007,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
            到着する（実飛行側の到着安全確認と同じ規則）。この噴射も推定消費に含む。 */
         if(timeTotal - lastZoneFixT >= 20){ lastZoneFixT = timeTotal; applyDv(computeApproach(s, t, starGM, scale, pls)); }
       } else {
-        job.result = Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true;
+        job.result = Object.assign({ ok: !surfaceHit && !hotArrival(), planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true;
       }
     }
     if(job.done) break;
@@ -2011,7 +2023,7 @@ function createPlanEstimateJob(ship, target, starGM, closingScale, opts){
         const px = fix.x + abx * tt, py = fix.y + aby * tt, pz = fix.z + abz * tt;
         if(Math.hypot(s.x - px, s.y - py, s.z - pz) > 16) established = false;
       }
-      if(established && info.dist < arrivalDist && info.rel <= V_CONTACT){ job.result = Object.assign({ ok: !surfaceHit, planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true; }
+      if(established && info.dist < arrivalDist && info.rel <= V_CONTACT){ job.result = Object.assign({ ok: !surfaceHit && !hotArrival(), planetCross, dvTotal, timeTotal, samples }, fin(info.rel)); job.done = true; }
     }
     if(job.done) break;
     if(phaseT0[phase] === undefined) phaseT0[phase] = timeTotal;
